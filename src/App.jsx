@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Shield, Sword, Heart, Zap, Sparkles, Award, RotateCcw, 
-  Users, MapPin, Play, CheckCircle, Flame, Droplets, Mountain, Trees, ShieldAlert
+  Users, MapPin, Play, CheckCircle, Flame, Droplets, Mountain, Trees,
+  BookOpen, Feather, ShoppingBag, Database, ArrowUpCircle
 } from 'lucide-react';
 
-// ==================== 1. 五行與基礎資料庫 ====================
+// ==================== 1. 五行與戰鬥機制 ====================
 const ELEMENTS = {
   METAL: { name: '金', icon: '⚔️', color: 'text-amber-300', bg: 'bg-amber-950/40', border: 'border-amber-500/50', beats: 'WOOD' },
   WOOD:  { name: '木', icon: '🌿', color: 'text-emerald-400', bg: 'bg-emerald-950/40', border: 'border-emerald-500/50', beats: 'EARTH' },
@@ -13,10 +14,19 @@ const ELEMENTS = {
   EARTH: { name: '土', icon: '⛰️', color: 'text-yellow-600', bg: 'bg-yellow-950/40', border: 'border-yellow-600/50', beats: 'WATER' }
 };
 
+// 五行克制傷害加成計算 (克制 +30% 傷害，被克 -20% 傷害)
+const getElementMultiplier = (attackerElem, defenderElem) => {
+  if (ELEMENTS[attackerElem]?.beats === defenderElem) return 1.3;
+  if (ELEMENTS[defenderElem]?.beats === attackerElem) return 0.8;
+  return 1.0;
+};
+
 const INITIAL_HERO_POOL = [
-  { id: 't1_1', name: '鄉勇男丁', tier: 1, job: '猛將', element: 'EARTH', baseHp: 120, baseAtk: 18, baseDef: 6, speed: 10 },
-  { id: 't1_2', name: '草藥學徒', tier: 1, job: '藥師', element: 'WOOD', baseHp: 90, baseAtk: 12, baseDef: 4, speed: 12 },
-  { id: 't1_3', name: '機關弩手', tier: 1, job: '巧匠', element: 'METAL', baseHp: 100, baseAtk: 22, baseDef: 3, speed: 14 }
+  { id: 't1_1', name: '鄉勇男丁', tier: 1, job: '猛將', element: 'EARTH', baseHp: 120, baseAtk: 18, baseDef: 6, speed: 10, fatigue: 0 },
+  { id: 't1_2', name: '草藥學徒', tier: 1, job: '藥師', element: 'WOOD', baseHp: 90, baseAtk: 12, baseDef: 4, speed: 12, fatigue: 0 },
+  { id: 't1_3', name: '機關弩手', tier: 1, job: '巧匠', element: 'METAL', baseHp: 100, baseAtk: 22, baseDef: 3, speed: 14, fatigue: 0 },
+  { id: 't2_1', name: '周倉', tier: 2, job: '猛將', element: 'EARTH', baseHp: 220, baseAtk: 35, baseDef: 12, speed: 11, fatigue: 0 },
+  { id: 't3_1', name: '關羽', tier: 3, job: '猛將', element: 'WATER', baseHp: 480, baseAtk: 75, baseDef: 25, speed: 18, fatigue: 0 }
 ];
 
 export default function App() {
@@ -47,7 +57,7 @@ export default function App() {
   const [battleActive, setBattleActive] = useState(false);
   const [jsonSaveText, setJsonSaveText] = useState('');
 
-  // 1. 本地自動存檔
+  // 存檔讀取
   useEffect(() => {
     const saved = localStorage.getItem('TIANWAI_FULL_SAVE');
     if (saved) {
@@ -71,7 +81,6 @@ export default function App() {
     setJsonSaveText(JSON.stringify(data, null, 2));
   };
 
-  // 2. 確定建立角色並進入遊戲
   const handleConfirmCharacter = () => {
     setActiveHeroes([selectedStarter]);
     setGameState('MAIN');
@@ -81,10 +90,10 @@ export default function App() {
     ]);
   };
 
-  // 3. 戰鬥遭遇生成 (依小隊人數 1~3 倍生成 5~15 隻怪)
+  // 生成 5~15 隻怪群
   const startNewEncounter = () => {
     const totalTeamCount = 1 + activeHeroes.length;
-    const monsterCount = Math.floor(Math.random() * (totalTeamCount * 2)) + totalTeamCount; // 5~15 隻
+    const monsterCount = Math.floor(Math.random() * (totalTeamCount * 2)) + totalTeamCount;
     
     const newMonsters = Array.from({ length: monsterCount }).map((_, i) => ({
       id: `m_${i}`,
@@ -102,7 +111,7 @@ export default function App() {
     setCombatLogs(prev => [...prev, `⚔️ 遭遇敵群！前方出現了 ${monsterCount} 隻怪物！`]);
   };
 
-  // 4. 回合戰鬥推進
+  // 戰鬥邏輯 (含五行相剋)
   const handleTurnAction = (actionType) => {
     if (!battleActive || monsters.length === 0) return;
 
@@ -110,27 +119,32 @@ export default function App() {
     let updatedMonsters = [...monsters];
     let target = updatedMonsters[selectedMonsterIdx] || updatedMonsters[0];
 
-    // 主角打擊
+    // 1. 主角打擊
     if (actionType === 'ATTACK') {
-      const dmg = Math.max(5, player.str * 3 - target.def);
-      target.hp -= dmg;
-      logs.push(`你揮舞武器對【${target.name}】造成 ${dmg} 點物理傷害！`);
+      const mult = getElementMultiplier(playerElement, target.element);
+      const baseDmg = Math.max(5, player.str * 3 - target.def);
+      const finalDmg = Math.floor(baseDmg * mult);
+      
+      target.hp -= finalDmg;
+      const elemText = mult > 1.0 ? ' (五行克制 +30%)' : mult < 1.0 ? ' (五行被克 -20%)' : '';
+      logs.push(`你打出【${ELEMENTS[playerElement].name}】屬性物理攻擊，對【${target.name}】造成 ${finalDmg} 點傷害${elemText}！`);
     }
 
-    // 英雄協同攻擊
+    // 2. 英雄協同攻擊
     activeHeroes.forEach(hero => {
       if (target.hp > 0) {
-        const hDmg = Math.max(5, hero.baseAtk - target.def);
+        const mult = getElementMultiplier(hero.element, target.element);
+        const hDmg = Math.floor(Math.max(5, hero.baseAtk - target.def) * mult);
         target.hp -= hDmg;
-        logs.push(`英雄【${hero.name}】施展招式，對【${target.name}】造成 ${hDmg} 點傷害！`);
+        logs.push(`英雄【${hero.name}】(${ELEMENTS[hero.element].name}) 施展招式，對【${target.name}】造成 ${hDmg} 點傷害！`);
       }
     });
 
-    // 清除死亡怪物
+    // 3. 怪物清算
     updatedMonsters = updatedMonsters.filter(m => m.hp > 0);
     setMonsters(updatedMonsters);
 
-    // 戰鬥結算
+    // 4. 戰鬥結算
     if (updatedMonsters.length === 0) {
       setBattleActive(false);
       const earnedGold = 80 + player.level * 10;
@@ -138,7 +152,6 @@ export default function App() {
       setGold(g => g + earnedGold);
       logs.push(`🎉 全滅敵群！獲得 ${earnedGold} 金幣，${earnedExp} 經驗值！`);
       
-      // 升級檢測
       if (player.exp + earnedExp >= player.maxExp) {
         setPlayer(p => ({
           ...p,
@@ -150,7 +163,7 @@ export default function App() {
           statPoints: p.statPoints + 3,
           sp: p.sp + 1
         }));
-        logs.push(`✨ 升級了！目前等級 Lv.${player.level + 1}！`);
+        logs.push(`✨ 升級了！目前等級 Lv.${player.level + 1}，獲得 3 點屬性點數！`);
       }
     }
 
@@ -158,7 +171,7 @@ export default function App() {
     saveGame();
   };
 
-  // ==================== 畫面 A: 創角介面 ====================
+  // ==================== 創角 UI ====================
   if (gameState === 'CREATION') {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4">
@@ -167,23 +180,20 @@ export default function App() {
             <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500">
               《天外 Online》文字 RPG
             </h1>
-            <p className="text-xs text-slate-400">請設定你的主角姓名、五行屬性與起步英雄夥伴</p>
+            <p className="text-xs text-slate-400">請設定你的主角姓名、五行本命屬性與首位起步夥伴</p>
           </div>
           
           <div className="space-y-5">
-            {/* 1. 主角姓名 */}
             <div>
               <label className="block text-xs font-bold text-amber-400 mb-1">1. 主角姓名</label>
               <input 
                 type="text" 
                 value={characterName} 
                 onChange={(e) => setCharacterName(e.target.value)} 
-                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-2 text-amber-200 focus:outline-none focus:border-amber-500 font-bold"
-                placeholder="輸入玩家角色名字"
+                className="w-full bg-slate-950 border border-slate-700 rounded-lg px-4 py-2.5 text-amber-200 focus:outline-none focus:border-amber-500 font-bold text-sm"
               />
             </div>
 
-            {/* 2. 職業選擇 */}
             <div>
               <label className="block text-xs font-bold text-amber-400 mb-2">2. 選擇職業</label>
               <div className="grid grid-cols-5 gap-2">
@@ -191,7 +201,7 @@ export default function App() {
                   <button 
                     key={j} 
                     onClick={() => setPlayerJob(j)}
-                    className={`py-2 rounded-lg border text-sm font-bold transition-all ${playerJob === j ? 'bg-amber-600 border-amber-400 text-white shadow-lg ring-2 ring-amber-400/50' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}
+                    className={`py-2 rounded-lg border text-xs sm:text-sm font-bold transition-all ${playerJob === j ? 'bg-amber-600 border-amber-400 text-white shadow-lg ring-2 ring-amber-400/50' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700'}`}
                   >
                     {j}
                   </button>
@@ -199,7 +209,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* 3. 五行本命 */}
             <div>
               <label className="block text-xs font-bold text-amber-400 mb-2">3. 五行本命屬性</label>
               <div className="grid grid-cols-5 gap-2">
@@ -207,7 +216,7 @@ export default function App() {
                   <button 
                     key={elemKey}
                     onClick={() => setPlayerElement(elemKey)}
-                    className={`py-2 rounded-lg border text-sm font-bold transition-all flex flex-col items-center justify-center space-y-1 ${ELEMENTS[elemKey].color} ${playerElement === elemKey ? 'bg-slate-800 border-amber-400 ring-2 ring-amber-400/50 shadow-md' : 'bg-slate-950/60 border-slate-800 hover:bg-slate-800'}`}
+                    className={`py-2 rounded-lg border text-xs sm:text-sm font-bold transition-all flex flex-col items-center justify-center space-y-1 ${ELEMENTS[elemKey].color} ${playerElement === elemKey ? 'bg-slate-800 border-amber-400 ring-2 ring-amber-400/50 shadow-md' : 'bg-slate-950/60 border-slate-800 hover:bg-slate-800'}`}
                   >
                     <span>{ELEMENTS[elemKey].icon}</span>
                     <span>{ELEMENTS[elemKey].name}</span>
@@ -216,11 +225,10 @@ export default function App() {
               </div>
             </div>
 
-            {/* 4. 首抽夥伴 */}
             <div>
               <label className="block text-xs font-bold text-amber-400 mb-2">4. 選擇首位起步英雄夥伴</label>
               <div className="grid grid-cols-3 gap-3">
-                {INITIAL_HERO_POOL.map(hero => (
+                {INITIAL_HERO_POOL.slice(0, 3).map(hero => (
                   <div 
                     key={hero.id} 
                     onClick={() => setSelectedStarter(hero)}
@@ -234,11 +242,10 @@ export default function App() {
               </div>
             </div>
 
-            {/* 5. 顯眼的開始遊戲按鈕 */}
             <div className="pt-4 border-t border-slate-800">
               <button 
                 onClick={handleConfirmCharacter}
-                className="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-extrabold py-3.5 rounded-xl shadow-lg transition-all flex items-center justify-center space-x-2 text-lg"
+                className="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-extrabold py-3.5 rounded-xl shadow-lg transition-all flex items-center justify-center space-x-2 text-base"
               >
                 <Play className="w-5 h-5 fill-current" />
                 <span>踏入天外世界 • 開始遊戲</span>
@@ -250,25 +257,25 @@ export default function App() {
     );
   }
 
-  // ==================== 畫面 B: 主遊戲介面 ====================
+  // ==================== 主遊戲 UI ====================
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      {/* 頂部資訊欄 */}
-      <header className="bg-slate-900 border-b border-slate-800 p-3 px-6 flex justify-between items-center">
+      {/* 頂部英雄面板資訊 */}
+      <header className="bg-slate-900 border-b border-slate-800 p-3 px-6 flex flex-wrap justify-between items-center gap-2">
         <div className="flex items-center space-x-3">
-          <span className="font-bold text-amber-400 text-lg">{characterName} (Lv.{player.level} {playerJob})</span>
-          <span className={`text-xs px-2 py-0.5 rounded border ${ELEMENTS[playerElement].border} ${ELEMENTS[playerElement].color}`}>
-            {ELEMENTS[playerElement].icon} 本命五行：{ELEMENTS[playerElement].name}
+          <span className="font-bold text-amber-400 text-base sm:text-lg">{characterName} (Lv.{player.level} {playerJob})</span>
+          <span className={`text-xs px-2.5 py-0.5 rounded border ${ELEMENTS[playerElement].border} ${ELEMENTS[playerElement].color}`}>
+            {ELEMENTS[playerElement].icon} 本命：{ELEMENTS[playerElement].name}
           </span>
         </div>
-        <div className="flex space-x-6 text-xs sm:text-sm font-semibold">
+        <div className="flex items-center space-x-4 sm:space-x-6 text-xs sm:text-sm font-semibold">
           <span className="text-rose-400">❤️ HP: {player.hp}/{player.maxHp}</span>
           <span className="text-cyan-400">💧 MP: {player.mp}/{player.maxMp}</span>
           <span className="text-amber-300">💰 金幣: {gold}</span>
         </div>
       </header>
 
-      {/* 主面板分頁籤 */}
+      {/* 頁籤選單 */}
       <nav className="bg-slate-900/60 border-b border-slate-800 flex justify-center space-x-2 p-2">
         {[
           { id: 'BATTLE', label: '⚔️ 戰鬥地圖' },
@@ -285,15 +292,15 @@ export default function App() {
         ))}
       </nav>
 
-      {/* 內容區塊 */}
+      {/* 主面板內容 */}
       <main className="flex-1 p-4 max-w-6xl w-full mx-auto grid grid-cols-1 md:grid-cols-3 gap-4">
         {activeTab === 'BATTLE' && (
           <>
-            {/* 左側：戰鬥遭遇畫面 */}
+            {/* 左側戰鬥區域 */}
             <div className="md:col-span-2 bg-slate-900/80 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between shadow-xl">
               <div>
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="font-bold text-amber-400">敵方群體 (當前 {monsters.length} 隻)</h2>
+                  <h2 className="font-bold text-amber-400 text-sm sm:text-base">敵方群體 (當前 {monsters.length} 隻)</h2>
                   {!battleActive && (
                     <button onClick={startNewEncounter} className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-xl font-bold text-xs sm:text-sm shadow-md transition-all">
                       ⚔️ 尋找野外怪群 (5~15隻)
@@ -309,13 +316,16 @@ export default function App() {
                       className={`p-2.5 rounded-xl border text-center cursor-pointer transition-all ${selectedMonsterIdx === idx ? 'border-amber-400 bg-amber-950/40 ring-1 ring-amber-400' : 'border-slate-800 bg-slate-950/40 hover:border-slate-700'}`}
                     >
                       <div className="text-xs font-bold truncate text-slate-200">{m.name}</div>
+                      <div className={`text-[10px] ${ELEMENTS[m.element].color} font-bold mt-0.5`}>
+                        {ELEMENTS[m.element].icon} {ELEMENTS[m.element].name}
+                      </div>
                       <div className="text-[10px] text-rose-400 mt-1">HP {m.hp}</div>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* 戰鬥操作選項 */}
+              {/* 戰鬥按鈕組 */}
               <div className="mt-4 pt-4 border-t border-slate-800">
                 <div className="grid grid-cols-4 gap-2">
                   <button disabled={!battleActive} onClick={() => handleTurnAction('ATTACK')} className="bg-rose-700 hover:bg-rose-600 disabled:opacity-40 text-white py-2.5 rounded-xl font-bold text-xs sm:text-sm shadow">
@@ -334,7 +344,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* 右側：戰鬥日誌 */}
+            {/* 右側戰況日誌 */}
             <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-4 flex flex-col shadow-xl">
               <h3 className="font-bold text-slate-300 mb-2 border-b border-slate-800 pb-2 text-sm">📜 實時戰況日誌</h3>
               <div className="flex-1 overflow-y-auto space-y-2 text-xs font-mono text-slate-400 max-h-80 p-1">
@@ -348,7 +358,7 @@ export default function App() {
 
         {activeTab === 'HEROES' && (
           <div className="md:col-span-3 bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-xl">
-            <h2 className="font-bold text-amber-400 mb-4">出戰陣容 (最多 4 位英雄，不可重複)</h2>
+            <h2 className="font-bold text-amber-400 mb-4">出戰陣容 (最多 4 位英雄，同名防呆)</h2>
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
               {activeHeroes.map(hero => (
                 <div key={hero.id} className="bg-slate-950 p-4 rounded-xl border border-amber-500/30">
@@ -369,11 +379,11 @@ export default function App() {
             <h2 className="font-bold text-amber-400">遊戲存檔與備份管理</h2>
             <div className="flex space-x-2">
               <button onClick={saveGame} className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-xl font-bold text-xs sm:text-sm">
-                立即手動存檔
+                手動存檔至 LocalStorage
               </button>
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">JSON 存檔文字 (可複製導出備份)</label>
+              <label className="block text-xs text-slate-400 mb-1">JSON 存檔文字 (導出與備份)</label>
               <textarea 
                 value={jsonSaveText} 
                 onChange={(e) => setJsonSaveText(e.target.value)} 
