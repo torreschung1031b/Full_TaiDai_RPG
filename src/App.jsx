@@ -84,7 +84,7 @@ export default function App() {
 
   const [starterHeroCandidates, setStarterHeroCandidates] = useState([]);
 
-  // 主角 State (每級獲得 7 點自由屬性點)
+  // 主角 State (升級固定 +7 自由屬性點)
   const [player, setPlayer] = useState({
     name: '太古少俠',
     level: 1,
@@ -93,7 +93,7 @@ export default function App() {
     job: '猛將',
     element: '金',
     stats: { str: 10, int: 10, con: 10, agi: 10 },
-    statPoints: 7, // 初始自由屬性點
+    statPoints: 7,
     maxHp: 150, hp: 150,
     maxMp: 60, mp: 60,
     rage: 0,
@@ -105,12 +105,12 @@ export default function App() {
     equipped: { weapon: null, offhand: null, helmet: null, armor: null, shoes: null, accessory: null }
   });
 
-  // 英雄名冊 & 技能卡背包 State
+  // 英雄名冊 & 背包 State
   const [heroRoster, setHeroRoster] = useState([]);
   const [activeHeroInstanceIds, setActiveHeroInstanceIds] = useState([]);
   const [currentFormation, setCurrentFormation] = useState('none');
   const [equipmentInventory, setEquipmentInventory] = useState(ITEM_DROP_POOL.slice(0, 3));
-  const [skillCardsInventory, setSkillCardsInventory] = useState([SKILL_CARDS_DB[0], SKILL_CARDS_DB[5]]); // 初始贈送
+  const [skillCardsInventory, setSkillCardsInventory] = useState([SKILL_CARDS_DB[0], SKILL_CARDS_DB[5]]);
   const [towerFloor, setTowerFloor] = useState(1);
 
   // UI 與戰鬥 State
@@ -126,7 +126,7 @@ export default function App() {
   const [jsonSaveText, setJsonSaveText] = useState('');
   const [saveLoadStatus, setSaveLoadStatus] = useState('');
 
-  // 1. 初始化 Starter 3 選 1
+  // 初始化 Starter 3 選 1
   useEffect(() => {
     const pool = HERO_TEMPLATES.filter(h => h.tier === 1 || h.tier === 2);
     const shuffled = [...pool].sort(() => 0.5 - Math.random()).slice(0, 3);
@@ -139,7 +139,7 @@ export default function App() {
     setCreationData(prev => ({ ...prev, selectedStarterHero: instanced[0] }));
   }, []);
 
-  // 2. 本地自動存檔載入
+  // 本地存檔載入
   useEffect(() => {
     const saved = localStorage.getItem('TIANWAI_RPG_SAVE');
     if (saved) {
@@ -159,7 +159,7 @@ export default function App() {
     }
   }, []);
 
-  // 3. 自動存檔
+  // 自動存檔
   useEffect(() => {
     if (gameStarted) {
       const saveData = { 
@@ -238,13 +238,14 @@ export default function App() {
     return list;
   };
 
+  // 英雄登場 / 卸下切換
   const handleToggleDeployHero = (hero) => {
     if (activeHeroInstanceIds.includes(hero.instanceId)) {
       setActiveHeroInstanceIds(prev => prev.filter(id => id !== hero.instanceId));
       addLog(`🛡️ 英雄【${hero.name}】退出登場佇列。`, 'sys');
     } else {
       if (activeHeroInstanceIds.length >= 4) {
-        addLog(`⚠️ 最多同時派遣 4 位英雄！`, 'sys');
+        addLog(`⚠️ 最多同時派遣 4 位英雄登場！`, 'sys');
         return;
       }
       if (activeHeroes.some(h => h.baseId === hero.baseId)) {
@@ -256,7 +257,16 @@ export default function App() {
     }
   };
 
-  // 英雄自動升級計算 (按品質 +2/3/5/7/10，按職業比例配點)
+  // 放走 / 解僱英雄
+  const handleReleaseHero = (hero) => {
+    if (activeHeroInstanceIds.includes(hero.instanceId)) {
+      setActiveHeroInstanceIds(prev => prev.filter(id => id !== hero.instanceId));
+    }
+    setHeroRoster(prev => prev.filter(h => h.instanceId !== hero.instanceId));
+    addLog(`👋 成功放走英雄【${hero.name}】，江湖再見！`, 'sys');
+  };
+
+  // 英雄自動升級邏輯
   const processHeroExpGain = (hero, expGained) => {
     let currentHero = { ...hero };
     currentHero.exp += expGained;
@@ -267,11 +277,9 @@ export default function App() {
       currentHero.level += 1;
       currentHero.maxExp = Math.floor(100 * Math.pow(currentHero.level, 1.3));
 
-      // 稀有度階梯屬性點獎勵
       const tierPtsMap = { 1: 2, 2: 3, 3: 5, 4: 7, 5: 10 };
       const pts = tierPtsMap[currentHero.tier] || 2;
 
-      // 職業自動配點比例
       const weightsMap = {
         '猛將': { str: 0.30, con: 0.50, int: 0.00, agi: 0.20 },
         '巧匠': { str: 0.30, con: 0.20, int: 0.00, agi: 0.50 },
@@ -307,7 +315,7 @@ export default function App() {
     return { updatedHero: currentHero, upgradedMsgs };
   };
 
-  // 核心回合處理
+  // 戰鬥回合執行
   const handleExecuteRound = (actionInput = { type: 'attack' }, isFusionUltimate = false) => {
     setCombatPhase('EXECUTING');
     let currentMonsters = [...monsters];
@@ -320,7 +328,6 @@ export default function App() {
       if (targetIdx === -1) targetIdx = 0;
     }
 
-    // 1. 主僕合擊奧義
     if (isFusionUltimate) {
       addLog(`✨ 觸發【主僕合擊奧義】！`, 'player');
       currentMonsters.forEach(m => {
@@ -336,7 +343,6 @@ export default function App() {
       if (currentPlayer.job === '猛將') currentPlayer.rage = 0;
       else currentPlayer.mp = Math.max(0, currentPlayer.mp - 40);
     } 
-    // 2. 普通攻擊 (累積資源)
     else if (actionInput.type === 'attack' && currentMonsters[targetIdx]) {
       const targetM = currentMonsters[targetIdx];
       const em = getElementMultiplier(currentPlayer.element, targetM.element);
@@ -355,7 +361,6 @@ export default function App() {
         addLog(`💧 調息凝神！恢復 +20 MP (目前: ${currentPlayer.mp}/${playerTotalMaxMp})`, 'sys');
       }
     } 
-    // 3. 釋放職業技能 (主角專屬技能樹技能)
     else if (actionInput.type === 'skill' && actionInput.skill) {
       const sk = actionInput.skill;
       const skLvl = currentPlayer.skillLevels[actionInput.skillIdx] || 1;
@@ -407,7 +412,7 @@ export default function App() {
       }
     }
 
-    // 4. 登場英雄打擊與裝備之主動技能卡發動
+    // 登場英雄出手打擊
     currentRoster = currentRoster.map(h => {
       if (!activeHeroInstanceIds.includes(h.instanceId) || h.hp <= 0) return h;
 
@@ -415,7 +420,6 @@ export default function App() {
       if (aliveTargets.length === 0) return h;
       const validTarget = aliveTargets[Math.floor(Math.random() * aliveTargets.length)];
 
-      // 檢查是否發動主動技能卡
       const activeCard = (h.activeSkillSlots && h.activeSkillSlots.length > 0)
         ? h.activeSkillSlots[Math.floor(Math.random() * h.activeSkillSlots.length)]
         : null;
@@ -448,7 +452,6 @@ export default function App() {
         addLog(`💥 英雄【${h.name}】普通打擊，對【${validTarget.name}】造成 ${dmg} 點傷害！`, 'hero');
       }
 
-      // 英雄資源更新
       let updatedRage = h.rage || 0;
       let updatedAmmo = h.ammo || 6;
       let updatedMp = h.mp || 50;
@@ -460,7 +463,7 @@ export default function App() {
       return { ...h, rage: updatedRage, ammo: updatedAmmo, mp: updatedMp };
     });
 
-    // 5. 怪物反擊
+    // 怪物反擊
     const aliveMonsters = currentMonsters.filter(m => m.hp > 0);
     if (aliveMonsters.length > 0) {
       aliveMonsters.forEach(m => {
@@ -500,7 +503,7 @@ export default function App() {
     setCombatPhase('PLAYER_SELECT');
   };
 
-  // 戰鬥勝利結算 (登場英雄獲取 100% 經驗值並自動升級；未登場者 0 經驗)
+  // ✅ 戰鬥勝利結算修復：確保新掉落英雄與 EXP 完美並存不被覆蓋
   const handleBattleVictory = (pObj, defeatedMonsters, currentRoster) => {
     let totalGold = 0, totalExp = 0, droppedStones = 0;
     let droppedEquipments = [];
@@ -515,7 +518,6 @@ export default function App() {
       }
     });
 
-    // 30% 機率掉落英雄卡片 / 40% 機率掉落英雄技能卡
     let droppedHero = null;
     let droppedSkillCard = null;
 
@@ -527,7 +529,6 @@ export default function App() {
         activeSkillSlots: [],
         passiveSkillSlots: []
       };
-      setHeroRoster(prev => [...prev, droppedHero]);
     }
 
     if (Math.random() < 0.40) {
@@ -535,16 +536,20 @@ export default function App() {
       setSkillCardsInventory(prev => [...prev, droppedSkillCard]);
     }
 
-    // 更新登場英雄 EXP 與自動升級
+    // 將新英雄併入名冊計算
+    let baseRosterForExp = [...currentRoster];
+    if (droppedHero) {
+      baseRosterForExp.push(droppedHero);
+    }
+
     let heroUpgradeLogs = [];
-    const updatedRoster = currentRoster.map(hero => {
-      if (!activeHeroInstanceIds.includes(hero.instanceId)) return hero; // 未登場者不分經驗
+    const updatedRoster = baseRosterForExp.map(hero => {
+      if (!activeHeroInstanceIds.includes(hero.instanceId)) return hero;
       const { updatedHero, upgradedMsgs } = processHeroExpGain(hero, totalExp);
       if (upgradedMsgs.length > 0) heroUpgradeLogs.push(...upgradedMsgs);
       return updatedHero;
     });
 
-    // 主角 EXP 結算 (升級固定獲得 +7 自由屬性點, +1 SP)
     let newPlayer = {
       ...pObj,
       gold: pObj.gold + totalGold,
@@ -560,7 +565,7 @@ export default function App() {
       newPlayer.maxMp += 20;
       newPlayer.hp = newPlayer.maxHp;
       newPlayer.mp = newPlayer.maxMp;
-      newPlayer.statPoints += 7; // ✅ 主角每次升級固定 +7 屬性點
+      newPlayer.statPoints += 7;
       newPlayer.sp += 1;
       addLog(`🎉 少俠升級至 Level ${newPlayer.level}！獲得 7 點可分配屬性點與 1 點 SP！`, 'sys');
     }
@@ -568,7 +573,7 @@ export default function App() {
     heroUpgradeLogs.forEach(msg => addLog(msg, 'sys'));
 
     setPlayer(newPlayer);
-    setHeroRoster(updatedRoster);
+    setHeroRoster(updatedRoster); // 寫回完整的最新名冊
     if (droppedEquipments.length > 0) {
       setEquipmentInventory(prev => [...prev, ...droppedEquipments]);
     }
@@ -632,6 +637,7 @@ export default function App() {
       activeHeroes={activeHeroes}
       activeHeroInstanceIds={activeHeroInstanceIds}
       handleToggleDeployHero={handleToggleDeployHero}
+      handleReleaseHero={handleReleaseHero}
       currentFormation={currentFormation}
       setCurrentFormation={setCurrentFormation}
       equipmentInventory={equipmentInventory}
