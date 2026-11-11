@@ -79,7 +79,7 @@ export default function App() {
     exp: 0,
     maxExp: 100,
     hp: 260, maxHp: 260,
-    mp: 0, maxMp: 0,
+    mp: 100, maxMp: 100,
     rage: 0, ammo: 20, maxAmmo: 20,
     atk: 38, def: 14, speed: 10,
     gold: 600, refineStones: 10,
@@ -234,7 +234,8 @@ export default function App() {
     }
   };
 
-  const handleExecuteRound = (isFusionUltimate = false) => {
+  // 核心回合處理：包含資源累積與技能釋放邏輯
+  const handleExecuteRound = (actionInput = { type: 'attack' }, isFusionUltimate = false) => {
     setCombatPhase('EXECUTING');
     let currentMonsters = [...monsters];
     let currentPlayer = { ...player };
@@ -246,6 +247,7 @@ export default function App() {
       if (targetIdx === -1) targetIdx = 0;
     }
 
+    // 1. 主僕合擊奧義
     if (isFusionUltimate) {
       addLog(`✨ 觸發【主僕合擊奧義】！`, 'player');
       currentMonsters.forEach(m => {
@@ -258,14 +260,84 @@ export default function App() {
           addLog(`💥 對【${m.name}】造成 ${dmg} 點巨額打擊！`, 'player');
         }
       });
-    } else if (currentMonsters[targetIdx]) {
+      if (currentPlayer.job === '猛將') currentPlayer.rage = 0;
+      else currentPlayer.mp = Math.max(0, currentPlayer.mp - 40);
+    } 
+    // 2. 普通攻擊 (累積資源)
+    else if (actionInput.type === 'attack' && currentMonsters[targetIdx]) {
       const targetM = currentMonsters[targetIdx];
       const em = getElementMultiplier(currentPlayer.element, targetM.element);
       const dmg = Math.max(5, Math.floor((playerTotalAtk - targetM.def) * em));
       targetM.hp = Math.max(0, targetM.hp - dmg);
-      addLog(`🗡️ 你打擊【${targetM.name}】，造成 ${dmg} 點傷害！`, 'player');
+      addLog(`🗡️ 你發動普通攻擊，對【${targetM.name}】造成 ${dmg} 點傷害！`, 'player');
+
+      // 🔥 職業資源恢復機制
+      if (currentPlayer.job === '猛將') {
+        currentPlayer.rage = Math.min(100, currentPlayer.rage + 25);
+        addLog(`🔥 攻擊積攢怒氣！目前怒氣: ${currentPlayer.rage}/100`, 'sys');
+      } else if (currentPlayer.job === '巧匠') {
+        currentPlayer.ammo = Math.min(currentPlayer.maxAmmo, currentPlayer.ammo + 4);
+        addLog(`🏹 補給暗器！目前彈藥: ${currentPlayer.ammo}/${currentPlayer.maxAmmo}`, 'sys');
+      } else {
+        currentPlayer.mp = Math.min(playerTotalMaxMp, currentPlayer.mp + 20);
+        addLog(`💧 調息凝神！恢復 +20 MP (目前: ${currentPlayer.mp}/${playerTotalMaxMp})`, 'sys');
+      }
+    } 
+    // 3. 釋放職業技能
+    else if (actionInput.type === 'skill' && actionInput.skill) {
+      const sk = actionInput.skill;
+      const skLvl = currentPlayer.skillLevels[actionInput.skillIdx] || 1;
+      const mult = getSkillMultiplier(sk, skLvl);
+
+      // 檢查資源
+      let hasResource = true;
+      if (sk.costType === 'rage' && currentPlayer.rage < sk.cost) hasResource = false;
+      if (sk.costType === 'mp' && currentPlayer.mp < sk.cost) hasResource = false;
+      if (sk.costType === 'ammo' && currentPlayer.ammo < sk.cost) hasResource = false;
+
+      if (!hasResource) {
+        addLog(`⚠️ 資源不足，無法發動【${sk.name}】！改為普通打擊。`, 'sys');
+        // 自動降級為普通打擊
+        const targetM = currentMonsters[targetIdx];
+        if (targetM) {
+          const em = getElementMultiplier(currentPlayer.element, targetM.element);
+          const dmg = Math.max(5, Math.floor((playerTotalAtk - targetM.def) * em));
+          targetM.hp = Math.max(0, targetM.hp - dmg);
+        }
+      } else {
+        // 扣除資源
+        if (sk.costType === 'rage') currentPlayer.rage -= sk.cost;
+        if (sk.costType === 'mp') currentPlayer.mp -= sk.cost;
+        if (sk.costType === 'ammo') currentPlayer.ammo -= sk.cost;
+
+        // 執行招式效果
+        if (sk.type === 'aoe') {
+          currentMonsters.forEach(m => {
+            if (m.hp > 0) {
+              const em = getElementMultiplier(currentPlayer.element, m.element);
+              const dmg = Math.max(8, Math.floor(playerTotalAtk * mult * em) - m.def);
+              m.hp = Math.max(0, m.hp - dmg);
+              addLog(`⚡ 發動全體【${sk.name} (Lv.${skLvl})】，對【${m.name}】造成 ${dmg} 點打擊！`, 'player');
+            }
+          });
+        } else if (sk.type === 'heal') {
+          const healVal = Math.floor(playerTotalAtk * mult);
+          currentPlayer.hp = Math.min(playerTotalMaxHp, currentPlayer.hp + healVal);
+          currentHeroes.forEach(h => { h.hp = Math.min(h.maxHp, h.hp + healVal); });
+          addLog(`🌿 施展【${sk.name} (Lv.${skLvl})】，全隊恢復 +${healVal} HP！`, 'player');
+        } else {
+          const targetM = currentMonsters[targetIdx];
+          if (targetM) {
+            const em = getElementMultiplier(currentPlayer.element, targetM.element);
+            const dmg = Math.max(10, Math.floor(playerTotalAtk * mult * em) - targetM.def);
+            targetM.hp = Math.max(0, targetM.hp - dmg);
+            addLog(`⚡ 發動【${sk.name} (Lv.${skLvl})】，對【${targetM.name}】爆發 ${dmg} 點重傷！`, 'player');
+          }
+        }
+      }
     }
 
+    // 4. 登場英雄聯動打擊
     currentHeroes.forEach(h => {
       if (h.hp <= 0) return;
       const aliveTargets = currentMonsters.filter(m => m.hp > 0);
@@ -277,6 +349,7 @@ export default function App() {
       addLog(`💥 英雄【${h.name}】對【${validTarget.name}】造成 ${dmg} 點打擊！`, 'hero');
     });
 
+    // 5. 怪物反擊 (受到打擊亦會為猛將增加怒氣)
     const aliveMonsters = currentMonsters.filter(m => m.hp > 0);
     if (aliveMonsters.length > 0) {
       aliveMonsters.forEach(m => {
@@ -284,6 +357,11 @@ export default function App() {
         const dmg = Math.max(3, Math.floor((m.atk - playerTotalDef) * em));
         currentPlayer.hp = Math.max(0, currentPlayer.hp - dmg);
         addLog(`👹 【${m.name}】襲擊少俠，造成 ${dmg} 點傷害！`, 'monster');
+
+        // 🔥 受擊增加怒氣
+        if (currentPlayer.job === '猛將') {
+          currentPlayer.rage = Math.min(100, currentPlayer.rage + 15);
+        }
       });
     }
 
@@ -300,7 +378,6 @@ export default function App() {
     setCombatPhase('PLAYER_SELECT');
   };
 
-  // 戰鬥勝利結算（包含裝備與英雄卡片掉落算法）
   const handleBattleVictory = (pObj, defeatedMonsters) => {
     let totalGold = 0, totalExp = 0, droppedStones = 0;
     let droppedEquipments = [];
