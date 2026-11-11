@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import GameUI from './GameUI';
 
-// 引入 3 大資料模組
 import { 
   TIER_CONFIG, 
   HERO_TEMPLATES, 
@@ -9,6 +8,9 @@ import {
 } from './data/heroes';
 
 import { 
+  EQUIP_SLOTS,
+  EQUIP_SETS_DB,
+  GEMS_DB,
   ITEM_DROP_POOL, 
   calculateEquipmentBonus 
 } from './data/equipment';
@@ -19,7 +21,6 @@ import {
   getSkillMultiplier 
 } from './data/skills';
 
-// 五行與機制設定
 const ELEMENTS = {
   '金': { name: '金', counters: '木' },
   '木': { name: '木', counters: '土' },
@@ -42,24 +43,23 @@ function getElementMultiplier(attElem, defElem) {
 }
 
 const FORMATIONS_CONFIG = {
-  'none': { name: '無陣法', bonus: {} },
-  'tianfu': { name: '天覆陣', bonus: { defPct: 0.20 } },
-  'dizai': { name: '地載陣', bonus: { hpPct: 0.15 } },
-  'bagua': { name: '八卦陣', bonus: { speedPct: 0.15 } },
-  'fengshi': { name: '鋒矢陣', bonus: { atkPct: 0.25 } }
+  'none': { name: '無陣法', desc: '標準自由站位，無額外陣法增益。', icon: '⚪', bonus: {} },
+  'tianfu': { name: '天覆陣', desc: '天罡護體！全隊護甲 +20%，受到傷害 -10%。', icon: '🛡️', bonus: { defPct: 0.20, damageTakenPct: -0.10 } },
+  'dizai': { name: '地載陣', desc: '厚德載物！全隊生命上限 +15%，格擋率 +15%。', icon: '🏔️', bonus: { hpPct: 0.15, blockPct: 0.15 } },
+  'bagua': { name: '八卦陣', desc: '陰陽迴轉！五行法術傷害 +15%，速度 +15%。', icon: '☯️', bonus: { elemDmgPct: 0.15, speedPct: 0.15 } },
+  'fengshi': { name: '鋒矢陣', desc: '如箭離弦！全隊物理攻擊 +25%，暴擊率 +10%。', icon: '🏹', bonus: { atkPct: 0.25, critPct: 0.10 } }
 };
 
 const ZONES = [
-  { id: 'z1', name: '新手竹林', monsters: [{ name: '竹林野兔', hp: 80, atk: 16, def: 3, exp: 35, gold: 25 }, { name: '青竹小蛇', hp: 100, atk: 20, def: 5, exp: 45, gold: 30 }] },
-  { id: 'z2', name: '黑山寨', monsters: [{ name: '黃巾刀客', hp: 220, atk: 36, def: 9, exp: 90, gold: 70 }, { name: '黑山狼妖', hp: 280, atk: 45, def: 12, exp: 120, gold: 95 }] },
-  { id: 'z3', name: '火雲洞', monsters: [{ name: '赤焰火蝠', hp: 550, atk: 68, def: 16, exp: 200, gold: 170 }, { name: '火雲洞主', hp: 980, atk: 92, def: 22, exp: 360, gold: 320 }] },
-  { id: 'z4', name: '蓬萊仙島', monsters: [{ name: '仙境靈鹿', hp: 1350, atk: 110, def: 30, exp: 500, gold: 420 }, { name: '守護仙童', hp: 1800, atk: 135, def: 38, exp: 650, gold: 550 }] }
+  { id: 'z1', name: '新手竹林 (Lvl.1-4)', monsters: [{ name: '竹林野兔', hp: 80, atk: 16, def: 3, exp: 35, gold: 25 }, { name: '青竹小蛇', hp: 100, atk: 20, def: 5, exp: 45, gold: 30 }] },
+  { id: 'z2', name: '黑山寨 (Lvl.5-9)', monsters: [{ name: '黃巾刀客', hp: 220, atk: 36, def: 9, exp: 90, gold: 70 }, { name: '黑山狼妖', hp: 280, atk: 45, def: 12, exp: 120, gold: 95 }] },
+  { id: 'z3', name: '火雲洞 (Lvl.10-14)', monsters: [{ name: '赤焰火蝠', hp: 550, atk: 68, def: 16, exp: 200, gold: 170 }, { name: '火雲洞主', hp: 980, atk: 92, def: 22, exp: 360, gold: 320 }] },
+  { id: 'z4', name: '蓬萊仙島 (Lvl.15+)', monsters: [{ name: '仙境靈鹿', hp: 1350, atk: 110, def: 30, exp: 500, gold: 420 }, { name: '守護仙童', hp: 1800, atk: 135, def: 38, exp: 650, gold: 550 }] }
 ];
 
 const LOCAL_STORAGE_KEY = 'MYSTINA_RPG_SAVE_V2';
 
 export default function App() {
-  // 1. 創角與基礎 State
   const [gameStarted, setGameStarted] = useState(false);
   const [creationData, setCreationData] = useState({
     name: "太古少俠",
@@ -70,7 +70,6 @@ export default function App() {
   });
   const [starterHeroCandidates, setStarterHeroCandidates] = useState([]);
 
-  // 主角數值 State
   const [player, setPlayer] = useState({
     name: "太古少俠",
     job: "猛將",
@@ -90,14 +89,12 @@ export default function App() {
     equipped: { weapon: null, offhand: null, helmet: null, armor: null, shoes: null, accessory: null }
   });
 
-  // 英雄與隊伍
   const [heroRoster, setHeroRoster] = useState([]);
   const [activeHeroInstanceIds, setActiveHeroInstanceIds] = useState([]);
   const [currentFormation, setCurrentFormation] = useState('none');
   const [equipmentInventory, setEquipmentInventory] = useState(ITEM_DROP_POOL.slice(0, 3));
   const [towerFloor, setTowerFloor] = useState(1);
 
-  // 戰鬥 State
   const [activeTab, setActiveTab] = useState('combat');
   const [currentZoneIndex, setCurrentZoneIndex] = useState(0);
   const [monsters, setMonsters] = useState([]);
@@ -107,13 +104,11 @@ export default function App() {
   const [combatPhase, setCombatPhase] = useState('PLAYER_SELECT');
   const [victorySummary, setVictorySummary] = useState(null);
 
-  // 存檔 State
   const [jsonSaveText, setJsonSaveText] = useState('');
   const [saveLoadStatus, setSaveLoadStatus] = useState('');
 
   const chatEndRef = useRef(null);
 
-  // 初始化起步英雄與讀取存檔
   useEffect(() => {
     const t1s = HERO_TEMPLATES.filter(t => t.tier === 1);
     const cands = t1s.map(t => instantiateHero(t, true, null, getRandomElement));
@@ -139,7 +134,6 @@ export default function App() {
     }
   }, []);
 
-  // 自動備份
   useEffect(() => {
     if (gameStarted) {
       try {
@@ -159,9 +153,8 @@ export default function App() {
     .map(id => heroRoster.find(h => h.instanceId === id))
     .filter(Boolean);
 
-  // 計算最終屬性加成
   const { bonus: equipBonus, setAtkPct, setHpPct, setMpPct, setDefPct } = calculateEquipmentBonus(player.equipped);
-  const formBonus = FORMATIONS_CONFIG[currentFormation].bonus || {};
+  const formBonus = FORMATIONS_CONFIG[currentFormation]?.bonus || {};
 
   const playerTotalMaxHp = Math.floor((player.maxHp + (player.stats.con * 16) + equipBonus.hp) * (1 + setHpPct + (formBonus.hpPct || 0)));
   const playerTotalMaxMp = Math.floor((player.maxMp + (player.stats.int * 10) + equipBonus.mp) * (1 + setMpPct));
@@ -273,7 +266,6 @@ export default function App() {
       addLog(`🗡️ 你打擊【${targetM.name}】，造成 ${dmg} 點傷害！`, 'player');
     }
 
-    // 英雄攻擊
     currentHeroes.forEach(h => {
       if (h.hp <= 0) return;
       const aliveTargets = currentMonsters.filter(m => m.hp > 0);
@@ -285,7 +277,6 @@ export default function App() {
       addLog(`💥 英雄【${h.name}】對【${validTarget.name}】造成 ${dmg} 點打擊！`, 'hero');
     });
 
-    // 怪物反擊
     const aliveMonsters = currentMonsters.filter(m => m.hp > 0);
     if (aliveMonsters.length > 0) {
       aliveMonsters.forEach(m => {
@@ -309,35 +300,89 @@ export default function App() {
     setCombatPhase('PLAYER_SELECT');
   };
 
+  // 戰鬥勝利結算（包含裝備與英雄卡片掉落算法）
   const handleBattleVictory = (pObj, defeatedMonsters) => {
-    let totalGold = 0, totalExp = 0;
-    defeatedMonsters.forEach(m => { totalGold += m.gold; totalExp += m.exp; });
+    let totalGold = 0, totalExp = 0, droppedStones = 0;
+    let droppedEquipments = [];
 
-    let newPlayer = { ...pObj, gold: pObj.gold + totalGold, exp: pObj.exp + totalExp };
-    if (newPlayer.exp >= newPlayer.maxExp) {
-      newPlayer.level += 1;
+    defeatedMonsters.forEach(m => {
+      totalGold += m.gold;
+      totalExp += m.exp;
+      if (Math.random() < 0.45) droppedStones += 1;
+      if (Math.random() < 0.35) {
+        const template = ITEM_DROP_POOL[Math.floor(Math.random() * ITEM_DROP_POOL.length)];
+        droppedEquipments.push({ ...template, refineLevel: 0, uid: `eq_${Date.now()}_${Math.random()}` });
+      }
+    });
+
+    let droppedHero = null;
+    if (Math.random() < 0.30) {
+      const candidates = HERO_TEMPLATES.filter(t => t.tier <= Math.min(5, currentZoneIndex + 2));
+      const picked = candidates[Math.floor(Math.random() * candidates.length)];
+      droppedHero = instantiateHero(picked, true, null, getRandomElement);
+      setHeroRoster(prev => [...prev, droppedHero]);
+    }
+
+    let newPlayer = {
+      ...pObj,
+      gold: pObj.gold + totalGold,
+      refineStones: pObj.refineStones + droppedStones,
+      exp: pObj.exp + totalExp
+    };
+    let msgs = [];
+
+    while (newPlayer.exp >= newPlayer.maxExp) {
       newPlayer.exp -= newPlayer.maxExp;
+      newPlayer.level += 1;
       newPlayer.maxExp = Math.floor(newPlayer.maxExp * 1.5);
+      newPlayer.maxHp += 30;
+      newPlayer.maxMp += 20;
+      newPlayer.hp = newPlayer.maxHp;
+      newPlayer.mp = newPlayer.maxMp;
       newPlayer.statPoints += 3;
+      newPlayer.sp += 1;
+      newPlayer.tp += 1;
+      msgs.push(`🎉 升級至 Level ${newPlayer.level}！獲得 3 點屬性點與 1 點 SP！`);
     }
 
     setPlayer(newPlayer);
-    setVictorySummary({ gold: totalGold, exp: totalExp });
+    if (droppedEquipments.length > 0) {
+      setEquipmentInventory(prev => [...prev, ...droppedEquipments]);
+    }
+
+    setVictorySummary({
+      gold: totalGold,
+      exp: totalExp,
+      stones: droppedStones,
+      droppedEquipments,
+      droppedHero,
+      msgs
+    });
   };
 
   const handleRefineEquipment = (item) => {
     const level = item.refineLevel || 0;
-    if (player.gold < 100 || player.refineStones < 1) return;
-    setPlayer(p => ({ ...p, gold: p.gold - 100, refineStones: p.refineStones - 1 }));
-    const updated = { ...item, refineLevel: level + 1 };
+    if (player.gold < (level + 1) * 120 || player.refineStones < 1) return;
+    const isSuccess = Math.random() < (level < 4 ? 1.0 : 0.65);
+    setPlayer(p => ({ ...p, gold: p.gold - (level + 1) * 120, refineStones: p.refineStones - 1 }));
+    const nextLevel = isSuccess ? level + 1 : Math.max(0, level - 1);
+    const updated = { ...item, refineLevel: nextLevel };
+
     setEquipmentInventory(prev => prev.map(i => i.uid === item.uid ? updated : i));
+    if (player.equipped[item.type]?.uid === item.uid) {
+      setPlayer(p => ({ ...p, equipped: { ...p.equipped, [item.type]: updated } }));
+    }
   };
 
   const handleSocketGem = (item, gem, socketIdx) => {
     let newSockets = [...(item.sockets || [null])];
     newSockets[socketIdx] = gem;
     const updated = { ...item, sockets: newSockets };
+
     setEquipmentInventory(prev => prev.map(i => i.uid === item.uid ? updated : i));
+    if (player.equipped[item.type]?.uid === item.uid) {
+      setPlayer(p => ({ ...p, equipped: { ...p.equipped, [item.type]: updated } }));
+    }
   };
 
   const handleExportSave = () => {
@@ -371,7 +416,6 @@ export default function App() {
     }
   };
 
-  // 2. 將所有狀態與 Function 傳給 GameUI 進行繪製
   return (
     <GameUI
       gameStarted={gameStarted}
@@ -401,6 +445,7 @@ export default function App() {
       spawnEncounter={spawnEncounter}
       handleExecuteRound={handleExecuteRound}
       equipmentInventory={equipmentInventory}
+      setEquipmentInventory={setEquipmentInventory}
       handleRefineEquipment={handleRefineEquipment}
       handleSocketGem={handleSocketGem}
       currentFormation={currentFormation}
