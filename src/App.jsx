@@ -9,7 +9,32 @@ import {
 } from 'lucide-react';
 
 // ==========================================
-// 1. FIVE ELEMENTS & FORMATIONS (五行與陣法)
+// 1. 引入拆分出來的 3 個資料模組 (MODULE IMPORTS)
+// ==========================================
+import { 
+  TIER_CONFIG, 
+  HERO_CLASS_GROWTH_WEIGHTS, 
+  INNATE_SKILLS_DB, 
+  HERO_TEMPLATES, 
+  instantiateHero 
+} from './data/heroes';
+
+import { 
+  EQUIP_SLOTS, 
+  EQUIP_SETS_DB, 
+  GEMS_DB, 
+  ITEM_DROP_POOL, 
+  calculateEquipmentBonus 
+} from './data/equipment';
+
+import { 
+  JOBS_CONFIG, 
+  PROTAGONIST_SKILLS_DB, 
+  getSkillMultiplier 
+} from './data/skills';
+
+// ==========================================
+// 2. 全域五行與陣法機制設定 (GAME MECHANICS)
 // ==========================================
 const ELEMENTS = {
   '金': { name: '金', icon: '⚔️', counters: '木', color: 'text-yellow-400 bg-yellow-950/80 border-yellow-500', badge: 'bg-yellow-500 text-slate-950', status: '破甲' },
@@ -40,229 +65,7 @@ const FORMATIONS_CONFIG = {
   'fengshi': { name: '鋒矢陣', desc: '如箭離弦！全隊物理攻擊 +25%，暴擊率 +10%。', icon: '🏹', bonus: { atkPct: 0.25, critPct: 0.10 } }
 };
 
-// ==========================================
-// 2. PROTAGONIST CLASSES & STRICT SKILLS
-// ==========================================
-const JOBS_CONFIG = {
-  '猛將': {
-    title: '猛將',
-    icon: '⚔️',
-    resourceType: 'rage',
-    baseHp: 260, baseMp: 0, baseAtk: 38, baseDef: 14, baseSpeed: 10,
-    desc: '物理近戰霸主。嚴格禁止法術！戰鬥中透過攻擊與受擊累積【怒氣 (0-100)】釋放毀滅重擊。',
-    advancements: [
-      { id: 'berserker', name: '狂戰士', desc: '極致物理爆發！血量越低攻擊力越高，解鎖【血怒斬】。' },
-      { id: 'guardian', name: '鎮國鐵衛', desc: '鋼鐵神盾！大幅提升護甲與生命，為英雄抵擋傷害。' }
-    ]
-  },
-  '巧匠': {
-    title: '巧匠',
-    icon: '🏹',
-    resourceType: 'ammo',
-    baseHp: 180, baseMp: 50, baseAtk: 32, baseDef: 8, baseSpeed: 18,
-    desc: '靈巧暗器與弩箭大師。消耗【暗器彈藥】釋放高暴擊穿刺與毒蛛陷阱。',
-    advancements: [
-      { id: 'sniper', name: '神射手', desc: '無視防禦與高額暴擊！解鎖【萬箭貫日】。' },
-      { id: 'trapper', name: '機關師', desc: '各種麻痺與減速陷阱控場，削弱全場敵怪。' }
-    ]
-  },
-  '術士': {
-    title: '術士',
-    icon: '🔥',
-    resourceType: 'incantation',
-    baseHp: 140, baseMp: 170, baseAtk: 40, baseDef: 5, baseSpeed: 12,
-    desc: '純粹五行元素法師。消耗 MP 釋法，持續疊加【法術咒印】廣域爆發。',
-    advancements: [
-      { id: 'elementalist', name: '元素使', desc: '毀天滅地廣域法術，五行爆發傷害增加 35%。' },
-      { id: 'yin_yang', name: '陰陽師', desc: '擅長詛咒、冰封與封印敵方行動。' }
-    ]
-  },
-  '藥師': {
-    title: '藥師',
-    icon: '🌿',
-    resourceType: 'mp',
-    baseHp: 170, baseMp: 130, baseAtk: 24, baseDef: 9, baseSpeed: 11,
-    desc: '懸壺濟世醫者。擁有隊伍強效治療、金鐘護盾與萬毒噬心 DoT。',
-    advancements: [
-      { id: 'saint_healer', name: '聖醫', desc: '大範圍強效治療、護盾與自動恢復。' },
-      { id: 'poison_doctor', name: '毒醫', desc: '將劇毒傷害轉化為全隊自我治療。' }
-    ]
-  },
-  '風水師': {
-    title: '風水師',
-    icon: '☯️',
-    resourceType: 'mp',
-    baseHp: 180, baseMp: 110, baseAtk: 30, baseDef: 9, baseSpeed: 14,
-    desc: '操縱天地奇門遁甲與五行印記大師。能標記陣法印記引爆全場。',
-    advancements: [
-      { id: 'formation_master', name: '陣法宗師', desc: '陣法增益效果提升 100%，大幅強化團隊。' },
-      { id: 'summoner', name: '召喚師', desc: '召喚太古石傀與風水靈獸協同打擊。' }
-    ]
-  }
-};
-
-const PROTAGONIST_SKILLS_DB = {
-  '猛將': [
-    { id: 'm_heavy_slash', name: '破甲重 strike', type: 'single', costType: 'rage', cost: 20, baseMult: 2.0, desc: '【物理】消耗 20 怒氣，造成 2.0x 物理破甲打擊。' },
-    { id: 'm_cleave', name: '震地狂波', type: 'aoe', costType: 'rage', cost: 40, baseMult: 1.4, desc: '【物理】消耗 40 怒氣，對全體敵怪造成 1.4x 物理打擊。' },
-    { id: 'm_blood_rage', name: '血怒屠戮', type: 'single', costType: 'rage', cost: 60, baseMult: 3.2, desc: '【物理】消耗 60 怒氣，造成 3.2x 極限物理斬殺！' }
-  ],
-  '巧匠': [
-    { id: 'q_rapid_shot', name: '連環飛針', type: 'single', costType: 'ammo', cost: 2, baseMult: 1.8, desc: '【暗器】消耗 2 彈藥，發射飛針造成 1.8x 穿刺打擊。' },
-    { id: 'q_spider_trap', name: '毒蛛陷阱', type: 'aoe', costType: 'ammo', cost: 3, baseMult: 1.3, desc: '【陷阱】消耗 3 彈藥，鋪設毒蛛陣全體造成 1.3x 毒傷。' },
-    { id: 'q_arrow_storm', name: '萬箭貫日', type: 'aoe', costType: 'ammo', cost: 5, baseMult: 2.2, desc: '【貫穿】消耗 5 彈藥，散射箭雨造成 2.2x 貫穿打擊。' }
-  ],
-  '術士': [
-    { id: 's_fireball', name: '疾火爆裂', type: 'single', costType: 'mp', cost: 15, baseMult: 2.2, desc: '【法術】消耗 15 MP，造成 2.2x 爆發法傷並獲得 1 層咒印。' },
-    { id: 's_frost_nova', name: '冰封千里', type: 'aoe', costType: 'mp', cost: 28, baseMult: 1.5, desc: '【法術】消耗 28 MP，全體造成 1.5x 冰霜法傷。' },
-    { id: 's_thunder', name: '九天雷劫', type: 'single', costType: 'mp', cost: 35, baseMult: 3.5, desc: '【法術】消耗 35 MP，引發天雷造成 3.5x 爆發法傷。' }
-  ],
-  '藥師': [
-    { id: 'y_heal', name: '神農百草', type: 'heal', costType: 'mp', cost: 18, baseMult: 2.0, desc: '【醫術】消耗 18 MP，全隊恢復 2.0x HP。' },
-    { id: 'y_shield', name: '金鐘護體', type: 'shield', costType: 'mp', cost: 22, baseMult: 1.5, desc: '【防護】消耗 22 MP，張開金鐘罩吸收傷害。' },
-    { id: 'y_poison', name: '萬毒噬心', type: 'single', costType: 'mp', cost: 25, baseMult: 2.6, desc: '【毒術】消耗 25 MP，注入劇毒造成 2.6x 毒傷。' }
-  ],
-  '風水師': [
-    { id: 'f_mark', name: '風水印記', type: 'single', costType: 'mp', cost: 14, baseMult: 1.9, desc: '【風水】消耗 14 MP，打入印記造成 1.9x 元素打擊。' },
-    { id: 'f_break', name: '五行破陣', type: 'aoe', costType: 'mp', cost: 26, baseMult: 1.6, desc: '【風水】消耗 26 MP，引爆全場造成 1.6x 元素傷害。' },
-    { id: 'f_qimen', name: '奇門遁甲', type: 'aoe', costType: 'mp', cost: 38, baseMult: 2.2, desc: '【風水】消耗 38 MP，召喚遁甲大陣爆發 2.2x 傷害。' }
-  ]
-};
-
-// ==========================================
-// 3. EQUIPMENT, SETS & GEMS
-// ==========================================
-const EQUIP_SLOTS = [
-  { key: 'weapon', label: '主手武器', icon: '⚔️' },
-  { key: 'offhand', label: '副手', icon: '🛡️' },
-  { key: 'helmet', label: '頭盔', icon: '🪖' },
-  { key: 'armor', label: '胸甲', icon: '👕' },
-  { key: 'shoes', label: '鞋子', icon: '👟' },
-  { key: 'accessory', label: '飾品', icon: '💍' }
-];
-
-const EQUIP_SETS_DB = {
-  'set_qinglong': {
-    name: '【青龍猛將套裝】',
-    bonus2: { atkPct: 0.15 },
-    bonus4: { atkPct: 0.25, hpPct: 0.20 },
-    bonus6: { atkPct: 0.40, hpPct: 0.30, critPct: 0.15 },
-    desc: '2件: 物攻+15% | 4件: 物攻+25%, HP+20% | 6件: 物攻+40%, HP+30%, 暴擊+15%'
-  },
-  'set_zhuque': {
-    name: '【朱雀法皇套裝】',
-    bonus2: { mpPct: 0.20 },
-    bonus4: { mpPct: 0.35, elemDmgPct: 0.20 },
-    bonus6: { mpPct: 0.50, elemDmgPct: 0.40, speedPct: 0.20 },
-    desc: '2件: MP+20% | 4件: MP+35%, 法傷+20% | 6件: MP+50%, 法傷+40%, 速度+20%'
-  }
-};
-
-const GEMS_DB = [
-  { id: 'gem_ruby', name: '紅寶石 (生命)', bonusText: 'HP +150', bonus: { hp: 150 }, color: 'text-red-400 bg-red-950 border-red-500' },
-  { id: 'gem_topaz', name: '黃寶石 (力量)', bonusText: '物攻 +20', bonus: { atk: 20 }, color: 'text-amber-400 bg-amber-950 border-amber-500' },
-  { id: 'gem_sapphire', name: '藍寶石 (智慧)', bonusText: 'MP +80 & 法攻 +12', bonus: { mp: 80, atk: 12 }, color: 'text-cyan-400 bg-cyan-950 border-cyan-500' }
-];
-
-const ITEM_DROP_POOL = [
-  { id: 'eq_w1', name: '精鋼長劍', type: 'weapon', setKey: 'set_qinglong', bonus: { atk: 22 }, rarity: 'common', sockets: [null, null], desc: '普通精鋼兵刃。' },
-  { id: 'eq_w2', name: '青龍偃月刀', type: 'weapon', setKey: 'set_qinglong', bonus: { atk: 58, hp: 130 }, rarity: 'epic', sockets: [null, null], desc: '散發青龍寒氣的神兵。' },
-  { id: 'eq_o1', name: '藤木盾', type: 'offhand', setKey: 'set_qinglong', bonus: { def: 14, hp: 90 }, rarity: 'common', sockets: [null], desc: '防護盾牌。' },
-  { id: 'eq_h1', name: '紫金盔', type: 'helmet', setKey: 'set_qinglong', bonus: { def: 16, hp: 110 }, rarity: 'rare', sockets: [null], desc: '堅固頭盔。' },
-  { id: 'eq_a1', name: '朱雀法袍', type: 'armor', setKey: 'set_zhuque', bonus: { def: 22, mp: 160 }, rarity: 'epic', sockets: [null, null], desc: '織入朱雀羽毛的神法袍。' },
-  { id: 'eq_s1', name: '疾風靴', type: 'shoes', setKey: 'set_zhuque', bonus: { speed: 16, def: 9 }, rarity: 'rare', sockets: [null], desc: '輕靈皮靴。' },
-  { id: 'eq_r1', name: '乾坤戒', type: 'accessory', setKey: 'set_zhuque', bonus: { speed: 14, atk: 20, mp: 100 }, rarity: 'rare', sockets: [null, null], desc: '仙氣戒指。' }
-];
-
-// ==========================================
-// 4. HERO CARD SYSTEM & 5 TIERS
-// ==========================================
-const TIER_CONFIG = {
-  1: { name: '無名雜兵', badge: 'Tier 1', color: 'border-slate-600 bg-slate-900 text-slate-300', tagColor: 'bg-slate-700 text-slate-200', pointPool: 10 },
-  2: { name: '鄉野豪傑', badge: 'Tier 2', color: 'border-emerald-600/80 bg-emerald-950/40 text-emerald-300', tagColor: 'bg-emerald-800 text-emerald-100', pointPool: 22 },
-  3: { name: '名城猛將', badge: 'Tier 3', color: 'border-blue-600/80 bg-blue-950/40 text-blue-300', tagColor: 'bg-blue-800 text-blue-100', pointPool: 38 },
-  4: { name: '無雙英豪', badge: 'Tier 4', color: 'border-purple-600/80 bg-purple-950/40 text-purple-300', tagColor: 'bg-purple-800 text-purple-100', pointPool: 60 },
-  5: { name: '神話天仙', badge: 'Tier 5', color: 'border-amber-400 bg-amber-950/60 text-amber-300 ring-2 ring-amber-400/40 shadow-amber-500/20 shadow-lg', tagColor: 'bg-gradient-to-r from-amber-500 to-red-500 text-slate-950 font-black', pointPool: 90 }
-};
-
-const HERO_CLASS_GROWTH_WEIGHTS = {
-  '猛將': { str: 0.50, con: 0.40, int: 0.00, agi: 0.10 },
-  '術士': { str: 0.00, con: 0.20, int: 0.60, agi: 0.20 },
-  '藥師': { str: 0.00, con: 0.35, int: 0.50, agi: 0.15 },
-  '巧匠': { str: 0.30, con: 0.20, int: 0.00, agi: 0.50 },
-  '風水師': { str: 0.00, con: 0.20, int: 0.45, agi: 0.35 }
-};
-
-const INNATE_SKILLS_DB = {
-  't2_liaohua': { name: '先鋒破陣槍', type: 'active', damageMultiplier: 2.0, desc: '【天生絕學】先鋒槍刺穿敵陣，造成 2.0x 物理傷。' },
-  't2_panfeng': { name: '無雙巨斧斬', type: 'active', damageMultiplier: 2.2, desc: '【天生絕學】劈山巨斧重擊，造成 2.2x 重傷。' },
-  't3_weiyan': { name: '狂骨烈焰斬', type: 'active', damageMultiplier: 2.6, desc: '【天生絕學】狂暴猛擊，造成 2.6x 烈焰傷。' },
-  't4_guanyu': { name: '青龍偃月斬', type: 'active', damageMultiplier: 3.4, desc: '【天生絕學】武聖青龍出海，造成 3.4x 毀滅斬殺！' },
-  't4_zhuge': { name: '臥龍八陣圖', type: 'active', damageMultiplier: 2.4, desc: '【天生絕學】掌八卦雷陣，全體敵怪 2.4x 法傷。' },
-  't4_zhaoyun': { name: '七進七出', type: 'active', damageMultiplier: 3.0, desc: '【天生絕學】子龍槍如驚雷，造成 3.0x 貫穿傷。' },
-  't4_huatuo': { name: '青囊妙手', type: 'active', damageMultiplier: 2.8, desc: '【天生絕學】神醫回春妙手，全隊恢復 2.8x HP。' },
-  't5_wukong': { name: '大鬧天宮', type: 'active', damageMultiplier: 3.8, desc: '【天生絕學】美猴王金箍棒全場 3.8x 掃蕩爆發！' }
-};
-
-const HERO_TEMPLATES = [
-  { id_base: 't1_warrior', name: '鄉勇勇士', title: '民兵志願軍', tier: 1, heroClass: '猛將', icon: '🧑‍🌾', desc: '地方鄉勇志願軍。' },
-  { id_base: 't1_mage', name: '巡邏丁卒', title: '山林丁卒', tier: 1, heroClass: '巧匠', icon: '🪓', desc: '山林巡邏隊員。' },
-  { id_base: 't1_healer', name: '采藥童子', title: '草醫學徒', tier: 1, heroClass: '藥師', icon: '🌱', desc: '山間採藥學徒。' },
-  { id_base: 't2_liaohua', name: '廖化', title: '蜀漢先鋒', tier: 2, heroClass: '猛將', icon: '🛡️', desc: '「蜀中無大將，廖化作先鋒。」' },
-  { id_base: 't2_panfeng', name: '潘鳳', title: '無雙上將', tier: 2, heroClass: '猛將', icon: '🪓', desc: '手提百斤巨斧之豪傑。' },
-  { id_base: 't3_weiyan', name: '魏延', title: '長沙狂骨', tier: 3, heroClass: '猛將', icon: '🗡️', desc: '勇冠三軍之狂傲名將。' },
-  { id_base: 't4_guanyu', name: '關羽', title: '美髯武聖', tier: 4, heroClass: '猛將', icon: '🧔', desc: '威震華夏，青龍刀出無人能擋！' },
-  { id_base: 't4_zhuge', name: '諸葛亮', title: '臥龍先生', tier: 4, heroClass: '術士', icon: '🪶', desc: '借東風掌八陣圖之絕代謀聖。' },
-  { id_base: 't4_zhaoyun', name: '趙雲', title: '常山趙子龍', tier: 4, heroClass: '巧匠', icon: '⚡', desc: '七進七出長坂坡，槍如驚雷。' },
-  { id_base: 't4_huatuo', name: '華佗', title: '神醫青囊', tier: 4, heroClass: '藥師', icon: '💊', desc: '青囊妙手回春拯救蒼生。' },
-  { id_base: 't5_wukong', name: '齊天大聖', title: '美猴王孫悟空', tier: 5, heroClass: '猛將', icon: '🐒', desc: '大鬧天宮，金箍棒力掃千軍萬馬！' }
-];
-
-function instantiateHero(template, randomElem = true, overrideElem = null) {
-  const tier = template.tier || 1;
-  const tierInfo = TIER_CONFIG[tier];
-  const classInfo = HERO_CLASS_GROWTH_WEIGHTS[template.heroClass] || HERO_CLASS_GROWTH_WEIGHTS['猛將'];
-  
-  const totalPoints = tierInfo.pointPool;
-  let str = 2 + Math.floor((totalPoints * classInfo.str));
-  let con = 2 + Math.floor((totalPoints * classInfo.con));
-  let int = 2 + Math.floor((totalPoints * classInfo.int));
-  let agi = 2 + Math.floor((totalPoints * classInfo.agi));
-
-  const maxHp = 130 + (tier * 45) + (con * 16);
-  const atk = 16 + (tier * 11) + (str * 3) + (int * 2);
-  const def = 5 + (tier * 4) + (con * 1);
-  const speed = 10 + (tier * 2) + (agi * 2);
-
-  const instanceId = `${template.id_base}_${Date.now()}_${Math.floor(Math.random()*1000)}`;
-  const innateSkill = tier >= 2 ? (INNATE_SKILLS_DB[template.id_base] || null) : null;
-  const assignedElement = overrideElem || (randomElem ? getRandomElement() : '金');
-
-  return {
-    instanceId,
-    baseId: template.id_base,
-    name: template.name,
-    title: template.title,
-    tier,
-    heroClass: template.heroClass,
-    element: assignedElement,
-    level: 1,
-    exp: 0,
-    maxExp: 100,
-    hp: maxHp,
-    maxHp: maxHp,
-    atk,
-    def,
-    speed,
-    fatigue: 0,
-    stats: { str, con, int, agi },
-    innateSkill,
-    icon: template.icon,
-    desc: template.desc
-  };
-}
-
-// MAP ZONES
+// 地圖關卡設定
 const ZONES = [
   { id: 'z1', name: '新手竹林 (Lvl.1-4)', lvlReq: 1, monsters: [ { name: '竹林野兔', hp: 80, atk: 16, def: 3, speed: 10, exp: 35, gold: 25 }, { name: '青竹小蛇', hp: 100, atk: 20, def: 5, speed: 12, exp: 45, gold: 30 } ] },
   { id: 'z2', name: '黑山寨 (Lvl.5-9)', lvlReq: 5, monsters: [ { name: '黃巾刀客', hp: 220, atk: 36, def: 9, speed: 12, exp: 90, gold: 70 }, { name: '黑山狼妖', hp: 280, atk: 45, def: 12, speed: 15, exp: 120, gold: 95 } ] },
@@ -272,8 +75,11 @@ const ZONES = [
 
 const LOCAL_STORAGE_KEY = 'MYSTINA_RPG_SAVE_V2';
 
+// ==========================================
+// 3. REACT 主組件 (MAIN APP COMPONENT)
+// ==========================================
 export default function App() {
-  // Game Setup
+  // 創角與遊戲狀態
   const [gameStarted, setGameStarted] = useState(false);
   const [creationData, setCreationData] = useState({
     name: "太古少俠",
@@ -284,7 +90,7 @@ export default function App() {
   });
   const [starterHeroCandidates, setStarterHeroCandidates] = useState([]);
 
-  // Player State
+  // 主角數值
   const [player, setPlayer] = useState({
     name: "太古少俠",
     gender: "male",
@@ -309,14 +115,14 @@ export default function App() {
     inventory: []
   });
 
-  // Hero Roster & Multi-Hero Deployment (Up to 4 active hero instance IDs)
+  // 英雄陣容與出戰
   const [heroRoster, setHeroRoster] = useState([]);
-  const [activeHeroInstanceIds, setActiveHeroInstanceIds] = useState([]);
+  const [activeHeroInstanceIds, setActiveHeroInstanceIds] = useState([]); // 最多 4 位
   const [currentFormation, setCurrentFormation] = useState('none');
   const [equipmentInventory, setEquipmentInventory] = useState(ITEM_DROP_POOL.slice(0, 3));
   const [towerFloor, setTowerFloor] = useState(1);
 
-  // Combat State
+  // 戰鬥狀態
   const [activeTab, setActiveTab] = useState('combat');
   const [currentZoneIndex, setCurrentZoneIndex] = useState(0);
   const [monsters, setMonsters] = useState([]);
@@ -327,15 +133,16 @@ export default function App() {
   const [selectedPlayerAction, setSelectedPlayerAction] = useState(null);
   const [victorySummary, setVictorySummary] = useState(null);
 
-  // Save/Load Modal
+  // 存檔/匯入 modal
   const [jsonSaveText, setJsonSaveText] = useState('');
   const [saveLoadStatus, setSaveLoadStatus] = useState('');
 
   const chatEndRef = useRef(null);
 
+  // 初始化起步英雄與試讀 LocalStorage
   useEffect(() => {
     const t1s = HERO_TEMPLATES.filter(t => t.tier === 1);
-    const cands = t1s.map(t => instantiateHero(t, true));
+    const cands = t1s.map(t => instantiateHero(t, true, null, getRandomElement));
     setStarterHeroCandidates(cands);
     setCreationData(prev => ({ ...prev, selectedStarterHero: cands[0] }));
 
@@ -354,10 +161,11 @@ export default function App() {
         }
       }
     } catch (e) {
-      console.warn('Auto-load failed', e);
+      console.warn('自動載入存檔失敗', e);
     }
   }, []);
 
+  // 自動備份進度
   useEffect(() => {
     if (gameStarted) {
       try {
@@ -371,7 +179,7 @@ export default function App() {
         };
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(saveData));
       } catch (e) {
-        console.warn('Auto-save failed', e);
+        console.warn('自動存檔失敗', e);
       }
     }
   }, [player, heroRoster, activeHeroInstanceIds, currentFormation, equipmentInventory, towerFloor, gameStarted]);
@@ -380,58 +188,16 @@ export default function App() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [combatLogs]);
 
+  // 目前登場的英雄物件列表
   const activeHeroes = activeHeroInstanceIds
     .map(id => heroRoster.find(h => h.instanceId === id))
     .filter(Boolean);
 
-  const getEquipBonus = () => {
-    let bonus = { atk: 0, def: 0, hp: 0, mp: 0, speed: 0 };
-    let setCounts = {};
-
-    Object.values(player.equipped).forEach(item => {
-      if (item) {
-        const mult = 1 + ((item.refineLevel || 0) * 0.15);
-        if (item.bonus.atk) bonus.atk += Math.floor(item.bonus.atk * mult);
-        if (item.bonus.def) bonus.def += Math.floor(item.bonus.def * mult);
-        if (item.bonus.hp) bonus.hp += Math.floor(item.bonus.hp * mult);
-        if (item.bonus.mp) bonus.mp += Math.floor(item.bonus.mp * mult);
-        if (item.bonus.speed) bonus.speed += Math.floor(item.bonus.speed * mult);
-
-        if (item.sockets) {
-          item.sockets.forEach(gem => {
-            if (gem && gem.bonus) {
-              if (gem.bonus.atk) bonus.atk += gem.bonus.atk;
-              if (gem.bonus.hp) bonus.hp += gem.bonus.hp;
-              if (gem.bonus.mp) bonus.mp += gem.bonus.mp;
-              if (gem.bonus.def) bonus.def += gem.bonus.def;
-            }
-          });
-        }
-
-        if (item.setKey) {
-          setCounts[item.setKey] = (setCounts[item.setKey] || 0) + 1;
-        }
-      }
-    });
-
-    let setAtkPct = 0, setHpPct = 0, setMpPct = 0;
-    Object.keys(setCounts).forEach(sKey => {
-      const count = setCounts[sKey];
-      const setDef = EQUIP_SETS_DB[sKey];
-      if (setDef) {
-        if (count >= 2 && setDef.bonus2.atkPct) setAtkPct += setDef.bonus2.atkPct;
-        if (count >= 2 && setDef.bonus2.mpPct) setMpPct += setDef.bonus2.mpPct;
-        if (count >= 4 && setDef.bonus4.hpPct) setHpPct += setDef.bonus4.hpPct;
-        if (count >= 6 && setDef.bonus6.atkPct) setAtkPct += setDef.bonus6.atkPct;
-      }
-    });
-
-    return { bonus, setAtkPct, setHpPct, setMpPct };
-  };
-
-  const { bonus: equipBonus, setAtkPct, setHpPct, setMpPct } = getEquipBonus();
+  // 調用裝備庫 Helper 計算總屬性加成
+  const { bonus: equipBonus, setAtkPct, setHpPct, setMpPct, setDefPct } = calculateEquipmentBonus(player.equipped);
   const formBonus = FORMATIONS_CONFIG[currentFormation].bonus || {};
 
+  // 主角最終數值計算
   const statHpBonus = player.stats.con * 16;
   const statMpBonus = player.stats.int * 10;
   const statAtkBonus = (player.stats.str * 3) + (player.stats.int * 2);
@@ -441,7 +207,7 @@ export default function App() {
   const playerTotalMaxHp = Math.floor((player.maxHp + statHpBonus + equipBonus.hp) * (1 + setHpPct + (formBonus.hpPct || 0)));
   const playerTotalMaxMp = Math.floor((player.maxMp + statMpBonus + equipBonus.mp) * (1 + setMpPct));
   const playerTotalAtk = Math.floor((player.atk + statAtkBonus + equipBonus.atk + (player.talents.attack * 5)) * (1 + setAtkPct + (formBonus.atkPct || 0)));
-  const playerTotalDef = Math.floor((player.def + statDefBonus + equipBonus.def + (player.talents.defense * 3)) * (1 + (formBonus.defPct || 0)));
+  const playerTotalDef = Math.floor((player.def + statDefBonus + equipBonus.def + (player.talents.defense * 3)) * (1 + (setDefPct || 0) + (formBonus.defPct || 0)));
   const playerTotalSpeed = Math.floor(player.speed + statSpeedBonus + equipBonus.speed + (player.talents.utility * 2));
 
   const addLog = (text, type = 'info') => {
@@ -473,6 +239,7 @@ export default function App() {
     ]);
   };
 
+  // 生成 5~15 隻動態怪物群
   const spawnEncounter = (zoneIdx, customActiveHeroes = null) => {
     const deployed = customActiveHeroes !== null ? customActiveHeroes : activeHeroes;
     const totalCombatants = 1 + deployed.length;
@@ -507,6 +274,7 @@ export default function App() {
     return list;
   };
 
+  // 英雄登場切換 (含同名英雄限制防呆)
   const handleToggleDeployHero = (hero) => {
     if (activeHeroInstanceIds.includes(hero.instanceId)) {
       setActiveHeroInstanceIds(prev => prev.filter(id => id !== hero.instanceId));
@@ -527,6 +295,7 @@ export default function App() {
     }
   };
 
+  // 回合結算
   const handleExecuteRound = (isFusionUltimate = false) => {
     setCombatPhase('EXECUTING');
     let currentMonsters = [...monsters];
@@ -545,6 +314,7 @@ export default function App() {
       currentPlayer.rage = Math.min(100, currentPlayer.rage + 15);
     }
 
+    // 1. 主僕合擊奧義
     if (isFusionUltimate) {
       addLog(`✨ 觸發【主僕合擊奧義】！全軍爆發五行連鎖神技！`, 'player');
       currentMonsters.forEach(m => {
@@ -560,6 +330,7 @@ export default function App() {
       if (currentPlayer.job === '猛將') currentPlayer.rage = 0;
       else currentPlayer.mp = Math.max(0, currentPlayer.mp - 40);
     }
+    // 2. 主角行動
     else if (selectedPlayerAction && currentMonsters[targetIdx]) {
       const pAct = selectedPlayerAction;
       const targetM = currentMonsters[targetIdx];
@@ -572,7 +343,7 @@ export default function App() {
       } else if (pAct.type === 'skill') {
         const sk = pAct.skill;
         const skLvl = currentPlayer.skillLevels[pAct.skillIdx] || 1;
-        const mult = sk.baseMult + (skLvl * 0.3);
+        const mult = getSkillMultiplier(sk, skLvl);
 
         if (sk.costType === 'rage' && currentPlayer.rage < sk.cost) {
           addLog(`⚠️ 怒氣不足 (${currentPlayer.rage}/${sk.cost})！改為普通打擊。`, 'sys');
@@ -609,6 +380,7 @@ export default function App() {
       }
     }
 
+    // 3. 登場英雄聯動打擊
     currentHeroes.forEach(h => {
       if (h.hp <= 0) return;
       const aliveTargets = currentMonsters.filter(m => m.hp > 0);
@@ -637,6 +409,7 @@ export default function App() {
       return updated || rHero;
     }));
 
+    // 4. 怪物反擊
     const aliveMonsters = currentMonsters.filter(m => m.hp > 0);
     if (aliveMonsters.length > 0) {
       aliveMonsters.forEach(m => {
@@ -693,7 +466,7 @@ export default function App() {
     if (Math.random() < 0.30) {
       const candidates = HERO_TEMPLATES.filter(t => t.tier <= Math.min(5, currentZoneIndex + 2));
       const picked = candidates[Math.floor(Math.random() * candidates.length)];
-      droppedHero = instantiateHero(picked, true);
+      droppedHero = instantiateHero(picked, true, null, getRandomElement);
       setHeroRoster(prev => [...prev, droppedHero]);
     }
 
@@ -795,7 +568,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col selection:bg-amber-500 selection:text-slate-950">
       
-      {/* 1. CREATION MODAL */}
+      {/* 1. 創角 modal */}
       {!gameStarted ? (
         <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-amber-950 flex items-center justify-center p-4">
           <div className="max-w-4xl w-full bg-slate-900/95 border-2 border-amber-500/50 rounded-2xl p-6 sm:p-8 shadow-2xl space-y-6 backdrop-blur-md">
@@ -986,7 +759,7 @@ export default function App() {
             </div>
           </nav>
 
-          {/* Main Content */}
+          {/* 主內容面板 */}
           <main className="flex-1 p-4 max-w-7xl mx-auto w-full">
             {activeTab === 'combat' && (
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -1541,7 +1314,7 @@ export default function App() {
         </>
       )}
 
-      {/* VICTORY SUMMARY MODAL */}
+      {/* 勝利結算 Modal */}
       {victorySummary && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="max-w-md w-full bg-slate-900 border-2 border-amber-500 rounded-2xl p-6 space-y-4 shadow-2xl">
