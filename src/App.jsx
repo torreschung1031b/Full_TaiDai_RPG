@@ -53,48 +53,50 @@ const FORMATIONS_CONFIG = {
 const ZONES = [
   { id: 'z1', name: '新手竹林 (Lvl.1-4)', monsters: [{ name: '竹林野兔', hp: 80, atk: 16, def: 3, exp: 35, gold: 25 }, { name: '青竹小蛇', hp: 100, atk: 20, def: 5, exp: 45, gold: 30 }] },
   { id: 'z2', name: '黑山寨 (Lvl.5-9)', monsters: [{ name: '黃巾刀客', hp: 220, atk: 36, def: 9, exp: 90, gold: 70 }, { name: '黑山狼妖', hp: 280, atk: 45, def: 12, exp: 120, gold: 95 }] },
-  { id: 'z3', name: '火雲洞 (Lvl.10-14)', monsters: [{ name: '赤焰火蝠', hp: 550, atk: 68, def: 16, exp: 200, gold: 170 }, { name: '火雲洞主', hp: 980, atk: 92, def: 22, exp: 360, gold: 320 }] },
-  { id: 'z4', name: '蓬萊仙島 (Lvl.15+)', monsters: [{ name: '仙境靈鹿', hp: 1350, atk: 110, def: 30, exp: 500, gold: 420 }, { name: '守護仙童', hp: 1800, atk: 135, def: 38, exp: 650, gold: 550 }] }
+  { id: 'z3', name: '火雲洞 (Lvl.10-14)', monsters: [{ name: '烈焰火妖', hp: 450, atk: 70, def: 18, exp: 210, gold: 180 }, { name: '熔岩怪石', hp: 600, atk: 55, def: 28, exp: 260, gold: 220 }] },
+  { id: 'z4', name: '蓬萊仙島 (Lvl.15+)', monsters: [{ name: '蓬萊仙鹿', hp: 950, atk: 120, def: 40, exp: 500, gold: 450 }, { name: '九天神將', hp: 1300, atk: 155, def: 55, exp: 750, gold: 650 }] }
 ];
-
-const LOCAL_STORAGE_KEY = 'MYSTINA_RPG_SAVE_V2';
 
 export default function App() {
   const [gameStarted, setGameStarted] = useState(false);
   const [creationData, setCreationData] = useState({
-    name: "太古少俠",
-    gender: "male",
-    job: "猛將",
-    element: "金",
+    name: '',
+    element: '金',
+    job: '猛將',
     selectedStarterHero: null
   });
+
   const [starterHeroCandidates, setStarterHeroCandidates] = useState([]);
 
+  // 主角 State
   const [player, setPlayer] = useState({
-    name: "太古少俠",
-    job: "猛將",
-    advancement: null,
-    element: "金",
+    name: '太古少俠',
     level: 1,
     exp: 0,
     maxExp: 100,
-    hp: 260, maxHp: 260,
-    mp: 100, maxMp: 100,
-    rage: 0, ammo: 20, maxAmmo: 20,
-    atk: 38, def: 14, speed: 10,
-    gold: 600, refineStones: 10,
-    statPoints: 5, sp: 2, tp: 2,
-    stats: { str: 0, con: 0, int: 0, agi: 0 },
-    skillLevels: { 0: 1, 1: 0, 2: 0 },
-    equipped: { weapon: null, offhand: null, helmet: null, armor: null, shoes: null, accessory: null }
+    job: '猛將',
+    element: '金',
+    stats: { str: 10, int: 10, con: 10, agi: 10 },
+    statPoints: 5,
+    maxHp: 150, hp: 150,
+    maxMp: 60, mp: 60,
+    rage: 0,
+    ammo: 6, maxAmmo: 6,
+    atk: 25, def: 8, speed: 10,
+    gold: 500, refineStones: 5,
+    sp: 2, tp: 0,
+    skillLevels: [1, 0, 0, 0],
+    equipped: { weapon: null, armor: null, accessory: null, hat: null, boots: null }
   });
 
+  // 英雄隊伍 State
   const [heroRoster, setHeroRoster] = useState([]);
   const [activeHeroInstanceIds, setActiveHeroInstanceIds] = useState([]);
   const [currentFormation, setCurrentFormation] = useState('none');
   const [equipmentInventory, setEquipmentInventory] = useState(ITEM_DROP_POOL.slice(0, 3));
   const [towerFloor, setTowerFloor] = useState(1);
 
+  // UI 與戰鬥 State
   const [activeTab, setActiveTab] = useState('combat');
   const [currentZoneIndex, setCurrentZoneIndex] = useState(0);
   const [monsters, setMonsters] = useState([]);
@@ -107,48 +109,43 @@ export default function App() {
   const [jsonSaveText, setJsonSaveText] = useState('');
   const [saveLoadStatus, setSaveLoadStatus] = useState('');
 
-  const chatEndRef = useRef(null);
-
+  // 初始化 Starter 3 選 1
   useEffect(() => {
-    const t1s = HERO_TEMPLATES.filter(t => t.tier === 1);
-    const cands = t1s.map(t => instantiateHero(t, true, null, getRandomElement));
-    setStarterHeroCandidates(cands);
-    setCreationData(prev => ({ ...prev, selectedStarterHero: cands[0] }));
+    const pool = HERO_TEMPLATES.filter(h => h.tier === 1 || h.tier === 2);
+    const shuffled = [...pool].sort(() => 0.5 - Math.random()).slice(0, 3);
+    const instanced = shuffled.map(t => instantiateHero(t, true, null, getRandomElement));
+    setStarterHeroCandidates(instanced);
+    setCreationData(prev => ({ ...prev, selectedStarterHero: instanced[0] }));
+  }, []);
 
-    try {
-      const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (saved) {
+  // 本地自動存檔載入
+  useEffect(() => {
+    const saved = localStorage.getItem('TIANWAI_RPG_SAVE');
+    if (saved) {
+      try {
         const parsed = JSON.parse(saved);
-        if (parsed && parsed.player) {
-          setPlayer(parsed.player);
-          setHeroRoster(parsed.heroRoster || []);
-          setActiveHeroInstanceIds(parsed.activeHeroInstanceIds || []);
-          setCurrentFormation(parsed.currentFormation || 'none');
-          setEquipmentInventory(parsed.equipmentInventory || []);
-          setTowerFloor(parsed.towerFloor || 1);
-          setGameStarted(true);
-        }
+        setPlayer(parsed.player);
+        setHeroRoster(parsed.heroRoster || []);
+        setActiveHeroInstanceIds(parsed.activeHeroInstanceIds || []);
+        setCurrentFormation(parsed.currentFormation || 'none');
+        setEquipmentInventory(parsed.equipmentInventory || []);
+        setTowerFloor(parsed.towerFloor || 1);
+        setGameStarted(true);
+      } catch (e) {
+        console.error("載入存檔失敗", e);
       }
-    } catch (e) {
-      console.warn('自動載入存檔失敗', e);
     }
   }, []);
 
+  // 自動存檔
   useEffect(() => {
     if (gameStarted) {
-      try {
-        const saveData = { player, heroRoster, activeHeroInstanceIds, currentFormation, equipmentInventory, towerFloor };
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(saveData));
-      } catch (e) {
-        console.warn('自動存檔失敗', e);
-      }
+      const saveData = { player, heroRoster, activeHeroInstanceIds, currentFormation, equipmentInventory, towerFloor };
+      localStorage.setItem('TIANWAI_RPG_SAVE', JSON.stringify(saveData));
     }
   }, [player, heroRoster, activeHeroInstanceIds, currentFormation, equipmentInventory, towerFloor, gameStarted]);
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [combatLogs]);
-
+  // 計算登場英雄
   const activeHeroes = activeHeroInstanceIds
     .map(id => heroRoster.find(h => h.instanceId === id))
     .filter(Boolean);
@@ -234,12 +231,12 @@ export default function App() {
     }
   };
 
-  // 核心回合處理：包含資源累積與技能釋放邏輯
+  // 核心回合處理：包含動態職業資源與隊伍英雄連動
   const handleExecuteRound = (actionInput = { type: 'attack' }, isFusionUltimate = false) => {
     setCombatPhase('EXECUTING');
     let currentMonsters = [...monsters];
     let currentPlayer = { ...player };
-    let currentHeroes = activeHeroes.map(h => ({ ...h }));
+    let currentRoster = [...heroRoster];
 
     let targetIdx = selectedTargetIndex;
     if (!currentMonsters[targetIdx] || currentMonsters[targetIdx].hp <= 0) {
@@ -253,7 +250,7 @@ export default function App() {
       currentMonsters.forEach(m => {
         if (m.hp > 0) {
           let teamAtk = playerTotalAtk;
-          currentHeroes.forEach(h => { teamAtk += h.atk; });
+          activeHeroes.forEach(h => { teamAtk += h.atk; });
           const em = getElementMultiplier(currentPlayer.element, m.element);
           const dmg = Math.max(30, Math.floor(teamAtk * 2.0 * em) - m.def);
           m.hp = Math.max(0, m.hp - dmg);
@@ -289,7 +286,6 @@ export default function App() {
       const skLvl = currentPlayer.skillLevels[actionInput.skillIdx] || 1;
       const mult = getSkillMultiplier(sk, skLvl);
 
-      // 檢查資源
       let hasResource = true;
       if (sk.costType === 'rage' && currentPlayer.rage < sk.cost) hasResource = false;
       if (sk.costType === 'mp' && currentPlayer.mp < sk.cost) hasResource = false;
@@ -297,7 +293,6 @@ export default function App() {
 
       if (!hasResource) {
         addLog(`⚠️ 資源不足，無法發動【${sk.name}】！改為普通打擊。`, 'sys');
-        // 自動降級為普通打擊
         const targetM = currentMonsters[targetIdx];
         if (targetM) {
           const em = getElementMultiplier(currentPlayer.element, targetM.element);
@@ -305,12 +300,10 @@ export default function App() {
           targetM.hp = Math.max(0, targetM.hp - dmg);
         }
       } else {
-        // 扣除資源
         if (sk.costType === 'rage') currentPlayer.rage -= sk.cost;
         if (sk.costType === 'mp') currentPlayer.mp -= sk.cost;
         if (sk.costType === 'ammo') currentPlayer.ammo -= sk.cost;
 
-        // 執行招式效果
         if (sk.type === 'aoe') {
           currentMonsters.forEach(m => {
             if (m.hp > 0) {
@@ -323,7 +316,11 @@ export default function App() {
         } else if (sk.type === 'heal') {
           const healVal = Math.floor(playerTotalAtk * mult);
           currentPlayer.hp = Math.min(playerTotalMaxHp, currentPlayer.hp + healVal);
-          currentHeroes.forEach(h => { h.hp = Math.min(h.maxHp, h.hp + healVal); });
+          currentRoster = currentRoster.map(h => 
+            activeHeroInstanceIds.includes(h.instanceId)
+              ? { ...h, hp: Math.min(h.maxHp, h.hp + healVal) }
+              : h
+          );
           addLog(`🌿 施展【${sk.name} (Lv.${skLvl})】，全隊恢復 +${healVal} HP！`, 'player');
         } else {
           const targetM = currentMonsters[targetIdx];
@@ -337,19 +334,32 @@ export default function App() {
       }
     }
 
-    // 4. 登場英雄聯動打擊
-    currentHeroes.forEach(h => {
-      if (h.hp <= 0) return;
+    // 4. 登場英雄出手打擊與資源積攢
+    currentRoster = currentRoster.map(h => {
+      if (!activeHeroInstanceIds.includes(h.instanceId)) return h;
+      if (h.hp <= 0) return h;
+
       const aliveTargets = currentMonsters.filter(m => m.hp > 0);
-      if (aliveTargets.length === 0) return;
+      if (aliveTargets.length === 0) return h;
       const validTarget = aliveTargets[Math.floor(Math.random() * aliveTargets.length)];
       const em = getElementMultiplier(h.element, validTarget.element);
       const dmg = Math.max(5, Math.floor((h.atk - validTarget.def) * em));
       validTarget.hp = Math.max(0, validTarget.hp - dmg);
       addLog(`💥 英雄【${h.name}】對【${validTarget.name}】造成 ${dmg} 點打擊！`, 'hero');
+
+      // 更新英雄專屬資源
+      let updatedRage = h.rage || 0;
+      let updatedAmmo = h.ammo || 6;
+      let updatedMp = h.mp || 50;
+
+      if (h.job === '猛將') updatedRage = Math.min(100, updatedRage + 20);
+      else if (h.job === '巧匠') updatedAmmo = Math.min(h.maxAmmo || 6, updatedAmmo + 2);
+      else updatedMp = Math.min(h.maxMp || 100, updatedMp + 15);
+
+      return { ...h, rage: updatedRage, ammo: updatedAmmo, mp: updatedMp };
     });
 
-    // 5. 怪物反擊 (受到打擊亦會為猛將增加怒氣)
+    // 5. 怪物群體反擊
     const aliveMonsters = currentMonsters.filter(m => m.hp > 0);
     if (aliveMonsters.length > 0) {
       aliveMonsters.forEach(m => {
@@ -358,15 +368,27 @@ export default function App() {
         currentPlayer.hp = Math.max(0, currentPlayer.hp - dmg);
         addLog(`👹 【${m.name}】襲擊少俠，造成 ${dmg} 點傷害！`, 'monster');
 
-        // 🔥 受擊增加怒氣
         if (currentPlayer.job === '猛將') {
           currentPlayer.rage = Math.min(100, currentPlayer.rage + 15);
         }
+
+        // 隊伍英雄承傷
+        currentRoster = currentRoster.map(h => {
+          if (!activeHeroInstanceIds.includes(h.instanceId) || h.hp <= 0) return h;
+          if (Math.random() < 0.4) {
+            const hDmg = Math.max(2, Math.floor(m.atk * 0.6));
+            const newHp = Math.max(0, h.hp - hDmg);
+            if (newHp === 0) addLog(`💀 英雄【${h.name}】不敵倒下！`, 'sys');
+            return { ...h, hp: newHp };
+          }
+          return h;
+        });
       });
     }
 
     setMonsters(currentMonsters);
     setPlayer(currentPlayer);
+    setHeroRoster(currentRoster);
 
     if (currentMonsters.every(m => m.hp <= 0)) {
       addLog(`🎉 敵方全數殲滅！`, 'sys');
@@ -406,7 +428,6 @@ export default function App() {
       refineStones: pObj.refineStones + droppedStones,
       exp: pObj.exp + totalExp
     };
-    let msgs = [];
 
     while (newPlayer.exp >= newPlayer.maxExp) {
       newPlayer.exp -= newPlayer.maxExp;
@@ -419,7 +440,6 @@ export default function App() {
       newPlayer.statPoints += 3;
       newPlayer.sp += 1;
       newPlayer.tp += 1;
-      msgs.push(`🎉 升級至 Level ${newPlayer.level}！獲得 3 點屬性點與 1 點 SP！`);
     }
 
     setPlayer(newPlayer);
@@ -431,65 +451,35 @@ export default function App() {
       gold: totalGold,
       exp: totalExp,
       stones: droppedStones,
-      droppedEquipments,
-      droppedHero,
-      msgs
+      equipments: droppedEquipments,
+      hero: droppedHero
     });
   };
 
-  const handleRefineEquipment = (item) => {
-    const level = item.refineLevel || 0;
-    if (player.gold < (level + 1) * 120 || player.refineStones < 1) return;
-    const isSuccess = Math.random() < (level < 4 ? 1.0 : 0.65);
-    setPlayer(p => ({ ...p, gold: p.gold - (level + 1) * 120, refineStones: p.refineStones - 1 }));
-    const nextLevel = isSuccess ? level + 1 : Math.max(0, level - 1);
-    const updated = { ...item, refineLevel: nextLevel };
-
-    setEquipmentInventory(prev => prev.map(i => i.uid === item.uid ? updated : i));
-    if (player.equipped[item.type]?.uid === item.uid) {
-      setPlayer(p => ({ ...p, equipped: { ...p.equipped, [item.type]: updated } }));
-    }
-  };
-
-  const handleSocketGem = (item, gem, socketIdx) => {
-    let newSockets = [...(item.sockets || [null])];
-    newSockets[socketIdx] = gem;
-    const updated = { ...item, sockets: newSockets };
-
-    setEquipmentInventory(prev => prev.map(i => i.uid === item.uid ? updated : i));
-    if (player.equipped[item.type]?.uid === item.uid) {
-      setPlayer(p => ({ ...p, equipped: { ...p.equipped, [item.type]: updated } }));
-    }
+  const handleRestInn = () => {
+    setPlayer(prev => ({ ...prev, hp: playerTotalMaxHp, mp: playerTotalMaxMp, rage: 0, ammo: prev.maxAmmo }));
+    setHeroRoster(prev => prev.map(h => ({ ...h, hp: h.maxHp, rage: 0, ammo: h.maxAmmo || 6, mp: h.maxMp || 100 })));
+    addLog(`🏨 在客棧休養生息，全隊 HP/MP/職業資源恢復滿值！`, 'sys');
   };
 
   const handleExportSave = () => {
-    const jsonStr = JSON.stringify({ player, heroRoster, activeHeroInstanceIds, currentFormation, equipmentInventory, towerFloor }, null, 2);
-    setJsonSaveText(jsonStr);
-    setSaveLoadStatus('存檔 JSON 匯出成功！');
+    const saveData = { player, heroRoster, activeHeroInstanceIds, currentFormation, equipmentInventory, towerFloor };
+    setJsonSaveText(JSON.stringify(saveData, null, 2));
+    setSaveLoadStatus('✅ 存檔匯出成功！請複製上方 JSON 數據。');
   };
 
   const handleImportSave = () => {
     try {
       const parsed = JSON.parse(jsonSaveText);
-      if (parsed && parsed.player) {
-        setPlayer(parsed.player);
-        setHeroRoster(parsed.heroRoster || []);
-        setActiveHeroInstanceIds(parsed.activeHeroInstanceIds || []);
-        setCurrentFormation(parsed.currentFormation || 'none');
-        setEquipmentInventory(parsed.equipmentInventory || []);
-        setTowerFloor(parsed.towerFloor || 1);
-        setGameStarted(true);
-        setSaveLoadStatus('✅ 成功匯入遊戲進度！');
-      }
+      setPlayer(parsed.player);
+      setHeroRoster(parsed.heroRoster || []);
+      setActiveHeroInstanceIds(parsed.activeHeroInstanceIds || []);
+      setCurrentFormation(parsed.currentFormation || 'none');
+      setEquipmentInventory(parsed.equipmentInventory || []);
+      setTowerFloor(parsed.towerFloor || 1);
+      setSaveLoadStatus('🎉 存檔匯入成功！系統已更新。');
     } catch (e) {
-      setSaveLoadStatus('❌ 匯入失敗，請確認 JSON 格式。');
-    }
-  };
-
-  const handleResetSave = () => {
-    if (window.confirm("確定要重置所有遊戲紀錄嗎？")) {
-      localStorage.removeItem(LOCAL_STORAGE_KEY);
-      window.location.reload();
+      setSaveLoadStatus('❌ JSON 匯入失敗，格式有誤！');
     }
   };
 
@@ -504,40 +494,36 @@ export default function App() {
       setPlayer={setPlayer}
       playerTotalMaxHp={playerTotalMaxHp}
       playerTotalMaxMp={playerTotalMaxMp}
+      playerTotalAtk={playerTotalAtk}
+      playerTotalDef={playerTotalDef}
+      heroRoster={heroRoster}
       activeHeroes={activeHeroes}
       activeHeroInstanceIds={activeHeroInstanceIds}
-      heroRoster={heroRoster}
-      setHeroRoster={setHeroRoster}
       handleToggleDeployHero={handleToggleDeployHero}
-      monsters={monsters}
-      selectedTargetIndex={selectedTargetIndex}
-      setSelectedTargetIndex={setSelectedTargetIndex}
-      combatLogs={combatLogs}
-      turnCount={turnCount}
-      combatPhase={combatPhase}
+      currentFormation={currentFormation}
+      setCurrentFormation={setCurrentFormation}
+      equipmentInventory={equipmentInventory}
+      setEquipmentInventory={setEquipmentInventory}
+      towerFloor={towerFloor}
+      setTowerFloor={setTowerFloor}
       activeTab={activeTab}
       setActiveTab={setActiveTab}
       currentZoneIndex={currentZoneIndex}
       setCurrentZoneIndex={setCurrentZoneIndex}
-      spawnEncounter={spawnEncounter}
+      monsters={monsters}
+      selectedTargetIndex={selectedTargetIndex}
+      setSelectedTargetIndex={setSelectedTargetIndex}
+      combatLogs={combatLogs}
       handleExecuteRound={handleExecuteRound}
-      equipmentInventory={equipmentInventory}
-      setEquipmentInventory={setEquipmentInventory}
-      handleRefineEquipment={handleRefineEquipment}
-      handleSocketGem={handleSocketGem}
-      currentFormation={currentFormation}
-      setCurrentFormation={setCurrentFormation}
-      towerFloor={towerFloor}
-      setTowerFloor={setTowerFloor}
+      spawnEncounter={spawnEncounter}
+      victorySummary={victorySummary}
+      setVictorySummary={setVictorySummary}
+      handleRestInn={handleRestInn}
       jsonSaveText={jsonSaveText}
       setJsonSaveText={setJsonSaveText}
       saveLoadStatus={saveLoadStatus}
       handleExportSave={handleExportSave}
       handleImportSave={handleImportSave}
-      handleResetSave={handleResetSave}
-      victorySummary={victorySummary}
-      setVictorySummary={setVictorySummary}
-      chatEndRef={chatEndRef}
     />
   );
 }
