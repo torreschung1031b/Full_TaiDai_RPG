@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   User, Layers, Play, ScrollText, Sword, Shield, Sparkles, Shirt, 
   Hammer, Users, Compass, BookOpen, Save, Coffee, RefreshCw, Crosshair 
@@ -7,6 +7,7 @@ import {
 import { TIER_CONFIG, HERO_TEMPLATES } from './data/heroes';
 import { EQUIP_SLOTS, GEMS_DB } from './data/equipment';
 import { JOBS_CONFIG, PROTAGONIST_SKILLS_DB } from './data/skills';
+import { SKILL_CARDS_DB } from './App';
 
 const ELEMENTS = {
   '金': { name: '金', icon: '⚔️', counters: '木', color: 'text-amber-300 bg-amber-950/40 border-amber-500/50', badge: 'bg-amber-500 text-slate-950', border: 'border-amber-500/50' },
@@ -31,11 +32,11 @@ const FORMATIONS_CONFIG = {
   'fengshi': { name: '鋒矢陣', desc: '如箭離弦！全隊物理攻擊 +25%，暴擊率 +10%。', icon: '🏹' }
 };
 
-// 職業資源渲染子組件
 const HeroResourceBar = ({ hero }) => {
-  const { job, rage = 0, ammo = 6, maxAmmo = 6, mp = 50, maxMp = 100 } = hero;
+  const { job, heroClass, rage = 0, ammo = 6, maxAmmo = 6, mp = 50, maxMp = 100 } = hero;
+  const cls = job || heroClass;
 
-  if (job === '猛將') {
+  if (cls === '猛將') {
     const ragePercent = Math.min(100, Math.max(0, (rage / 100) * 100));
     return (
       <div className="mt-1.5">
@@ -44,16 +45,13 @@ const HeroResourceBar = ({ hero }) => {
           <span className="font-mono">{rage} / 100</span>
         </div>
         <div className="w-full bg-slate-950 rounded-full h-1.5 border border-orange-950 overflow-hidden">
-          <div
-            className="bg-gradient-to-r from-orange-600 to-red-500 h-full transition-all duration-300"
-            style={{ width: `${ragePercent}%` }}
-          />
+          <div className="bg-gradient-to-r from-orange-600 to-red-500 h-full transition-all duration-300" style={{ width: `${ragePercent}%` }} />
         </div>
       </div>
     );
   }
 
-  if (job === '巧匠') {
+  if (cls === '巧匠') {
     const ammoPercent = Math.min(100, Math.max(0, (ammo / maxAmmo) * 100));
     return (
       <div className="mt-1.5">
@@ -62,16 +60,12 @@ const HeroResourceBar = ({ hero }) => {
           <span className="font-mono">{ammo} / {maxAmmo}</span>
         </div>
         <div className="w-full bg-slate-950 rounded-full h-1.5 border border-yellow-950 overflow-hidden">
-          <div
-            className="bg-gradient-to-r from-amber-500 to-yellow-300 h-full transition-all duration-300"
-            style={{ width: `${ammoPercent}%` }}
-          />
+          <div className="bg-gradient-to-r from-amber-500 to-yellow-300 h-full transition-all duration-300" style={{ width: `${ammoPercent}%` }} />
         </div>
       </div>
     );
   }
 
-  // 法系 (術士 / 藥師 / 風水師)
   const mpPercent = Math.min(100, Math.max(0, (mp / maxMp) * 100));
   return (
     <div className="mt-1.5">
@@ -80,10 +74,7 @@ const HeroResourceBar = ({ hero }) => {
         <span className="font-mono">{mp} / {maxMp}</span>
       </div>
       <div className="w-full bg-slate-950 rounded-full h-1.5 border border-blue-950 overflow-hidden">
-        <div
-          className="bg-gradient-to-r from-blue-600 to-cyan-400 h-full transition-all duration-300"
-          style={{ width: `${mpPercent}%` }}
-        />
+        <div className="bg-gradient-to-r from-blue-600 to-cyan-400 h-full transition-all duration-300" style={{ width: `${mpPercent}%` }} />
       </div>
     </div>
   );
@@ -103,6 +94,7 @@ export default function GameUI(props) {
     playerTotalAtk,
     playerTotalDef,
     heroRoster,
+    setHeroRoster,
     activeHeroes,
     activeHeroInstanceIds,
     handleToggleDeployHero,
@@ -110,6 +102,8 @@ export default function GameUI(props) {
     setCurrentFormation,
     equipmentInventory,
     setEquipmentInventory,
+    skillCardsInventory,
+    setSkillCardsInventory,
     towerFloor,
     setTowerFloor,
     activeTab,
@@ -131,6 +125,13 @@ export default function GameUI(props) {
     handleExportSave,
     handleImportSave
   } = props;
+
+  // 配點輸入 State (主角 7 點自由配點)
+  const [allocatedInputs, setAllocatedInputs] = useState({ str: 0, int: 0, con: 0, agi: 0 });
+  const [selectedHeroForSkills, setSelectedHeroForSkills] = useState(null);
+
+  // 背包頁籤 State
+  const [inventorySubTab, setInventorySubTab] = useState('equip');
 
   // 創角畫面
   if (!gameStarted) {
@@ -207,7 +208,7 @@ export default function GameUI(props) {
                     >
                       <div className="font-bold text-sm text-slate-100">{hero.name}</div>
                       <div className="text-xs text-amber-400 mt-1">{hero.title}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">{hero.job} · {hero.element}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">{hero.heroClass} · {hero.element}</div>
                     </div>
                   );
                 })}
@@ -240,6 +241,24 @@ export default function GameUI(props) {
   ];
 
   const currentJobSkills = PROTAGONIST_SKILLS_DB[player.job] || [];
+
+  // 計算屬性分配總和
+  const totalAllocated = (allocatedInputs.str || 0) + (allocatedInputs.int || 0) + (allocatedInputs.con || 0) + (allocatedInputs.agi || 0);
+
+  const handleApplyStatAllocation = () => {
+    if (totalAllocated > player.statPoints) return;
+    setPlayer(prev => ({
+      ...prev,
+      statPoints: prev.statPoints - totalAllocated,
+      stats: {
+        str: prev.stats.str + (allocatedInputs.str || 0),
+        int: prev.stats.int + (allocatedInputs.int || 0),
+        con: prev.stats.con + (allocatedInputs.con || 0),
+        agi: prev.stats.agi + (allocatedInputs.agi || 0)
+      }
+    }));
+    setAllocatedInputs({ str: 0, int: 0, con: 0, agi: 0 });
+  };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
@@ -302,8 +321,6 @@ export default function GameUI(props) {
         {/* 1. 戰鬥遭遇頁籤 */}
         {activeTab === 'combat' && (
           <div className="space-y-4">
-
-            {/* 區域選擇與探索 */}
             <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 p-3 rounded-xl border border-slate-800">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-semibold text-slate-400">當前地圖:</span>
@@ -330,7 +347,7 @@ export default function GameUI(props) {
               </button>
             </div>
 
-            {/* 敵方怪群面板 */}
+            {/* 敵方怪群 */}
             <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
               <h3 className="text-sm font-bold text-rose-400 mb-3 flex items-center gap-1">
                 👹 敵方陣容 <span className="text-xs text-slate-500">({monsters.filter(m => m.hp > 0).length} 隻存活)</span>
@@ -370,7 +387,7 @@ export default function GameUI(props) {
               </div>
             </div>
 
-            {/* 🛡️ 我方出戰隊伍全員狀態面板 (全新調整) */}
+            {/* 🛡️ 我方出戰隊伍全員狀態面板 */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl">
               <div className="flex justify-between items-center mb-3 border-b border-slate-800 pb-2">
                 <h3 className="text-sm font-bold text-emerald-400 flex items-center gap-2">
@@ -394,7 +411,6 @@ export default function GameUI(props) {
                     </span>
                   </div>
 
-                  {/* HP 條 */}
                   <div>
                     <div className="flex justify-between text-[11px] mb-0.5">
                       <span className="text-slate-400">HP</span>
@@ -405,7 +421,6 @@ export default function GameUI(props) {
                     </div>
                   </div>
 
-                  {/* 主角職業動態資源條 */}
                   <HeroResourceBar hero={{ ...player, maxMp: playerTotalMaxMp }} />
                 </div>
 
@@ -413,6 +428,7 @@ export default function GameUI(props) {
                 {activeHeroes.map((hero, idx) => {
                   const isFainted = hero.hp <= 0;
                   const hpPct = Math.max(0, Math.min(100, (hero.hp / hero.maxHp) * 100));
+                  const expPct = Math.max(0, Math.min(100, (hero.exp / hero.maxExp) * 100));
                   const elemStyle = ELEMENTS[hero.element]?.color || 'border-slate-700 text-slate-300 bg-slate-800';
 
                   return (
@@ -424,10 +440,10 @@ export default function GameUI(props) {
                           : 'bg-slate-800/80 border-slate-700 shadow-md hover:border-slate-500'
                       }`}
                     >
-                      <div className="flex justify-between items-start mb-2">
+                      <div className="flex justify-between items-start mb-1">
                         <div>
-                          <div className="font-bold text-slate-100 text-sm">{hero.name} <span className="text-xs text-slate-400">Lv.{hero.level}</span></div>
-                          <div className="text-xs text-slate-400">{hero.job}</div>
+                          <div className="font-bold text-slate-100 text-sm">{hero.name} <span className="text-xs text-amber-400">Lv.{hero.level}</span></div>
+                          <div className="text-xs text-slate-400">{hero.heroClass} · Tier {hero.tier}</div>
                         </div>
                         <span className={`text-[11px] px-2 py-0.5 rounded border font-semibold ${elemStyle}`}>
                           {hero.element}
@@ -452,10 +468,15 @@ export default function GameUI(props) {
                         </div>
                       </div>
 
-                      {/* 英雄專屬職業資源條 */}
+                      {/* 經驗值條 */}
+                      <div className="mt-1">
+                        <div className="w-full bg-slate-950 rounded-full h-1 overflow-hidden border border-slate-800">
+                          <div className="bg-purple-500 h-full transition-all duration-300" style={{ width: `${expPct}%` }} />
+                        </div>
+                      </div>
+
                       {!isFainted && <HeroResourceBar hero={hero} />}
 
-                      {/* 倒下標籤 */}
                       {isFainted && (
                         <div className="mt-2 text-center text-[10px] font-bold text-red-400 bg-red-950/60 py-0.5 rounded border border-red-800">
                           ☠️ 已倒下
@@ -467,7 +488,7 @@ export default function GameUI(props) {
               </div>
             </div>
 
-            {/* 操作控制與技能發動區 */}
+            {/* 操作控制區 */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="md:col-span-2 bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
                 <h4 className="text-xs font-bold text-slate-400">回合指令發動</h4>
@@ -522,48 +543,233 @@ export default function GameUI(props) {
           </div>
         )}
 
-        {/* 2. 屬性配點頁籤 */}
+        {/* 2. 屬性配點頁籤 (改為數字輸入框 Input + MAX 一鍵全投) */}
         {activeTab === 'attributes' && (
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-xl mx-auto space-y-4">
-            <h2 className="text-lg font-bold text-amber-400">⚡ 屬性配點</h2>
-            <div className="text-xs text-slate-400">剩餘可分配點數: <span className="text-amber-400 font-bold text-sm">{player.statPoints}</span></div>
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <div>
+                <h2 className="text-lg font-bold text-amber-400">⚡ 主角屬性自由配點</h2>
+                <p className="text-xs text-slate-400">每次升級固定獲得 7 點自由屬性點。</p>
+              </div>
+              <div className="text-right">
+                <span className="text-xs text-slate-400">當前可用餘額:</span>
+                <div className="text-amber-400 font-bold text-lg font-mono">{player.statPoints} 點</div>
+              </div>
+            </div>
+
             <div className="space-y-3">
               {[
                 { key: 'str', name: '力量 (STR)', desc: '+3 攻擊力' },
                 { key: 'int', name: '智力 (INT)', desc: '+10 魔法 MP' },
                 { key: 'con', name: '體質 (CON)', desc: '+16 生命 HP, +1 防禦' },
                 { key: 'agi', name: '敏捷 (AGI)', desc: '+1 速度與暴擊' }
-              ].map(stat => (
-                <div key={stat.key} className="flex items-center justify-between bg-slate-800 p-3 rounded-lg border border-slate-700">
-                  <div>
-                    <div className="font-bold text-xs text-slate-200">{stat.name}</div>
-                    <div className="text-[10px] text-slate-400">{stat.desc}</div>
+              ].map(stat => {
+                const currentVal = player.stats[stat.key];
+                const inputVal = allocatedInputs[stat.key] || 0;
+
+                return (
+                  <div key={stat.key} className="bg-slate-800 p-3 rounded-lg border border-slate-700 flex items-center justify-between gap-3">
+                    <div className="flex-1">
+                      <div className="font-bold text-xs text-slate-200">{stat.name}</div>
+                      <div className="text-[10px] text-slate-400">{stat.desc}</div>
+                      <div className="text-xs font-mono text-amber-300 mt-1">目前點數: {currentVal}</div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        max={player.statPoints}
+                        value={inputVal}
+                        onChange={(e) => {
+                          const val = Math.max(0, Math.min(player.statPoints, parseInt(e.target.value) || 0));
+                          setAllocatedInputs(prev => ({ ...prev, [stat.key]: val }));
+                        }}
+                        className="w-20 bg-slate-950 border border-slate-700 rounded px-2 py-1 text-center font-mono text-amber-400 text-sm focus:outline-none focus:border-amber-500"
+                      />
+                      <button
+                        onClick={() => {
+                          const maxPossible = player.statPoints - (totalAllocated - inputVal);
+                          setAllocatedInputs(prev => ({ ...prev, [stat.key]: Math.max(0, maxPossible) }));
+                        }}
+                        className="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 text-xs font-bold rounded border border-amber-500/40"
+                      >
+                        MAX
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono font-bold text-amber-400 text-sm">{player.stats[stat.key]}</span>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-between items-center pt-2">
+              <span className="text-xs text-slate-400">已擬定分配總和: <span className="text-amber-300 font-bold font-mono">{totalAllocated}</span> / {player.statPoints}</span>
+              <button
+                disabled={totalAllocated <= 0 || totalAllocated > player.statPoints}
+                onClick={handleApplyStatAllocation}
+                className="bg-amber-500 disabled:bg-slate-800 hover:bg-amber-400 text-slate-950 font-bold px-5 py-2 rounded-lg text-xs transition-all shadow"
+              >
+                確認注入屬性點
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 3. 技能樹頁籤 (主角專屬職業技能樹) */}
+        {activeTab === 'skills' && (
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-2xl mx-auto space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <div>
+                <h2 className="text-lg font-bold text-amber-400">🌿 主角職業技能樹 ({player.job})</h2>
+                <p className="text-xs text-slate-400">消耗升級獲得的 SP 點數解鎖與升級專屬招式。</p>
+              </div>
+              <div className="text-right">
+                <span className="text-xs text-slate-400">剩餘技能點 (SP):</span>
+                <div className="text-purple-400 font-bold text-lg font-mono">{player.sp} 點</div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {currentJobSkills.map((sk, idx) => {
+                const lvl = player.skillLevels[idx] || 0;
+                return (
+                  <div key={sk.id} className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="font-bold text-sm text-slate-100 flex items-center gap-2">
+                        {sk.name} <span className="text-xs text-purple-300 font-mono">Lv.{lvl} / 5</span>
+                      </div>
+                      <div className="text-xs text-slate-400">{sk.desc}</div>
+                      <div className="text-[10px] text-slate-500 font-mono">消耗: {sk.cost} {sk.costType.toUpperCase()}</div>
+                    </div>
+
                     <button
-                      disabled={player.statPoints <= 0}
+                      disabled={player.sp <= 0 || lvl >= 5}
                       onClick={() => {
-                        if (player.statPoints > 0) {
-                          setPlayer(prev => ({
-                            ...prev,
-                            statPoints: prev.statPoints - 1,
-                            stats: { ...prev.stats, [stat.key]: prev.stats[stat.key] + 1 }
-                          }));
+                        if (player.sp > 0 && lvl < 5) {
+                          const newLvls = [...player.skillLevels];
+                          newLvls[idx] = (newLvls[idx] || 0) + 1;
+                          setPlayer(prev => ({ ...prev, sp: prev.sp - 1, skillLevels: newLvls }));
                         }
                       }}
-                      className="w-7 h-7 bg-amber-500 disabled:bg-slate-700 text-slate-950 rounded-md font-bold text-xs flex items-center justify-center hover:bg-amber-400"
+                      className="bg-purple-600 disabled:bg-slate-800 hover:bg-purple-500 text-white font-bold px-4 py-2 rounded-lg text-xs transition-all shadow"
                     >
-                      +
+                      {lvl === 0 ? '解鎖技能 (-1 SP)' : lvl >= 5 ? '已滿級' : '升級 (-1 SP)'}
                     </button>
                   </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 4. 裝備背包頁籤 (分類顯示裝備/英雄技能卡/材料) */}
+        {activeTab === 'inventory' && (
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-bold text-amber-400">🎒 裝備與背包庫</h2>
+              <div className="flex gap-2">
+                {['equip', 'skillCard', 'mat'].map(sub => (
+                  <button
+                    key={sub}
+                    onClick={() => setInventorySubTab(sub)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      inventorySubTab === sub
+                        ? 'bg-amber-500 text-slate-950'
+                        : 'bg-slate-800 text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {sub === 'equip' ? '裝備列表' : sub === 'skillCard' ? '英雄技能卡' : '材料物品'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 裝備列表 */}
+            {inventorySubTab === 'equip' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {equipmentInventory.map(eq => (
+                  <div key={eq.uid} className="bg-slate-800 p-3 rounded-lg border border-slate-700 space-y-2">
+                    <div className="flex justify-between items-start">
+                      <div className="font-bold text-xs text-amber-300">{eq.name} {eq.refineLevel > 0 && `+${eq.refineLevel}`}</div>
+                      <span className="text-[10px] text-slate-400 font-mono">{eq.slot}</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400">{eq.desc}</div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setPlayer(prev => ({
+                            ...prev,
+                            equipped: { ...prev.equipped, [eq.slot]: eq }
+                          }));
+                        }}
+                        className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 py-1 rounded text-xs font-bold"
+                      >
+                        穿戴給少俠
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 英雄技能卡列表 */}
+            {inventorySubTab === 'skillCard' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {skillCardsInventory.map((card, idx) => (
+                  <div key={idx} className="bg-slate-800 p-3 rounded-lg border border-purple-500/40 space-y-1">
+                    <div className="flex justify-between items-center font-bold text-xs text-purple-300">
+                      <span>{card.icon} {card.name}</span>
+                      <span className="text-[10px] text-slate-400">{card.type.toUpperCase()}</span>
+                    </div>
+                    <div className="text-xs text-slate-300">{card.desc}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* 材料 */}
+            {inventorySubTab === 'mat' && (
+              <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-sm text-cyan-300">💎 精鍊石 (Refine Stone)</div>
+                  <div className="text-xs text-slate-400">用於鐵匠鋪強化裝備等階與鍛造。</div>
+                </div>
+                <div className="text-lg font-mono font-bold text-cyan-400">{player.refineStones} 顆</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 5. 鐵匠精鍊頁籤 */}
+        {activeTab === 'blacksmith' && (
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-xl mx-auto space-y-4">
+            <h2 className="text-lg font-bold text-amber-400">🔨 鐵匠精鍊鍛造</h2>
+            <p className="text-xs text-slate-400">選擇已有裝備消耗精鍊石與金幣強化屬性 (最高 +10)。</p>
+
+            <div className="space-y-3">
+              {equipmentInventory.map(eq => (
+                <div key={eq.uid} className="bg-slate-800 p-3 rounded-lg border border-slate-700 flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-xs text-amber-300">{eq.name} +{eq.refineLevel || 0}</div>
+                    <div className="text-[10px] text-slate-400">消耗: 100 金幣 + 1 精鍊石</div>
+                  </div>
+                  <button
+                    disabled={player.gold < 100 || player.refineStones < 1 || (eq.refineLevel || 0) >= 10}
+                    onClick={() => {
+                      setPlayer(prev => ({ ...prev, gold: prev.gold - 100, refineStones: prev.refineStones - 1 }));
+                      setEquipmentInventory(prev => prev.map(item => item.uid === eq.uid ? { ...item, refineLevel: (item.refineLevel || 0) + 1 } : item));
+                    }}
+                    className="bg-amber-500 disabled:bg-slate-800 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1.5 rounded text-xs"
+                  >
+                    強化 +1
+                  </button>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* 3. 陣法頁籤 */}
+        {/* 6. 陣法頁籤 */}
         {activeTab === 'formation' && (
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-2xl mx-auto space-y-4">
             <h2 className="text-lg font-bold text-amber-400">☯️ 陣法五行</h2>
@@ -588,27 +794,47 @@ export default function GameUI(props) {
           </div>
         )}
 
-        {/* 4. 英雄隊伍頁籤 */}
+        {/* 7. 英雄隊伍頁籤 (管理登場與裝配技能卡) */}
         {activeTab === 'squad' && (
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
             <div className="flex justify-between items-center">
-              <h2 className="text-lg font-bold text-amber-400">👥 英雄隊伍管理</h2>
+              <h2 className="text-lg font-bold text-amber-400">👥 英雄隊伍管理與技能卡槽裝配</h2>
               <span className="text-xs text-slate-400">登場佇列: {activeHeroes.length} / 4</span>
             </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
               {heroRoster.map(hero => {
                 const isDeployed = activeHeroInstanceIds.includes(hero.instanceId);
+                const activeCards = hero.activeSkillSlots || [];
+                const passiveCards = hero.passiveSkillSlots || [];
+
                 return (
-                  <div key={hero.instanceId} className="bg-slate-800 p-3 rounded-lg border border-slate-700 space-y-2">
+                  <div key={hero.instanceId} className="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-3">
                     <div className="flex justify-between items-start">
                       <div>
-                        <div className="font-bold text-sm text-slate-100">{hero.name}</div>
-                        <div className="text-xs text-slate-400">{hero.job} · {hero.title}</div>
+                        <div className="font-bold text-sm text-slate-100">{hero.name} <span className="text-xs text-amber-400 font-mono">Lv.{hero.level}</span></div>
+                        <div className="text-xs text-slate-400">{hero.heroClass} · Tier {hero.tier}</div>
                       </div>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${ELEMENTS[hero.element]?.badge || ''}`}>
                         {hero.element}
                       </span>
                     </div>
+
+                    {/* 技能卡槽展示 */}
+                    <div className="space-y-1.5 text-xs bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
+                      <div className="text-[10px] text-purple-300 font-bold">主動技能卡槽 (最多 2 個):</div>
+                      <div className="text-slate-300">{activeCards.map(c => c.name).join(', ') || '無裝配'}</div>
+                      <div className="text-[10px] text-blue-300 font-bold mt-1">被動技能卡槽 (最多 2 個):</div>
+                      <div className="text-slate-300">{passiveCards.map(c => c.name).join(', ') || '無裝配'}</div>
+
+                      <button
+                        onClick={() => setSelectedHeroForSkills(hero)}
+                        className="w-full mt-2 bg-purple-900/60 hover:bg-purple-800 text-purple-200 border border-purple-700 py-1 rounded text-[11px] font-bold"
+                      >
+                        ⚙️ 裝配 / 替換技能卡
+                      </button>
+                    </div>
+
                     <button
                       onClick={() => handleToggleDeployHero(hero)}
                       className={`w-full py-1.5 rounded text-xs font-bold transition-all ${
@@ -626,7 +852,60 @@ export default function GameUI(props) {
           </div>
         )}
 
-        {/* 5. 存檔管理頁籤 */}
+        {/* 8. 鎮魔塔頁籤 (PVE 爬塔與一鍵掃蕩) */}
+        {activeTab === 'tower' && (
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-xl mx-auto space-y-4 text-center">
+            <h2 className="text-xl font-bold text-amber-400">🏰 太古鎮魔塔</h2>
+            <div className="text-xs text-slate-400">挑戰連續層數 Boss，逢 5/10 層保證掉落稀有英雄技能卡！</div>
+            <div className="text-3xl font-black text-amber-300 font-mono my-3">第 {towerFloor} 層</div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setTowerFloor(prev => prev + 1);
+                  setPlayer(prev => ({ ...prev, gold: prev.gold + 300, refineStones: prev.refineStones + 2 }));
+                  setSkillCardsInventory(prev => [...prev, SKILL_CARDS_DB[Math.floor(Math.random() * SKILL_CARDS_DB.length)]]);
+                }}
+                className="flex-1 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-3 rounded-xl text-xs shadow"
+              >
+                ⚔️ 挑戰本層守衛
+              </button>
+              <button
+                onClick={() => {
+                  setPlayer(prev => ({ ...prev, gold: prev.gold + (towerFloor * 100) }));
+                }}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-3 rounded-xl text-xs"
+              >
+                🧹 一鍵掃蕩
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 9. 圖鑑成就頁籤 */}
+        {activeTab === 'codex' && (
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
+            <h2 className="text-lg font-bold text-amber-400">📖 圖鑑與成就系統</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                <h3 className="font-bold text-sm text-amber-300 mb-2">🏆 已獲得英雄全集 ({heroRoster.length})</h3>
+                <div className="text-xs text-slate-300 space-y-1">
+                  {heroRoster.map(h => (
+                    <div key={h.instanceId}>• 【{h.name}】 {h.heroClass} · Tier {h.tier} (Lv.{h.level})</div>
+                  ))}
+                </div>
+              </div>
+              <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                <h3 className="font-bold text-sm text-cyan-300 mb-2">🎯 全隊天賦常駐加成</h3>
+                <div className="text-xs text-slate-300 space-y-1">
+                  <div>• 解鎖 3 位英雄: 全隊攻擊力 +5%</div>
+                  <div>• 突破鎮魔塔 10 層: 全隊護甲 +10%</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 10. 存檔管理頁籤 */}
         {activeTab === 'save' && (
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-xl mx-auto space-y-4">
             <h2 className="text-lg font-bold text-amber-400">💾 存檔管理</h2>
@@ -657,6 +936,49 @@ export default function GameUI(props) {
 
       </main>
 
+      {/* 技能卡裝配彈窗 */}
+      {selectedHeroForSkills && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-4">
+            <h3 className="text-lg font-bold text-amber-400">⚙️ 為【{selectedHeroForSkills.name}】裝配技能卡</h3>
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              {skillCardsInventory.map((card, idx) => (
+                <div key={idx} className="bg-slate-800 p-2.5 rounded-lg border border-slate-700 flex justify-between items-center">
+                  <div>
+                    <div className="font-bold text-xs text-purple-300">{card.icon} {card.name}</div>
+                    <div className="text-[10px] text-slate-400">{card.desc}</div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setHeroRoster(prev => prev.map(h => {
+                        if (h.instanceId !== selectedHeroForSkills.instanceId) return h;
+                        if (card.type === 'active') {
+                          const slots = h.activeSkillSlots || [];
+                          return { ...h, activeSkillSlots: [...slots.slice(0, 1), card] };
+                        } else {
+                          const slots = h.passiveSkillSlots || [];
+                          return { ...h, passiveSkillSlots: [...slots.slice(0, 1), card] };
+                        }
+                      }));
+                      setSelectedHeroForSkills(null);
+                    }}
+                    className="bg-purple-600 hover:bg-purple-500 text-white font-bold px-3 py-1 rounded text-xs"
+                  >
+                    裝配至技能槽
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => setSelectedHeroForSkills(null)}
+              className="w-full bg-slate-800 text-slate-300 font-bold py-2 rounded-xl text-xs"
+            >
+              關閉彈窗
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 戰利品 Modal */}
       {victorySummary && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
@@ -669,6 +991,11 @@ export default function GameUI(props) {
               {victorySummary.hero && (
                 <div className="text-amber-300 font-bold mt-2">
                   🎉 獲得新英雄卡片: 【{victorySummary.hero.name}】！
+                </div>
+              )}
+              {victorySummary.skillCard && (
+                <div className="text-purple-300 font-bold mt-1">
+                  🔮 獲得英雄技能卡: 【{victorySummary.skillCard.name}】！
                 </div>
               )}
             </div>
