@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import GameUI from './GameUI';
 
 import { 
@@ -20,6 +20,22 @@ import {
   PROTAGONIST_SKILLS_DB, 
   getSkillMultiplier 
 } from './data/skills';
+
+// 英雄技能卡資料庫 (主動 / 被動)
+export const SKILL_CARDS_DB = [
+  // 主動技能卡 (Active)
+  { id: 'sc_a1', name: '【主動卡】烈焰斬', type: 'active', target: 'single', mult: 2.2, desc: '發動火焰重擊，造成 2.2x 傷害。', icon: '🔥' },
+  { id: 'sc_a2', name: '【主動卡】萬箭齊發', type: 'active', target: 'aoe', mult: 1.5, desc: '對全體敵怪散射箭雨，造成 1.5x 廣域打擊。', icon: '🏹' },
+  { id: 'sc_a3', name: '【主動卡】九天雷劫', type: 'active', target: 'single', mult: 3.0, desc: '引天雷轟擊敵方，爆發 3.0x 雷霆法傷。', icon: '⚡' },
+  { id: 'sc_a4', name: '【主動卡】神農妙手', type: 'active', target: 'heal', mult: 1.8, desc: '發動醫術，為全隊英雄恢復 1.8x 生命值。', icon: '🌿' },
+  { id: 'sc_a5', name: '【主動卡】奇門遁甲', type: 'active', target: 'aoe', mult: 2.0, desc: '召喚遁甲大陣，造成全場 2.0x 元素打擊。', icon: '☯️' },
+
+  // 被動技能卡 (Passive)
+  { id: 'sc_p1', name: '【被動卡】鋼筋鐵骨', type: 'passive', bonus: { defPct: 0.15, hpPct: 0.10 }, desc: '常駐護甲 +15%、生命上限 +10%。', icon: '🛡️' },
+  { id: 'sc_p2', name: '【被動卡】怒火中燒', type: 'passive', bonus: { atkPct: 0.15, critPct: 0.10 }, desc: '常駐攻擊力 +15%、暴擊率 +10%。', icon: '⚔️' },
+  { id: 'sc_p3', name: '【被動卡】五行貫通', type: 'passive', bonus: { elemDmgPct: 0.20 }, desc: '五行相剋屬性傷害額外提升 +20%。', icon: '🔮' },
+  { id: 'sc_p4', name: '【被動卡】回春訣', type: 'passive', bonus: { hpRegen: 0.05 }, desc: '每回合自動恢復 5% 最大生命值。', icon: '💊' }
+];
 
 const ELEMENTS = {
   '金': { name: '金', counters: '木' },
@@ -68,7 +84,7 @@ export default function App() {
 
   const [starterHeroCandidates, setStarterHeroCandidates] = useState([]);
 
-  // 主角 State
+  // 主角 State (每級獲得 7 點自由屬性點)
   const [player, setPlayer] = useState({
     name: '太古少俠',
     level: 1,
@@ -77,23 +93,24 @@ export default function App() {
     job: '猛將',
     element: '金',
     stats: { str: 10, int: 10, con: 10, agi: 10 },
-    statPoints: 5,
+    statPoints: 7, // 初始自由屬性點
     maxHp: 150, hp: 150,
     maxMp: 60, mp: 60,
     rage: 0,
     ammo: 6, maxAmmo: 6,
     atk: 25, def: 8, speed: 10,
     gold: 500, refineStones: 5,
-    sp: 2, tp: 0,
+    sp: 2,
     skillLevels: [1, 0, 0, 0],
-    equipped: { weapon: null, armor: null, accessory: null, hat: null, boots: null }
+    equipped: { weapon: null, offhand: null, helmet: null, armor: null, shoes: null, accessory: null }
   });
 
-  // 英雄隊伍 State
+  // 英雄名冊 & 技能卡背包 State
   const [heroRoster, setHeroRoster] = useState([]);
   const [activeHeroInstanceIds, setActiveHeroInstanceIds] = useState([]);
   const [currentFormation, setCurrentFormation] = useState('none');
   const [equipmentInventory, setEquipmentInventory] = useState(ITEM_DROP_POOL.slice(0, 3));
+  const [skillCardsInventory, setSkillCardsInventory] = useState([SKILL_CARDS_DB[0], SKILL_CARDS_DB[5]]); // 初始贈送
   const [towerFloor, setTowerFloor] = useState(1);
 
   // UI 與戰鬥 State
@@ -109,16 +126,20 @@ export default function App() {
   const [jsonSaveText, setJsonSaveText] = useState('');
   const [saveLoadStatus, setSaveLoadStatus] = useState('');
 
-  // 初始化 Starter 3 選 1
+  // 1. 初始化 Starter 3 選 1
   useEffect(() => {
     const pool = HERO_TEMPLATES.filter(h => h.tier === 1 || h.tier === 2);
     const shuffled = [...pool].sort(() => 0.5 - Math.random()).slice(0, 3);
-    const instanced = shuffled.map(t => instantiateHero(t, true, null, getRandomElement));
+    const instanced = shuffled.map(t => ({
+      ...instantiateHero(t, true, null, getRandomElement),
+      activeSkillSlots: [],
+      passiveSkillSlots: []
+    }));
     setStarterHeroCandidates(instanced);
     setCreationData(prev => ({ ...prev, selectedStarterHero: instanced[0] }));
   }, []);
 
-  // 本地自動存檔載入
+  // 2. 本地自動存檔載入
   useEffect(() => {
     const saved = localStorage.getItem('TIANWAI_RPG_SAVE');
     if (saved) {
@@ -129,6 +150,7 @@ export default function App() {
         setActiveHeroInstanceIds(parsed.activeHeroInstanceIds || []);
         setCurrentFormation(parsed.currentFormation || 'none');
         setEquipmentInventory(parsed.equipmentInventory || []);
+        setSkillCardsInventory(parsed.skillCardsInventory || []);
         setTowerFloor(parsed.towerFloor || 1);
         setGameStarted(true);
       } catch (e) {
@@ -137,13 +159,16 @@ export default function App() {
     }
   }, []);
 
-  // 自動存檔
+  // 3. 自動存檔
   useEffect(() => {
     if (gameStarted) {
-      const saveData = { player, heroRoster, activeHeroInstanceIds, currentFormation, equipmentInventory, towerFloor };
+      const saveData = { 
+        player, heroRoster, activeHeroInstanceIds, currentFormation, 
+        equipmentInventory, skillCardsInventory, towerFloor 
+      };
       localStorage.setItem('TIANWAI_RPG_SAVE', JSON.stringify(saveData));
     }
-  }, [player, heroRoster, activeHeroInstanceIds, currentFormation, equipmentInventory, towerFloor, gameStarted]);
+  }, [player, heroRoster, activeHeroInstanceIds, currentFormation, equipmentInventory, skillCardsInventory, towerFloor, gameStarted]);
 
   // 計算登場英雄
   const activeHeroes = activeHeroInstanceIds
@@ -181,7 +206,7 @@ export default function App() {
     setActiveHeroInstanceIds([starterHero.instanceId]);
     setGameStarted(true);
     spawnEncounter(0, [starterHero]);
-    setCombatLogs([{ id: 1, turn: 1, type: 'sys', text: `📜 少俠【${newPlayer.name}】踏入《天外 Online》！` }]);
+    addLog(`📜 少俠【${newPlayer.name}】踏入《天外 Online》！`, 'sys');
   };
 
   const spawnEncounter = (zoneIdx, customActiveHeroes = null) => {
@@ -231,7 +256,58 @@ export default function App() {
     }
   };
 
-  // 核心回合處理：包含動態職業資源與隊伍英雄連動
+  // 英雄自動升級計算 (按品質 +2/3/5/7/10，按職業比例配點)
+  const processHeroExpGain = (hero, expGained) => {
+    let currentHero = { ...hero };
+    currentHero.exp += expGained;
+    let upgradedMsgs = [];
+
+    while (currentHero.exp >= currentHero.maxExp) {
+      currentHero.exp -= currentHero.maxExp;
+      currentHero.level += 1;
+      currentHero.maxExp = Math.floor(100 * Math.pow(currentHero.level, 1.3));
+
+      // 稀有度階梯屬性點獎勵
+      const tierPtsMap = { 1: 2, 2: 3, 3: 5, 4: 7, 5: 10 };
+      const pts = tierPtsMap[currentHero.tier] || 2;
+
+      // 職業自動配點比例
+      const weightsMap = {
+        '猛將': { str: 0.30, con: 0.50, int: 0.00, agi: 0.20 },
+        '巧匠': { str: 0.30, con: 0.20, int: 0.00, agi: 0.50 },
+        '術士': { str: 0.00, con: 0.20, int: 0.60, agi: 0.20 },
+        '藥師': { str: 0.00, con: 0.40, int: 0.40, agi: 0.20 },
+        '風水師': { str: 0.00, con: 0.30, int: 0.30, agi: 0.40 }
+      };
+      const w = weightsMap[currentHero.heroClass] || weightsMap['猛將'];
+
+      const addStr = Math.round(pts * w.str);
+      const addCon = Math.round(pts * w.con);
+      const addInt = Math.round(pts * w.int);
+      const addAgi = pts - (addStr + addCon + addInt);
+
+      const oldStats = currentHero.stats || { str: 10, con: 10, int: 10, agi: 10 };
+      currentHero.stats = {
+        str: oldStats.str + addStr,
+        con: oldStats.con + addCon,
+        int: oldStats.int + addInt,
+        agi: oldStats.agi + addAgi
+      };
+
+      const tier = currentHero.tier || 1;
+      currentHero.maxHp = 130 + (tier * 45) + (currentHero.stats.con * 16);
+      currentHero.atk = 16 + (tier * 11) + (currentHero.stats.str * 3) + (currentHero.stats.int * 2);
+      currentHero.def = 5 + (tier * 4) + (currentHero.stats.con * 1);
+      currentHero.speed = 10 + (tier * 2) + (currentHero.stats.agi * 2);
+      currentHero.hp = currentHero.maxHp;
+
+      upgradedMsgs.push(`🎉 英雄【${currentHero.name}】升至 Lv.${currentHero.level}！(獲得 +${pts} 屬性點自動配點)`);
+    }
+
+    return { updatedHero: currentHero, upgradedMsgs };
+  };
+
+  // 核心回合處理
   const handleExecuteRound = (actionInput = { type: 'attack' }, isFusionUltimate = false) => {
     setCombatPhase('EXECUTING');
     let currentMonsters = [...monsters];
@@ -268,7 +344,6 @@ export default function App() {
       targetM.hp = Math.max(0, targetM.hp - dmg);
       addLog(`🗡️ 你發動普通攻擊，對【${targetM.name}】造成 ${dmg} 點傷害！`, 'player');
 
-      // 🔥 職業資源恢復機制
       if (currentPlayer.job === '猛將') {
         currentPlayer.rage = Math.min(100, currentPlayer.rage + 25);
         addLog(`🔥 攻擊積攢怒氣！目前怒氣: ${currentPlayer.rage}/100`, 'sys');
@@ -280,7 +355,7 @@ export default function App() {
         addLog(`💧 調息凝神！恢復 +20 MP (目前: ${currentPlayer.mp}/${playerTotalMaxMp})`, 'sys');
       }
     } 
-    // 3. 釋放職業技能
+    // 3. 釋放職業技能 (主角專屬技能樹技能)
     else if (actionInput.type === 'skill' && actionInput.skill) {
       const sk = actionInput.skill;
       const skLvl = currentPlayer.skillLevels[actionInput.skillIdx] || 1;
@@ -317,9 +392,7 @@ export default function App() {
           const healVal = Math.floor(playerTotalAtk * mult);
           currentPlayer.hp = Math.min(playerTotalMaxHp, currentPlayer.hp + healVal);
           currentRoster = currentRoster.map(h => 
-            activeHeroInstanceIds.includes(h.instanceId)
-              ? { ...h, hp: Math.min(h.maxHp, h.hp + healVal) }
-              : h
+            activeHeroInstanceIds.includes(h.instanceId) ? { ...h, hp: Math.min(h.maxHp, h.hp + healVal) } : h
           );
           addLog(`🌿 施展【${sk.name} (Lv.${skLvl})】，全隊恢復 +${healVal} HP！`, 'player');
         } else {
@@ -334,32 +407,60 @@ export default function App() {
       }
     }
 
-    // 4. 登場英雄出手打擊與資源積攢
+    // 4. 登場英雄打擊與裝備之主動技能卡發動
     currentRoster = currentRoster.map(h => {
-      if (!activeHeroInstanceIds.includes(h.instanceId)) return h;
-      if (h.hp <= 0) return h;
+      if (!activeHeroInstanceIds.includes(h.instanceId) || h.hp <= 0) return h;
 
       const aliveTargets = currentMonsters.filter(m => m.hp > 0);
       if (aliveTargets.length === 0) return h;
       const validTarget = aliveTargets[Math.floor(Math.random() * aliveTargets.length)];
-      const em = getElementMultiplier(h.element, validTarget.element);
-      const dmg = Math.max(5, Math.floor((h.atk - validTarget.def) * em));
-      validTarget.hp = Math.max(0, validTarget.hp - dmg);
-      addLog(`💥 英雄【${h.name}】對【${validTarget.name}】造成 ${dmg} 點打擊！`, 'hero');
 
-      // 更新英雄專屬資源
+      // 檢查是否發動主動技能卡
+      const activeCard = (h.activeSkillSlots && h.activeSkillSlots.length > 0)
+        ? h.activeSkillSlots[Math.floor(Math.random() * h.activeSkillSlots.length)]
+        : null;
+
+      if (activeCard && Math.random() < 0.5) {
+        const mult = activeCard.mult || 1.8;
+        if (activeCard.target === 'aoe') {
+          currentMonsters.forEach(m => {
+            if (m.hp > 0) {
+              const em = getElementMultiplier(h.element, m.element);
+              const dmg = Math.max(6, Math.floor(h.atk * mult * em) - m.def);
+              m.hp = Math.max(0, m.hp - dmg);
+            }
+          });
+          addLog(`✨ 英雄【${h.name}】施展卡片技能【${activeCard.name}】，對敵方全員發動廣域轟炸！`, 'hero');
+        } else if (activeCard.target === 'heal') {
+          const healVal = Math.floor(h.atk * mult);
+          h.hp = Math.min(h.maxHp, h.hp + healVal);
+          addLog(`🌿 英雄【${h.name}】發動卡片【${activeCard.name}】，全隊恢復 +${healVal} HP！`, 'hero');
+        } else {
+          const em = getElementMultiplier(h.element, validTarget.element);
+          const dmg = Math.max(8, Math.floor(h.atk * mult * em) - validTarget.def);
+          validTarget.hp = Math.max(0, validTarget.hp - dmg);
+          addLog(`⚡ 英雄【${h.name}】爆發卡片絕技【${activeCard.name}】，對【${validTarget.name}】重創 ${dmg} 點！`, 'hero');
+        }
+      } else {
+        const em = getElementMultiplier(h.element, validTarget.element);
+        const dmg = Math.max(5, Math.floor((h.atk - validTarget.def) * em));
+        validTarget.hp = Math.max(0, validTarget.hp - dmg);
+        addLog(`💥 英雄【${h.name}】普通打擊，對【${validTarget.name}】造成 ${dmg} 點傷害！`, 'hero');
+      }
+
+      // 英雄資源更新
       let updatedRage = h.rage || 0;
       let updatedAmmo = h.ammo || 6;
       let updatedMp = h.mp || 50;
 
-      if (h.job === '猛將') updatedRage = Math.min(100, updatedRage + 20);
-      else if (h.job === '巧匠') updatedAmmo = Math.min(h.maxAmmo || 6, updatedAmmo + 2);
+      if (h.heroClass === '猛將') updatedRage = Math.min(100, updatedRage + 20);
+      else if (h.heroClass === '巧匠') updatedAmmo = Math.min(h.maxAmmo || 6, updatedAmmo + 2);
       else updatedMp = Math.min(h.maxMp || 100, updatedMp + 15);
 
       return { ...h, rage: updatedRage, ammo: updatedAmmo, mp: updatedMp };
     });
 
-    // 5. 怪物群體反擊
+    // 5. 怪物反擊
     const aliveMonsters = currentMonsters.filter(m => m.hp > 0);
     if (aliveMonsters.length > 0) {
       aliveMonsters.forEach(m => {
@@ -372,7 +473,6 @@ export default function App() {
           currentPlayer.rage = Math.min(100, currentPlayer.rage + 15);
         }
 
-        // 隊伍英雄承傷
         currentRoster = currentRoster.map(h => {
           if (!activeHeroInstanceIds.includes(h.instanceId) || h.hp <= 0) return h;
           if (Math.random() < 0.4) {
@@ -392,7 +492,7 @@ export default function App() {
 
     if (currentMonsters.every(m => m.hp <= 0)) {
       addLog(`🎉 敵方全數殲滅！`, 'sys');
-      handleBattleVictory(currentPlayer, currentMonsters);
+      handleBattleVictory(currentPlayer, currentMonsters, currentRoster);
       return;
     }
 
@@ -400,7 +500,8 @@ export default function App() {
     setCombatPhase('PLAYER_SELECT');
   };
 
-  const handleBattleVictory = (pObj, defeatedMonsters) => {
+  // 戰鬥勝利結算 (登場英雄獲取 100% 經驗值並自動升級；未登場者 0 經驗)
+  const handleBattleVictory = (pObj, defeatedMonsters, currentRoster) => {
     let totalGold = 0, totalExp = 0, droppedStones = 0;
     let droppedEquipments = [];
 
@@ -414,14 +515,36 @@ export default function App() {
       }
     });
 
+    // 30% 機率掉落英雄卡片 / 40% 機率掉落英雄技能卡
     let droppedHero = null;
+    let droppedSkillCard = null;
+
     if (Math.random() < 0.30) {
       const candidates = HERO_TEMPLATES.filter(t => t.tier <= Math.min(5, currentZoneIndex + 2));
       const picked = candidates[Math.floor(Math.random() * candidates.length)];
-      droppedHero = instantiateHero(picked, true, null, getRandomElement);
+      droppedHero = {
+        ...instantiateHero(picked, true, null, getRandomElement),
+        activeSkillSlots: [],
+        passiveSkillSlots: []
+      };
       setHeroRoster(prev => [...prev, droppedHero]);
     }
 
+    if (Math.random() < 0.40) {
+      droppedSkillCard = SKILL_CARDS_DB[Math.floor(Math.random() * SKILL_CARDS_DB.length)];
+      setSkillCardsInventory(prev => [...prev, droppedSkillCard]);
+    }
+
+    // 更新登場英雄 EXP 與自動升級
+    let heroUpgradeLogs = [];
+    const updatedRoster = currentRoster.map(hero => {
+      if (!activeHeroInstanceIds.includes(hero.instanceId)) return hero; // 未登場者不分經驗
+      const { updatedHero, upgradedMsgs } = processHeroExpGain(hero, totalExp);
+      if (upgradedMsgs.length > 0) heroUpgradeLogs.push(...upgradedMsgs);
+      return updatedHero;
+    });
+
+    // 主角 EXP 結算 (升級固定獲得 +7 自由屬性點, +1 SP)
     let newPlayer = {
       ...pObj,
       gold: pObj.gold + totalGold,
@@ -437,12 +560,15 @@ export default function App() {
       newPlayer.maxMp += 20;
       newPlayer.hp = newPlayer.maxHp;
       newPlayer.mp = newPlayer.maxMp;
-      newPlayer.statPoints += 3;
+      newPlayer.statPoints += 7; // ✅ 主角每次升級固定 +7 屬性點
       newPlayer.sp += 1;
-      newPlayer.tp += 1;
+      addLog(`🎉 少俠升級至 Level ${newPlayer.level}！獲得 7 點可分配屬性點與 1 點 SP！`, 'sys');
     }
 
+    heroUpgradeLogs.forEach(msg => addLog(msg, 'sys'));
+
     setPlayer(newPlayer);
+    setHeroRoster(updatedRoster);
     if (droppedEquipments.length > 0) {
       setEquipmentInventory(prev => [...prev, ...droppedEquipments]);
     }
@@ -452,7 +578,8 @@ export default function App() {
       exp: totalExp,
       stones: droppedStones,
       equipments: droppedEquipments,
-      hero: droppedHero
+      hero: droppedHero,
+      skillCard: droppedSkillCard
     });
   };
 
@@ -463,7 +590,10 @@ export default function App() {
   };
 
   const handleExportSave = () => {
-    const saveData = { player, heroRoster, activeHeroInstanceIds, currentFormation, equipmentInventory, towerFloor };
+    const saveData = { 
+      player, heroRoster, activeHeroInstanceIds, currentFormation, 
+      equipmentInventory, skillCardsInventory, towerFloor 
+    };
     setJsonSaveText(JSON.stringify(saveData, null, 2));
     setSaveLoadStatus('✅ 存檔匯出成功！請複製上方 JSON 數據。');
   };
@@ -476,6 +606,7 @@ export default function App() {
       setActiveHeroInstanceIds(parsed.activeHeroInstanceIds || []);
       setCurrentFormation(parsed.currentFormation || 'none');
       setEquipmentInventory(parsed.equipmentInventory || []);
+      setSkillCardsInventory(parsed.skillCardsInventory || []);
       setTowerFloor(parsed.towerFloor || 1);
       setSaveLoadStatus('🎉 存檔匯入成功！系統已更新。');
     } catch (e) {
@@ -497,6 +628,7 @@ export default function App() {
       playerTotalAtk={playerTotalAtk}
       playerTotalDef={playerTotalDef}
       heroRoster={heroRoster}
+      setHeroRoster={setHeroRoster}
       activeHeroes={activeHeroes}
       activeHeroInstanceIds={activeHeroInstanceIds}
       handleToggleDeployHero={handleToggleDeployHero}
@@ -504,6 +636,8 @@ export default function App() {
       setCurrentFormation={setCurrentFormation}
       equipmentInventory={equipmentInventory}
       setEquipmentInventory={setEquipmentInventory}
+      skillCardsInventory={skillCardsInventory}
+      setSkillCardsInventory={setSkillCardsInventory}
       towerFloor={towerFloor}
       setTowerFloor={setTowerFloor}
       activeTab={activeTab}
