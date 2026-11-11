@@ -76,7 +76,6 @@ export default function GameUI(props) {
     chatEndRef
   } = props;
 
-  // 1. 創角畫面
   if (!gameStarted) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans">
@@ -202,12 +201,10 @@ export default function GameUI(props) {
     );
   }
 
-  // 2. 主畫面
   const classSkills = PROTAGONIST_SKILLS_DB[player.job] || [];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans flex flex-col">
-      {/* 頂部 Header */}
       <header className="bg-slate-900/90 border-b border-slate-800/80 p-3 sm:p-4 px-6 flex flex-wrap justify-between items-center gap-3 backdrop-blur shadow-lg sticky top-0 z-20">
         <div className="flex items-center space-x-3">
           <span className="font-extrabold text-amber-400 text-base sm:text-lg tracking-wide">{player.name} <span className="text-slate-400 font-normal text-xs">(Lv.{player.level} {player.advancement || player.job})</span></span>
@@ -229,7 +226,6 @@ export default function GameUI(props) {
         </div>
       </header>
 
-      {/* 完整的 10 個導覽頁籤 Navbar */}
       <nav className="bg-slate-900/40 border-b border-slate-800/80 flex justify-center space-x-1.5 p-2 backdrop-blur overflow-x-auto">
         {[
           { id: 'combat', label: '⚔️ 戰鬥遭遇' },
@@ -255,7 +251,6 @@ export default function GameUI(props) {
         ))}
       </nav>
 
-      {/* 主頁面內容區 */}
       <main className="flex-1 p-4 sm:p-6 max-w-7xl w-full mx-auto">
         {/* 1. 戰鬥遭遇 */}
         {activeTab === 'combat' && (
@@ -305,18 +300,48 @@ export default function GameUI(props) {
                 </div>
               </div>
 
+              {/* 戰鬥動作按鈕區 (修復技能點擊與資源消耗提示) */}
               <div className="mt-6 pt-5 border-t border-slate-800/80 space-y-3">
-                <div className="grid grid-cols-4 gap-2">
-                  <button onClick={() => handleExecuteRound(false)} className="bg-rose-700 hover:bg-rose-600 text-white py-3 rounded-2xl font-bold text-xs sm:text-sm shadow-lg transition-all active:scale-95">
-                    普通攻擊
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <button 
+                    onClick={() => handleExecuteRound({ type: 'attack' }, false)} 
+                    className="bg-rose-700 hover:bg-rose-600 text-white py-3 px-2 rounded-2xl font-bold text-xs sm:text-sm shadow-lg transition-all active:scale-95 text-center"
+                  >
+                    <div>普通攻擊</div>
+                    <div className="text-[10px] opacity-80 mt-0.5">
+                      {player.job === '猛將' ? '+25怒氣' : player.job === '巧匠' ? '+4彈藥' : '+20MP'}
+                    </div>
                   </button>
-                  {classSkills.slice(0, 2).map((sk) => (
-                    <button key={sk.id} onClick={() => handleExecuteRound(false)} className="bg-cyan-700 hover:bg-cyan-600 text-white py-3 rounded-2xl font-bold text-xs sm:text-sm shadow-lg transition-all active:scale-95">
-                      {sk.name}
-                    </button>
-                  ))}
-                  <button onClick={() => handleExecuteRound(true)} className="bg-gradient-to-r from-amber-600 via-amber-500 to-amber-600 text-slate-950 font-black py-3 rounded-2xl text-xs sm:text-sm shadow-lg transition-all active:scale-95">
-                    ⚡ 全軍合擊
+
+                  {classSkills.map((sk, sIdx) => {
+                    const skLvl = player.skillLevels[sIdx] || 1;
+                    let canAfford = true;
+                    if (sk.costType === 'rage' && player.rage < sk.cost) canAfford = false;
+                    if (sk.costType === 'mp' && player.mp < sk.cost) canAfford = false;
+                    if (sk.costType === 'ammo' && player.ammo < sk.cost) canAfford = false;
+
+                    const costLabel = sk.costType === 'rage' ? `${sk.cost}怒` : sk.costType === 'ammo' ? `${sk.cost}彈` : `${sk.cost}MP`;
+
+                    return (
+                      <button 
+                        key={sk.id} 
+                        onClick={() => handleExecuteRound({ type: 'skill', skill: sk, skillIdx: sIdx }, false)} 
+                        className={`py-3 px-2 rounded-2xl font-bold text-xs sm:text-sm shadow-lg transition-all active:scale-95 text-center ${
+                          canAfford ? 'bg-cyan-700 hover:bg-cyan-600 text-white' : 'bg-slate-800 text-slate-500 cursor-not-allowed opacity-60'
+                        }`}
+                      >
+                        <div className="truncate">{sk.name} (Lv.{skLvl})</div>
+                        <div className="text-[10px] opacity-80 mt-0.5 font-mono">消耗 {costLabel}</div>
+                      </button>
+                    );
+                  })}
+
+                  <button 
+                    onClick={() => handleExecuteRound({ type: 'attack' }, true)} 
+                    className="bg-gradient-to-r from-amber-600 via-amber-500 to-amber-600 text-slate-950 font-black py-3 px-2 rounded-2xl text-xs sm:text-sm shadow-lg transition-all active:scale-95 text-center"
+                  >
+                    <div>⚡ 全軍合擊</div>
+                    <div className="text-[10px] opacity-80 mt-0.5">主僕奧義</div>
                   </button>
                 </div>
               </div>
@@ -376,25 +401,28 @@ export default function GameUI(props) {
           <div className="bg-slate-900/80 border border-slate-800/80 rounded-3xl p-6 shadow-2xl backdrop-blur space-y-4 max-w-4xl mx-auto">
             <h2 className="font-extrabold text-amber-400 text-lg">✨ 技能樹修練 (SP: {player.sp})</h2>
             <div className="space-y-3">
-              {classSkills.map((sk, idx) => (
-                <div key={sk.id} className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex justify-between items-center">
-                  <div>
-                    <div className="font-bold text-amber-300 text-sm">{sk.name}</div>
-                    <div className="text-xs text-slate-400">{sk.desc}</div>
+              {classSkills.map((sk, idx) => {
+                const lvl = player.skillLevels[idx] || 1;
+                return (
+                  <div key={sk.id} className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex justify-between items-center">
+                    <div>
+                      <div className="font-bold text-amber-300 text-sm">{sk.name} (Lv.{lvl}/5)</div>
+                      <div className="text-xs text-slate-400">{sk.desc}</div>
+                    </div>
+                    <button
+                      onClick={() => {
+                        if (player.sp > 0 && lvl < 5) {
+                          setPlayer(p => ({ ...p, sp: p.sp - 1, skillLevels: { ...p.skillLevels, [idx]: lvl + 1 } }));
+                        }
+                      }}
+                      disabled={player.sp <= 0 || lvl >= 5}
+                      className="px-4 py-2 bg-amber-600 text-white font-bold text-xs rounded-xl disabled:opacity-40"
+                    >
+                      {lvl >= 5 ? '已滿級' : '技能升級'}
+                    </button>
                   </div>
-                  <button
-                    onClick={() => {
-                      if (player.sp > 0) {
-                        setPlayer(p => ({ ...p, sp: p.sp - 1, skillLevels: { ...p.skillLevels, [idx]: (p.skillLevels[idx] || 1) + 1 } }));
-                      }
-                    }}
-                    disabled={player.sp <= 0}
-                    className="px-4 py-2 bg-amber-600 text-white font-bold text-xs rounded-xl disabled:opacity-40"
-                  >
-                    技能升級
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -561,7 +589,7 @@ export default function GameUI(props) {
         )}
       </main>
 
-      {/* 戰利品與戰鬥大捷 Modal (展示裝備與英雄卡片掉落) */}
+      {/* 戰力結算 Modal */}
       {victorySummary && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="max-w-md w-full bg-slate-900 border-2 border-amber-500 rounded-2xl p-6 space-y-4 shadow-2xl text-center">
