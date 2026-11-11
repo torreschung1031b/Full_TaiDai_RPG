@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   User, Layers, Play, ScrollText, Sword, Shield, Sparkles, Shirt, 
-  Hammer, Users, Compass, BookOpen, Save, Coffee, RefreshCw, Crosshair 
+  Hammer, Users, Compass, BookOpen, Save, Coffee, RefreshCw, Trash2
 } from 'lucide-react';
 
 import { TIER_CONFIG, HERO_TEMPLATES } from './data/heroes';
@@ -98,6 +98,7 @@ export default function GameUI(props) {
     activeHeroes,
     activeHeroInstanceIds,
     handleToggleDeployHero,
+    handleReleaseHero,
     currentFormation,
     setCurrentFormation,
     equipmentInventory,
@@ -126,11 +127,8 @@ export default function GameUI(props) {
     handleImportSave
   } = props;
 
-  // 配點輸入 State (主角 7 點自由配點)
   const [allocatedInputs, setAllocatedInputs] = useState({ str: 0, int: 0, con: 0, agi: 0 });
   const [selectedHeroForSkills, setSelectedHeroForSkills] = useState(null);
-
-  // 背包頁籤 State
   const [inventorySubTab, setInventorySubTab] = useState('equip');
 
   // 創角畫面
@@ -241,8 +239,6 @@ export default function GameUI(props) {
   ];
 
   const currentJobSkills = PROTAGONIST_SKILLS_DB[player.job] || [];
-
-  // 計算屬性分配總和
   const totalAllocated = (allocatedInputs.str || 0) + (allocatedInputs.int || 0) + (allocatedInputs.con || 0) + (allocatedInputs.agi || 0);
 
   const handleApplyStatAllocation = () => {
@@ -260,9 +256,12 @@ export default function GameUI(props) {
     setAllocatedInputs({ str: 0, int: 0, con: 0, agi: 0 });
   };
 
+  // 分離已登場與未登場英雄列表
+  const deployedHeroesList = heroRoster.filter(h => activeHeroInstanceIds.includes(h.instanceId));
+  const reserveHeroesList = heroRoster.filter(h => !activeHeroInstanceIds.includes(h.instanceId));
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      {/* 頂部玩家資訊列 */}
       <header className="bg-slate-900 border-b border-slate-800 px-4 py-3 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -291,7 +290,6 @@ export default function GameUI(props) {
         </div>
       </header>
 
-      {/* 導覽頁籤列 */}
       <nav className="bg-slate-900/80 border-b border-slate-800 px-4 py-2 overflow-x-auto">
         <div className="max-w-7xl mx-auto flex items-center gap-1 min-w-max">
           {tabs.map((tab) => {
@@ -315,7 +313,6 @@ export default function GameUI(props) {
         </div>
       </nav>
 
-      {/* 主要內容區域 */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4">
 
         {/* 1. 戰鬥遭遇頁籤 */}
@@ -347,7 +344,6 @@ export default function GameUI(props) {
               </button>
             </div>
 
-            {/* 敵方怪群 */}
             <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
               <h3 className="text-sm font-bold text-rose-400 mb-3 flex items-center gap-1">
                 👹 敵方陣容 <span className="text-xs text-slate-500">({monsters.filter(m => m.hp > 0).length} 隻存活)</span>
@@ -387,7 +383,6 @@ export default function GameUI(props) {
               </div>
             </div>
 
-            {/* 🛡️ 我方出戰隊伍全員狀態面板 */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-xl">
               <div className="flex justify-between items-center mb-3 border-b border-slate-800 pb-2">
                 <h3 className="text-sm font-bold text-emerald-400 flex items-center gap-2">
@@ -396,7 +391,6 @@ export default function GameUI(props) {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {/* 1. 主角面板 */}
                 <div className="p-3 rounded-lg border bg-slate-800/90 border-amber-500/50 shadow-md relative">
                   <span className="absolute -top-2 -left-2 bg-amber-500 text-slate-950 text-[10px] font-black px-1.5 py-0.5 rounded shadow">
                     少俠 (隊長)
@@ -424,7 +418,6 @@ export default function GameUI(props) {
                   <HeroResourceBar hero={{ ...player, maxMp: playerTotalMaxMp }} />
                 </div>
 
-                {/* 2. 登場英雄面板群 */}
                 {activeHeroes.map((hero, idx) => {
                   const isFainted = hero.hp <= 0;
                   const hpPct = Math.max(0, Math.min(100, (hero.hp / hero.maxHp) * 100));
@@ -450,7 +443,6 @@ export default function GameUI(props) {
                         </span>
                       </div>
 
-                      {/* HP 條 */}
                       <div>
                         <div className="flex justify-between text-[11px] mb-0.5">
                           <span className="text-slate-400">HP</span>
@@ -468,7 +460,6 @@ export default function GameUI(props) {
                         </div>
                       </div>
 
-                      {/* 經驗值條 */}
                       <div className="mt-1">
                         <div className="w-full bg-slate-950 rounded-full h-1 overflow-hidden border border-slate-800">
                           <div className="bg-purple-500 h-full transition-all duration-300" style={{ width: `${expPct}%` }} />
@@ -488,7 +479,6 @@ export default function GameUI(props) {
               </div>
             </div>
 
-            {/* 操作控制區 */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="md:col-span-2 bg-slate-900 p-4 rounded-xl border border-slate-800 space-y-3">
                 <h4 className="text-xs font-bold text-slate-400">回合指令發動</h4>
@@ -525,7 +515,6 @@ export default function GameUI(props) {
                 </div>
               </div>
 
-              {/* 戰況日誌 */}
               <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 flex flex-col h-64">
                 <h4 className="text-xs font-bold text-slate-400 mb-2 flex items-center gap-1">
                   <ScrollText className="w-3.5 h-3.5" /> 戰況日誌
@@ -543,7 +532,7 @@ export default function GameUI(props) {
           </div>
         )}
 
-        {/* 2. 屬性配點頁籤 (改為數字輸入框 Input + MAX 一鍵全投) */}
+        {/* 2. 屬性配點頁籤 */}
         {activeTab === 'attributes' && (
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-xl mx-auto space-y-4">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
@@ -615,7 +604,7 @@ export default function GameUI(props) {
           </div>
         )}
 
-        {/* 3. 技能樹頁籤 (主角專屬職業技能樹) */}
+        {/* 3. 技能樹頁籤 */}
         {activeTab === 'skills' && (
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-2xl mx-auto space-y-4">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
@@ -662,7 +651,7 @@ export default function GameUI(props) {
           </div>
         )}
 
-        {/* 4. 裝備背包頁籤 (分類顯示裝備/英雄技能卡/材料) */}
+        {/* 4. 裝備背包頁籤 */}
         {activeTab === 'inventory' && (
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
             <div className="flex justify-between items-center">
@@ -684,7 +673,6 @@ export default function GameUI(props) {
               </div>
             </div>
 
-            {/* 裝備列表 */}
             {inventorySubTab === 'equip' && (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                 {equipmentInventory.map(eq => (
@@ -712,7 +700,6 @@ export default function GameUI(props) {
               </div>
             )}
 
-            {/* 英雄技能卡列表 */}
             {inventorySubTab === 'skillCard' && (
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                 {skillCardsInventory.map((card, idx) => (
@@ -727,7 +714,6 @@ export default function GameUI(props) {
               </div>
             )}
 
-            {/* 材料 */}
             {inventorySubTab === 'mat' && (
               <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex items-center justify-between">
                 <div>
@@ -794,65 +780,137 @@ export default function GameUI(props) {
           </div>
         )}
 
-        {/* 7. 英雄隊伍頁籤 (管理登場與裝配技能卡) */}
+        {/* 7. 英雄隊伍頁籤 (全新雙區塊重構: 已登場 vs 未登場庫存 + 放走英雄) */}
         {activeTab === 'squad' && (
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-4">
-            <div className="flex justify-between items-center">
-              <h2 className="text-lg font-bold text-amber-400">👥 英雄隊伍管理與技能卡槽裝配</h2>
-              <span className="text-xs text-slate-400">登場佇列: {activeHeroes.length} / 4</span>
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <div>
+                <h2 className="text-lg font-bold text-amber-400">👥 英雄隊伍管理與放走處置</h2>
+                <p className="text-xs text-slate-400">管理已登場主力與客棧庫存英雄 (登場上限 4 人)。</p>
+              </div>
+              <div className="text-right">
+                <span className="text-xs text-slate-400">已登場隊員:</span>
+                <div className="text-emerald-400 font-bold text-lg font-mono">{deployedHeroesList.length} / 4</div>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-              {heroRoster.map(hero => {
-                const isDeployed = activeHeroInstanceIds.includes(hero.instanceId);
-                const activeCards = hero.activeSkillSlots || [];
-                const passiveCards = hero.passiveSkillSlots || [];
+            {/* ⚔️ 第一部份：已登場英雄列表 (Deployed Heroes) */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-bold text-emerald-400 flex items-center gap-2">
+                ⚔️ 已登場隊伍英雄 ({deployedHeroesList.length} 人)
+              </h3>
 
-                return (
-                  <div key={hero.instanceId} className="bg-slate-800 p-4 rounded-xl border border-slate-700 space-y-3">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="font-bold text-sm text-slate-100">{hero.name} <span className="text-xs text-amber-400 font-mono">Lv.{hero.level}</span></div>
-                        <div className="text-xs text-slate-400">{hero.heroClass} · Tier {hero.tier}</div>
+              {deployedHeroesList.length === 0 ? (
+                <div className="bg-slate-800/40 border border-slate-800 p-4 rounded-xl text-center text-slate-500 text-xs">
+                  目前尚未派遣任何英雄登場，請從下方未登場名冊選擇英雄登場。
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {deployedHeroesList.map(hero => {
+                    const activeCards = hero.activeSkillSlots || [];
+                    const passiveCards = hero.passiveSkillSlots || [];
+
+                    return (
+                      <div key={hero.instanceId} className="bg-slate-800 p-4 rounded-xl border border-emerald-500/50 space-y-3 shadow-md relative">
+                        <span className="absolute -top-2 -right-2 bg-emerald-500 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full shadow">
+                          已登場
+                        </span>
+                        
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="font-bold text-sm text-slate-100">{hero.name} <span className="text-xs text-amber-400 font-mono">Lv.{hero.level}</span></div>
+                            <div className="text-xs text-slate-400">{hero.heroClass} · Tier {hero.tier}</div>
+                          </div>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${ELEMENTS[hero.element]?.badge || ''}`}>
+                            {hero.element}
+                          </span>
+                        </div>
+
+                        {/* 技能卡槽展示 */}
+                        <div className="space-y-1.5 text-xs bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
+                          <div className="text-[10px] text-purple-300 font-bold">主動技能卡槽 (最多 2 個):</div>
+                          <div className="text-slate-300 truncate">{activeCards.map(c => c.name).join(', ') || '無裝配'}</div>
+                          <div className="text-[10px] text-blue-300 font-bold mt-1">被動技能卡槽 (最多 2 個):</div>
+                          <div className="text-slate-300 truncate">{passiveCards.map(c => c.name).join(', ') || '無裝配'}</div>
+
+                          <button
+                            onClick={() => setSelectedHeroForSkills(hero)}
+                            className="w-full mt-2 bg-purple-900/60 hover:bg-purple-800 text-purple-200 border border-purple-700 py-1 rounded text-[11px] font-bold"
+                          >
+                            ⚙️ 裝配 / 替換技能卡
+                          </button>
+                        </div>
+
+                        <button
+                          onClick={() => handleToggleDeployHero(hero)}
+                          className="w-full py-1.5 rounded text-xs font-bold bg-amber-900/60 hover:bg-amber-800 text-amber-200 border border-amber-700 transition-all"
+                        >
+                          📥 卸下登場 (回到客棧)
+                        </button>
                       </div>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${ELEMENTS[hero.element]?.badge || ''}`}>
-                        {hero.element}
-                      </span>
-                    </div>
-
-                    {/* 技能卡槽展示 */}
-                    <div className="space-y-1.5 text-xs bg-slate-900/60 p-2.5 rounded-lg border border-slate-800">
-                      <div className="text-[10px] text-purple-300 font-bold">主動技能卡槽 (最多 2 個):</div>
-                      <div className="text-slate-300">{activeCards.map(c => c.name).join(', ') || '無裝配'}</div>
-                      <div className="text-[10px] text-blue-300 font-bold mt-1">被動技能卡槽 (最多 2 個):</div>
-                      <div className="text-slate-300">{passiveCards.map(c => c.name).join(', ') || '無裝配'}</div>
-
-                      <button
-                        onClick={() => setSelectedHeroForSkills(hero)}
-                        className="w-full mt-2 bg-purple-900/60 hover:bg-purple-800 text-purple-200 border border-purple-700 py-1 rounded text-[11px] font-bold"
-                      >
-                        ⚙️ 裝配 / 替換技能卡
-                      </button>
-                    </div>
-
-                    <button
-                      onClick={() => handleToggleDeployHero(hero)}
-                      className={`w-full py-1.5 rounded text-xs font-bold transition-all ${
-                        isDeployed
-                          ? 'bg-rose-900/60 hover:bg-rose-800 text-rose-200 border border-rose-700'
-                          : 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                      }`}
-                    >
-                      {isDeployed ? '卸下登場' : '派遣登場'}
-                    </button>
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+              )}
             </div>
+
+            {/* 🛖 第二部份：未登場英雄列表 / 客棧庫存 (Reserve Heroes) */}
+            <div className="space-y-3 pt-4 border-t border-slate-800">
+              <h3 className="text-sm font-bold text-slate-300 flex items-center gap-2">
+                🛖 未登場客棧名冊 ({reserveHeroesList.length} 人)
+              </h3>
+
+              {reserveHeroesList.length === 0 ? (
+                <div className="bg-slate-800/40 border border-slate-800 p-4 rounded-xl text-center text-slate-500 text-xs">
+                  客棧中目前沒有備用英雄。可在戰鬥勝利或鎮魔塔中獲得新英雄卡片！
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {reserveHeroesList.map(hero => {
+                    return (
+                      <div key={hero.instanceId} className="bg-slate-800/80 p-4 rounded-xl border border-slate-700 space-y-3">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="font-bold text-sm text-slate-100">{hero.name} <span className="text-xs text-amber-400 font-mono">Lv.{hero.level}</span></div>
+                            <div className="text-xs text-slate-400">{hero.heroClass} · Tier {hero.tier}</div>
+                          </div>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${ELEMENTS[hero.element]?.badge || ''}`}>
+                            {hero.element}
+                          </span>
+                        </div>
+
+                        <div className="text-[11px] text-slate-400 bg-slate-900/40 p-2 rounded border border-slate-800 font-mono">
+                          <div>ATK: {hero.atk} | DEF: {hero.def}</div>
+                          <div>HP: {hero.hp} / {hero.maxHp}</div>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleToggleDeployHero(hero)}
+                            className="flex-1 py-1.5 rounded text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all"
+                          >
+                            ⚔️ 派遣登場
+                          </button>
+                          
+                          <button
+                            onClick={() => handleReleaseHero(hero)}
+                            className="px-3 py-1.5 rounded text-xs font-bold bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-800 flex items-center justify-center gap-1 transition-all"
+                            title="放走英雄"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> 放走
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
           </div>
         )}
 
-        {/* 8. 鎮魔塔頁籤 (PVE 爬塔與一鍵掃蕩) */}
+        {/* 8. 鎮魔塔頁籤 */}
         {activeTab === 'tower' && (
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-xl mx-auto space-y-4 text-center">
             <h2 className="text-xl font-bold text-amber-400">🏰 太古鎮魔塔</h2>
