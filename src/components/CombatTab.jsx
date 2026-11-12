@@ -134,4 +134,175 @@ export default function CombatTab({
                   >
                     <div className="text-xs font-bold truncate text-slate-200">{m.name}</div>
                     <div className={`text-[10px] ${elemInfo?.color.split(' ')[0]} font-bold`}>
-                      {elemInfo?.icon} {m.element}
+                      {elemInfo?.icon} {m.element} {m.elemShiftTurns > 0 ? `(轉${m.elemShiftTurns})` : ''}
+                    </div>
+                    <div className="text-[10px] text-rose-400 font-mono">HP {m.hp}</div>
+                    {!isDead && (
+                      <div className="flex flex-wrap justify-center gap-1 pt-0.5 text-[9px] font-bold">
+                        {m.poisonTurns > 0 && (
+                          <span className="bg-emerald-950 text-emerald-300 px-1 rounded border border-emerald-700">
+                            ☠️毒{m.poisonStacks}({m.poisonTurns})
+                          </span>
+                        )}
+                        {m.armorBreakTurns > 0 && (
+                          <span className="bg-amber-950 text-amber-300 px-1 rounded border border-amber-700">
+                            💔破甲({m.armorBreakTurns})
+                          </span>
+                        )}
+                        {m.blindTurns > 0 && (
+                          <span className="bg-purple-950 text-purple-300 px-1 rounded border border-purple-700">
+                            🕸️盲({m.blindTurns})
+                          </span>
+                        )}
+                        {m.vulnTurns > 0 && (
+                          <span className="bg-rose-950 text-rose-300 px-1 rounded border border-rose-700">
+                            🎯易傷({m.vulnTurns})
+                          </span>
+                        )}
+                        {m.burnTurns > 0 && (
+                          <span className="bg-orange-950 text-orange-300 px-1 rounded border border-orange-700">
+                            🔥灼({m.burnTurns})
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-3.5 space-y-2.5">
+          <div className="flex justify-between items-center text-xs">
+            <span className="font-bold text-emerald-400">🛡️ 我方出戰英雄 ({activeHeroes.length}/4 人登場)</span>
+            <button
+              disabled={isInCombat}
+              onClick={handleRestInn}
+              className="px-2.5 py-1 bg-indigo-900/60 hover:bg-indigo-800 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-indigo-200 border border-indigo-700/60 rounded-lg text-[11px] font-bold"
+            >
+              {isInCombat ? '🔒 戰鬥中鎖定' : '☕ 客棧全隊恢復'}
+            </button>
+          </div>
+          {activeHeroes.length === 0 ? (
+            <div className="text-xs text-slate-500 text-center py-2">目前無英雄登場，可前往「英雄隊伍」派遣夥伴。</div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {activeHeroes.map(h => {
+                const hBuff = heroBattleBuffs?.[h.instanceId];
+                const { effectiveMaxHp, effectiveAtk, skillChance } = calculateHeroEffectiveStats(h, isFengShui, hBuff, getHeroRowIdx(h.instanceId));
+                const hpPct = Math.max(0, Math.min(100, (h.hp / effectiveMaxHp) * 100));
+                return (
+                  <div key={h.instanceId} className={`p-2.5 rounded-xl border text-xs ${h.hp <= 0 ? 'bg-red-950/30 border-red-800/70 opacity-80' : 'bg-slate-900 border-slate-800'}`}>
+                    <div className="flex justify-between font-bold text-amber-300 truncate">
+                      <span>{h.icon} {h.name}</span>
+                      <span className="text-[10px] text-slate-400">T{h.tier}</span>
+                    </div>
+                    <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                      Lv.{h.level} • 攻{effectiveAtk} • 技{Math.round(skillChance * 100)}%
+                    </div>
+                    {hBuff?.surgeTurns > 0 && (
+                      <div className="text-[9px] text-emerald-300 font-bold mt-0.5">
+                        💊 藥力激發 ({hBuff.surgeTurns}回合)
+                      </div>
+                    )}
+                    <div className="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden mt-1.5 border border-slate-800">
+                      <div className="bg-emerald-500 h-full transition-all" style={{ width: `${hpPct}%` }} />
+                    </div>
+                    <div className="text-[10px] text-right font-mono text-slate-300 mt-0.5">
+                      {h.hp <= 0 ? <span className="text-rose-400 font-bold">☠️ 陣亡重傷</span> : `${h.hp}/${effectiveMaxHp}`}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="pt-3 border-t border-slate-800/80 space-y-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            <button
+              disabled={!isInCombat}
+              onClick={() => handleExecuteRound({ type: 'attack' }, false)}
+              className="bg-rose-700 hover:bg-rose-600 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white py-3 px-2 rounded-2xl font-bold text-xs sm:text-sm shadow-lg transition-all active:scale-95 text-center"
+            >
+              <div>普通攻擊</div>
+              <div className="text-[10px] opacity-80 mt-0.5">
+                {player.job === '猛將' ? '+25怒氣' : player.job === '巧匠' ? (player.ammo > 6 ? '二連射 +4彈' : '+4彈藥') : '+20MP'}
+              </div>
+            </button>
+
+            {classSkills.map((sk, sIdx) => {
+              const skLvl = player.skillLevels[sIdx] || 0;
+              const isUnlearned = skLvl <= 0;
+              let canAfford = !isUnlearned;
+              if (sk.costType === 'rage' && player.rage < sk.cost) canAfford = false;
+              if (sk.costType === 'mp' && player.mp < sk.cost) canAfford = false;
+              if (sk.costType === 'ammo' && player.ammo < sk.cost) canAfford = false;
+
+              const costLabel = sk.costType === 'rage' ? `${sk.cost}怒` : sk.costType === 'ammo' ? `${sk.cost}彈` : `${sk.cost}MP`;
+
+              return (
+                <button
+                  key={sk.id}
+                  disabled={!isInCombat || isUnlearned}
+                  onClick={() => handleExecuteRound({ type: 'skill', skill: sk, skillIdx: sIdx }, false)}
+                  className={`py-3 px-2 rounded-2xl font-bold text-xs sm:text-sm shadow-lg transition-all active:scale-95 text-center disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed ${
+                    canAfford && isInCombat ? 'bg-cyan-700 hover:bg-cyan-600 text-white' : 'bg-slate-800 text-slate-500 opacity-60'
+                  }`}
+                >
+                  <div className="truncate">
+                    {isUnlearned ? `🔒 ${sk.name}` : `${sk.name} (Lv.${skLvl})`}
+                  </div>
+                  <div className="text-[10px] opacity-80 mt-0.5 font-mono">
+                    {isUnlearned ? '未學習 (Lv.0)' : `消耗 ${costLabel}`}
+                  </div>
+                </button>
+              );
+            })}
+
+            <button
+              disabled={!isInCombat}
+              onClick={() => handleExecuteRound({ type: 'attack' }, true)}
+              className="bg-gradient-to-r from-amber-600 via-amber-500 to-amber-600 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-slate-950 font-black py-3 px-2 rounded-2xl text-xs sm:text-sm shadow-lg transition-all active:scale-95 text-center"
+            >
+              <div>⚡ 全軍合擊</div>
+              <div className="text-[10px] opacity-80 mt-0.5">主僕集火奧義</div>
+            </button>
+          </div>
+
+          {isInCombat && (
+            <div className="flex justify-end">
+              <button
+                onClick={handleFleeCombat}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-xs font-bold transition-all"
+              >
+                🏃 撤退逃跑 (70% 成功脫離)
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="lg:col-span-4 bg-slate-900/80 border border-slate-800/80 rounded-3xl p-5 flex flex-col shadow-2xl backdrop-blur">
+        <h3 className="font-extrabold text-amber-400 mb-3 border-b border-slate-800/80 pb-2 text-sm flex items-center gap-1.5">
+          <ScrollText className="w-4 h-4" />
+          <span>實時戰況日誌</span>
+        </h3>
+        <div className="flex-1 overflow-y-auto space-y-2 text-xs font-mono max-h-[480px] p-1">
+          {combatLogs.map(log => (
+            <div
+              key={log.id}
+              className={`leading-relaxed border-b border-slate-800/40 pb-1.5 ${
+                log.type === 'danger' ? 'text-rose-400 font-bold' : 'text-slate-300'
+              }`}
+            >
+              {log.text}
+            </div>
+          ))}
+          <div ref={chatEndRef} />
+        </div>
+      </div>
+    </div>
+  );
+}
