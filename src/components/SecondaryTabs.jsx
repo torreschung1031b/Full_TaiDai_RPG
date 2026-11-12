@@ -1,9 +1,9 @@
 import React from 'react';
-import { Sparkles, HelpCircle } from 'lucide-react';
+import { Sparkles, HelpCircle, Hammer, Gem } from 'lucide-react';
 import { MAX_LEVEL, ELEMENTS } from '../data/constants';
 import { FORMATIONS_CONFIG } from '../data/formations';
 import { HERO_TEMPLATES } from '../data/heroes';
-import { GEMS_DB } from '../data/equipment';
+import { GEMS_DB, enrichEquipmentMeta } from '../data/equipment';
 
 export const CODEX_MILESTONES = [
   { count: 3, label: '初窺門徑（3 位）', bonusText: '主角攻擊力 +5%', atkPct: 0.05, hpPct: 0, defPct: 0, speedPct: 0 },
@@ -144,12 +144,21 @@ export function CharacterTab({
   );
 }
 
+const GEM_SHORT_LABELS = {
+  gem_ruby: { label: '🔴 紅寶石 +15攻', style: 'border-rose-700/80 bg-rose-950/50 hover:bg-rose-900/70 text-rose-200' },
+  gem_sapphire: { label: '🔵 藍寶石 +30內', style: 'border-sky-700/80 bg-sky-950/50 hover:bg-sky-900/70 text-sky-200' },
+  gem_emerald: { label: '🟢 翡翠 +80血', style: 'border-emerald-700/80 bg-emerald-950/50 hover:bg-emerald-900/70 text-emerald-200' },
+  gem_topaz: { label: '🟡 黃玉 +10防', style: 'border-amber-700/80 bg-amber-950/50 hover:bg-amber-900/70 text-amber-200' }
+};
+
 export function ForgeTab({
   player,
   isInCombat,
   equipmentInventory,
+  forgeFeedback,
   handleRefineEquipment,
-  handleSocketGem
+  handleSocketGem,
+  setHelpModalTab
 }) {
   const allForgeable = [
     ...Object.values(player.equipped).filter(Boolean).map(i => ({ ...i, _isEquipped: true })),
@@ -157,59 +166,178 @@ export function ForgeTab({
   ];
 
   return (
-    <div className="bg-slate-900/80 border border-slate-800/80 rounded-3xl p-6 shadow-2xl backdrop-blur space-y-4 max-w-5xl mx-auto">
+    <div className="bg-slate-900/80 border border-slate-800/80 rounded-3xl p-6 shadow-2xl backdrop-blur space-y-5 max-w-5xl mx-auto">
       <div className="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
-        <h2 className="font-extrabold text-amber-400 text-lg">🔨 鐵匠精鍊與寶石鑲嵌</h2>
+        <div className="flex items-center gap-2">
+          <Hammer className="w-5 h-5 text-amber-400" />
+          <h2 className="font-extrabold text-amber-400 text-lg">🔨 鐵匠精鍊與四象寶石鑲嵌</h2>
+          {setHelpModalTab && (
+            <button
+              onClick={() => setHelpModalTab('equip')}
+              className="text-slate-400 hover:text-amber-300 transition-colors"
+              title="查看裝備階級與精鍊規則"
+            >
+              <HelpCircle className="w-4 h-4" />
+            </button>
+          )}
+        </div>
         <div className="flex gap-2 text-xs font-mono font-bold">
           <span className="bg-slate-950 text-amber-300 px-3 py-1 rounded-full border border-slate-800">💰 金幣: {player.gold}</span>
           <span className="bg-slate-950 text-cyan-300 px-3 py-1 rounded-full border border-slate-800">💎 精鍊石: {player.refineStones}</span>
         </div>
       </div>
 
+      {/* 鍛造規則與風險提示橫幅 */}
+      <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-3.5 text-xs text-slate-300 flex flex-wrap justify-between gap-2">
+        <div>
+          <span className="text-amber-300 font-bold">⚒️ 精鍊規則：</span>
+          每級提升基礎屬性 <span className="text-emerald-300 font-bold">+15%</span>；
+          <span className="text-emerald-300 font-bold">+0～+3 成功率 100%</span>，
+          <span className="text-rose-300 font-bold">+4 起成功率 65%（失敗精鍊等級 -1 級）</span>。
+        </div>
+        <div>
+          <span className="text-cyan-300 font-bold">💎 鑲嵌規則：</span>
+          每孔花費 <span className="text-amber-300 font-mono font-bold">100 金幣</span>，可自由鑲嵌或替換四種寶石。
+        </div>
+      </div>
+
+      {/* 即時鍛造結果提示 */}
+      {forgeFeedback && (
+        <div
+          className={`rounded-2xl p-3.5 border text-xs sm:text-sm font-bold flex items-center gap-2 shadow-md ${
+            forgeFeedback.type === 'danger'
+              ? 'bg-rose-950/60 border-rose-500/70 text-rose-200'
+              : 'bg-emerald-950/60 border-emerald-500/70 text-emerald-200'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 shrink-0 text-amber-300" />
+          <span>{forgeFeedback.text}</span>
+        </div>
+      )}
+
       {allForgeable.length === 0 ? (
         <div className="text-xs text-slate-500 py-6 text-center">目前身上與背包皆無可精鍊的裝備。</div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {allForgeable.map(item => (
-            <div key={item.uid} className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3">
-              <div className="font-bold text-amber-300 text-sm flex items-center justify-between">
-                <span>{item.name} (+{item.refineLevel || 0})</span>
-                {item._isEquipped && (
-                  <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-700 px-2 py-0.5 rounded-full">
-                    已穿戴
-                  </span>
-                )}
-              </div>
-              <div className="text-xs text-slate-400">{item.desc}</div>
-              <button
-                disabled={isInCombat}
-                onClick={() => handleRefineEquipment(item)}
-                className="w-full py-2 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow"
-              >
-                {isInCombat ? '🔒 戰鬥中鎖定' : `精鍊裝備 (需要 1 精鍊石 & ${(item.refineLevel || 0) * 120 + 120} 金幣)`}
-              </button>
-              {item.sockets && item.sockets.length > 0 && (
-                <div className="pt-2 border-t border-slate-800 space-y-1.5">
-                  <div className="text-[11px] text-slate-400">寶石插槽：</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {item.sockets.map((gem, sIdx) => (
-                      <div key={sIdx} className="text-[10px] bg-slate-900 px-2 py-1 rounded border border-slate-700">
-                        {gem ? gem.name : (
-                          <button
-                            disabled={isInCombat}
-                            onClick={() => handleSocketGem(item, GEMS_DB[0], sIdx)}
-                            className="text-cyan-400 hover:underline disabled:text-slate-500 disabled:no-underline"
-                          >
-                            {isInCombat ? '🔒 鎖定' : '+ 鑲嵌紅寶石'}
-                          </button>
-                        )}
-                      </div>
-                    ))}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {allForgeable.map(rawItem => {
+            const item = enrichEquipmentMeta(rawItem);
+            const lvl = item.refineLevel || 0;
+            const goldCost = (lvl + 1) * 120;
+            const isRisky = lvl >= 4;
+            const canRefine = !isInCombat && player.gold >= goldCost && player.refineStones >= 1;
+
+            return (
+              <div key={item.uid} className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3 flex flex-col justify-between">
+                <div className="space-y-2">
+                  <div className="font-bold text-amber-300 text-sm flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${item.tierBadgeStyle}`}>
+                        {item.tierTag}
+                      </span>
+                      <span>{item.name} (+{lvl})</span>
+                    </div>
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${
+                        item._isEquipped
+                          ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                          : 'bg-slate-900 text-slate-400 border-slate-700'
+                      }`}
+                    >
+                      {item._isEquipped ? '已穿戴' : '背包中'}
+                    </span>
+                  </div>
+
+                  <div className="text-xs text-slate-400">{item.desc}</div>
+
+                  {/* 精鍊按鈕與成功率標示 */}
+                  <div className="pt-1 space-y-1.5">
+                    <div className="flex justify-between items-center text-[11px] font-mono">
+                      <span className="text-slate-400">
+                        消耗：<span className="text-cyan-300 font-bold">1 精鍊石</span> ＋ <span className="text-amber-300 font-bold">{goldCost} 金幣</span>
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded font-bold border ${
+                          isRisky
+                            ? 'bg-rose-950/80 text-rose-300 border-rose-700/80'
+                            : 'bg-emerald-950/80 text-emerald-300 border-emerald-700/80'
+                        }`}
+                      >
+                        {isRisky ? '⚠️ 成功率 65% (失敗降1級)' : '✅ 成功率 100%'}
+                      </span>
+                    </div>
+                    <button
+                      disabled={!canRefine}
+                      onClick={() => handleRefineEquipment(rawItem)}
+                      className={`w-full py-2.5 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow transition-all ${
+                        isRisky ? 'bg-orange-600 hover:bg-orange-500' : 'bg-amber-600 hover:bg-amber-500'
+                      }`}
+                    >
+                      {isInCombat
+                        ? '🔒 戰鬥中鎖定'
+                        : player.refineStones < 1
+                          ? '精鍊石不足'
+                          : player.gold < goldCost
+                            ? '金幣不足'
+                            : `🔨 強化精鍊至 +${lvl + 1}`}
+                    </button>
                   </div>
                 </div>
-              )}
-            </div>
-          ))}
+
+                {/* 寶石插槽區（支援 4 種寶石自由鑲嵌或替換） */}
+                <div className="pt-2.5 border-t border-slate-800/80 space-y-2">
+                  <div className="text-[11px] text-slate-400 flex items-center justify-between">
+                    <span className="flex items-center gap-1 font-bold text-cyan-300">
+                      <Gem className="w-3.5 h-3.5" />
+                      <span>寶石插槽 ({item.sockets?.length || 0} 孔)</span>
+                    </span>
+                    {item.sockets?.length > 0 && (
+                      <span className="text-[10px] text-slate-500 font-mono">每次鑲嵌/替換 100 金幣</span>
+                    )}
+                  </div>
+
+                  {!item.sockets || item.sockets.length === 0 ? (
+                    <div className="text-[11px] text-slate-600 italic bg-slate-900/60 px-3 py-1.5 rounded-lg border border-slate-800/60">
+                      此階裝備無寶石插槽（Tier 2 以上名器附帶插槽）
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {item.sockets.map((gem, sIdx) => (
+                        <div key={sIdx} className="bg-slate-900/90 p-2.5 rounded-xl border border-slate-800 space-y-1.5">
+                          <div className="flex justify-between items-center text-[11px]">
+                            <span className="text-slate-400 font-bold">第 {sIdx + 1} 孔狀態：</span>
+                            {gem ? (
+                              <span className="text-amber-300 font-bold bg-amber-950/60 border border-amber-700/60 px-2 py-0.5 rounded">
+                                💠 {gem.name}
+                              </span>
+                            ) : (
+                              <span className="text-slate-500 italic">空插槽</span>
+                            )}
+                          </div>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            {GEMS_DB.map(gOption => {
+                              const shortMeta = GEM_SHORT_LABELS[gOption.id] || { label: gOption.name, style: 'border-slate-700 bg-slate-800 text-slate-200' };
+                              const isSameGem = gem?.id === gOption.id;
+                              const disabled = isInCombat || isSameGem || player.gold < 100;
+                              return (
+                                <button
+                                  key={gOption.id}
+                                  disabled={disabled}
+                                  onClick={() => handleSocketGem(rawItem, gOption, sIdx)}
+                                  className={`px-2 py-1 rounded-lg border text-[10px] font-bold transition-all disabled:opacity-40 disabled:cursor-not-allowed text-left truncate ${shortMeta.style}`}
+                                >
+                                  {isSameGem ? '✓ 已鑲嵌' : `${gem ? '換' : '+'}${shortMeta.label}`}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -325,7 +453,7 @@ export function TowerTab({
               : `⚔️ 第 ${towerFloor} 層・鎮魔塔守衛戰（距離首領層：第 ${nextBossFloor} 層）`}
           </span>
           <span className="text-[11px] font-mono bg-slate-900 text-slate-300 px-2.5 py-0.5 rounded border border-slate-700">
-            難度倍率 ×{(1 + (towerFloor - 1) * 0.20).toFixed(1)}
+            難度倍率 ×{(1.2 * (1 + (towerFloor - 1) * 0.25)).toFixed(1)}
           </span>
         </div>
 
@@ -335,7 +463,7 @@ export function TowerTab({
             • 通關獎勵：
             {isBossFloor
               ? <span className="text-emerald-300 font-bold">100% 必掉高階神裝 ＋ 100% 必掉技能卡 ＋ 額外 {2 + Math.floor(towerFloor / 5)} 顆精鍊石</span>
-              : <span>45% 機率掉落裝備、50% 機率掉落技能卡，並解鎖第 {towerFloor + 1} 層</span>}
+              : <span>35% 機率掉落裝備、40% 機率掉落技能卡，並解鎖第 {towerFloor + 1} 層</span>}
           </div>
         </div>
       </div>
