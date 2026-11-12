@@ -3,7 +3,7 @@ import {
   Swords, Users, Sparkles, Shield, Hammer, User, Compass,
   Castle, Store, BookOpen, Save, HelpCircle, LogOut, Search, Zap, Bot
 } from 'lucide-react';
-import { MAX_SKILL_LEVEL, ZONES, ELEMENTS } from './data/constants';
+import { ZONES, ELEMENTS } from './data/constants';
 import { CLASS_CONFIGS } from './data/classes';
 import { enrichEquipmentMeta } from './data/equipment';
 import { calculateHeroEffectiveStats } from './utils/statCalculator';
@@ -14,6 +14,7 @@ import {
   getSpeedAdvantage
 } from './utils/combatEngine';
 import HeroRosterTab from './components/HeroRosterTab';
+import SkillTreeTab from './components/SkillTreeTab';
 import HelpGuideModal from './components/HelpGuideModal';
 import {
   CharacterTab,
@@ -127,6 +128,7 @@ export default function GameUI(props) {
   const isFengShui = player.job === '風水師';
   const isWarlock = player.job === '術士';
   const classInfo = CLASS_CONFIGS[player.job] || CLASS_CONFIGS['猛將'];
+  const currentClassSkills = props.classSkills || classInfo.skills || [];
   const sweepReqLevel = getZoneSweepReqLevel(currentZoneIndex);
   const canSweepCurrentZone = (player.level || 1) >= sweepReqLevel;
 
@@ -683,7 +685,7 @@ export default function GameUI(props) {
                       <div className="text-[11px] text-slate-400 mt-0.5">無消耗・速度領先時機率觸發 50% 威力連擊</div>
                     </button>
 
-                    {(classInfo.skills || []).map((sk, idx) => {
+                    {currentClassSkills.map((sk, idx) => {
                       const skLvl = player.skillLevels?.[idx] || 0;
                       const { unlockLevel } = getSkillMeta(sk, idx);
                       const cdLeft = combatBuffs.skillCooldowns?.[idx] || 0;
@@ -774,70 +776,12 @@ export default function GameUI(props) {
 
         {/* ==================== 3. 職業技能樹 ==================== */}
         {activeTab === 'skills' && (
-          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-5 max-w-4xl mx-auto">
-            <div className="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-4">
-              <div>
-                <h2 className="font-extrabold text-amber-400 text-lg">✨ {player.job}職業技能樹</h2>
-                <p className="text-xs text-slate-400 mt-0.5">每升 1 級獲得 1 點 SP（每逢 5 的倍數等級額外獲得 2 點 SP）</p>
-              </div>
-              <span className="text-xs bg-amber-500/20 text-amber-300 font-mono font-bold px-3.5 py-1.5 rounded-full border border-amber-500/40">
-                可用技能點 (SP)：{player.sp} 點
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {(classInfo.skills || []).map((sk, idx) => {
-                const curLvl = player.skillLevels?.[idx] || 0;
-                const { unlockLevel, cooldown } = getSkillMeta(sk, idx);
-                const isUnlocked = player.level >= unlockLevel;
-                const canUpgrade = !isInCombat && isUnlocked && player.sp > 0 && curLvl < MAX_SKILL_LEVEL;
-
-                return (
-                  <div key={sk.id} className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex flex-col justify-between space-y-3">
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-center">
-                        <span className="font-extrabold text-amber-300 text-sm">{sk.name}</span>
-                        <span className="text-xs font-mono font-bold text-cyan-300">
-                          Lv.{curLvl} / {MAX_SKILL_LEVEL}
-                        </span>
-                      </div>
-                      <div className="flex gap-1.5 text-[10px] font-mono">
-                        <span className={`px-2 py-0.5 rounded border ${isUnlocked ? 'bg-emerald-950 text-emerald-300 border-emerald-700' : 'bg-rose-950 text-rose-300 border-rose-700'}`}>
-                          {isUnlocked ? `✓ Lv.${unlockLevel} 已解鎖` : `🔒 需 Lv.${unlockLevel}`}
-                        </span>
-                        <span className="px-2 py-0.5 rounded bg-slate-900 text-slate-300 border border-slate-700">
-                          CD {cooldown} 回合
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-300 leading-relaxed">{sk.desc}</p>
-                    </div>
-
-                    <button
-                      disabled={!canUpgrade}
-                      onClick={() => {
-                        setPlayer(p => ({
-                          ...p,
-                          sp: p.sp - 1,
-                          skillLevels: { ...p.skillLevels, [idx]: (p.skillLevels[idx] || 0) + 1 }
-                        }));
-                      }}
-                      className="w-full py-2 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold text-xs transition-all"
-                    >
-                      {!isUnlocked
-                        ? `🔒 需達到 Lv.${unlockLevel}`
-                        : curLvl >= MAX_SKILL_LEVEL
-                          ? '已達最高等級'
-                          : player.sp <= 0
-                            ? 'SP 不足'
-                            : curLvl === 0
-                              ? '✨ 消耗 1 SP 領悟技能'
-                              : '⬆️ 消耗 1 SP 提升等級'}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <SkillTreeTab
+            player={player}
+            setPlayer={setPlayer}
+            classSkills={currentClassSkills}
+            setHelpModalTab={setHelpModalTab}
+          />
         )}
 
         {/* ==================== 4. 裝備與背包 ==================== */}
