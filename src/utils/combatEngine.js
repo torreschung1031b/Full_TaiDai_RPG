@@ -1552,6 +1552,71 @@ export function resolveCombatRound({
           text: `🌌 風水師施展【奇門天象變 (Lv.${skLvl})】，引動星象震盪並使全場敵怪陷入「易傷 +${Math.round(skStats.vulnPct * 100)}%」(2回合)！`,
           type: 'player'
         });
+      } else {
+        if (sk.type === 'heal') {
+          const healVal = Math.max(15, Math.floor(playerTotalAtk * skStats.mult));
+          currentPlayer.hp = Math.min(playerTotalMaxHp, currentPlayer.hp + healVal);
+          recordAllyHeal('PLAYER', healVal);
+          currentRoster = currentRoster.map(ally => {
+            if (!activeHeroInstanceIds.includes(ally.instanceId) || ally.hp <= 0) return ally;
+            const { effectiveMaxHp } = calculateHeroEffectiveStats(
+              ally,
+              isFengShui,
+              currentHeroBuffs[ally.instanceId],
+              getHeroRowIdx(ally.instanceId)
+            );
+            recordAllyHeal(ally.instanceId, healVal);
+            return { ...ally, hp: Math.min(effectiveMaxHp, ally.hp + healVal) };
+          });
+          logs.push({
+            text: `🌿 少俠施展【${sk.name} (Lv.${skLvl})】，全隊恢復 +${healVal} HP！`,
+            type: 'player',
+            dmgRole: 'heal'
+          });
+        } else if (sk.type === 'shield') {
+          const shieldGain = Math.max(20, Math.floor(playerTotalMaxHp * 0.25 * (skStats.mult / 1.5)));
+          currentBuffs.shield += shieldGain;
+          logs.push({
+            text: `🛡️ 少俠施展【${sk.name} (Lv.${skLvl})】，獲得 +${shieldGain} 點護盾！`,
+            type: 'player',
+            dmgRole: 'shield'
+          });
+        } else if (sk.type === 'aoe') {
+          currentMonsters.forEach(m => {
+            if (m.hp > 0) {
+              const { dmg, isCrit } = calculateDamageToMonster(playerTotalAtk * skStats.mult, m, currentPlayer.element, {
+                ignoreDefPct: innateIgnoreDef,
+                isWarlock,
+                critRate: playerCritRate,
+                critDamage: playerCritDmg
+              });
+              m.hp = Math.max(0, m.hp - dmg);
+              recordMonsterHit(m.id, dmg, isCrit);
+              logs.push({
+                text: `${isCrit ? '💥暴擊！' : '✨ '}少俠施展【${sk.name} (Lv.${skLvl})】，橫掃【${m.name}】造成 ${dmg} 點傷害！`,
+                type: 'player',
+                dmgRole: isCrit ? 'player_crit' : 'player_normal'
+              });
+            }
+          });
+        } else {
+          const targetM = currentMonsters[targetIdx];
+          if (targetM) {
+            const { dmg, isCrit } = calculateDamageToMonster(playerTotalAtk * skStats.mult, targetM, currentPlayer.element, {
+              ignoreDefPct: innateIgnoreDef,
+              isWarlock,
+              critRate: playerCritRate,
+              critDamage: playerCritDmg
+            });
+            targetM.hp = Math.max(0, targetM.hp - dmg);
+            recordMonsterHit(targetM.id, dmg, isCrit);
+            logs.push({
+              text: `${isCrit ? '💥暴擊！' : '⚔️ '}少俠施展【${sk.name} (Lv.${skLvl})】，對【${targetM.name}】造成 ${dmg} 點傷害！`,
+              type: 'player',
+              dmgRole: isCrit ? 'player_crit' : 'player_normal'
+            });
+          }
+        }
       }
     }
   };
