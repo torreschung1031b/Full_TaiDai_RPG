@@ -2,7 +2,7 @@ import React from 'react';
 import { ScrollText, Compass, HelpCircle } from 'lucide-react';
 import { ELEMENTS, ZONES } from '../data/constants';
 import { calculateHeroEffectiveStats, getElementMultiplier } from '../utils/statCalculator';
-import { getPlayerCritProfile } from '../utils/combatEngine';
+import { getPlayerCritProfile, getSkillMeta } from '../utils/combatEngine';
 
 const ROW_LABELS = ['🛡️前排', '⚡中排', '✨後排'];
 
@@ -73,7 +73,6 @@ export default function CombatTab({
     return parts.map((part, i) => {
       if (!part) return null;
 
-      // 百分比或倍率數字（如 40%, 1.5x）
       if (/^\d+(?:\.\d+)?(%|x)$/.test(part)) {
         return (
           <span key={i} className="text-amber-300 font-extrabold underline decoration-amber-500/50 mx-0.5">
@@ -82,7 +81,6 @@ export default function CombatTab({
         );
       }
 
-      // 增益正數（如 +95 HP, +25怒氣, +20MP）
       if (/^\+\d+$/.test(part)) {
         const nextStr = parts[i + 1] || '';
         const isResource = /MP|怒|彈/.test(nextStr);
@@ -100,7 +98,6 @@ export default function CombatTab({
         );
       }
 
-      // 傷害與關鍵數值
       if (/^\d+$/.test(part)) {
         const prevStr = parts[i - 1] || '';
         const nextStr = parts[i + 1] || '';
@@ -167,7 +164,6 @@ export default function CombatTab({
               </span>
             );
           }
-          // 我方普通傷害
           return (
             <span
               key={i}
@@ -178,7 +174,6 @@ export default function CombatTab({
           );
         }
 
-        // 其他一般數字（等級、回合、剩餘護盾等）
         return (
           <span key={i} className="text-slate-100 font-bold">
             {part}
@@ -331,7 +326,6 @@ export default function CombatTab({
                               : 'border-slate-800/80 bg-slate-950/60 hover:border-slate-700'
                     }`}
                   >
-                    {/* 本回合受擊傷害／暴擊徽章 */}
                     {mHit && mHit.dmg > 0 && (
                       <div className="flex justify-center">
                         <span
@@ -366,7 +360,6 @@ export default function CombatTab({
                       </div>
                     )}
 
-                    {/* 血量數字依殘血比例變色 */}
                     <div
                       className={`text-[11px] font-mono font-black ${
                         isDead
@@ -461,7 +454,6 @@ export default function CombatTab({
                 )}
               </div>
 
-              {/* 主角本回合承傷／暴擊／回血浮動徽章 */}
               {isInCombat && playerHit && (playerHit.dmg > 0 || playerHit.heal > 0) && (
                 <div className="flex flex-wrap gap-1 mt-1 font-mono text-[10px] font-black">
                   {playerHit.dmg > 0 && (
@@ -523,7 +515,6 @@ export default function CombatTab({
                     </div>
                   )}
 
-                  {/* 英雄本回合承傷／暴擊／回血浮動徽章 */}
                   {isInCombat && hHit && (hHit.dmg > 0 || hHit.heal > 0) && (
                     <div className="flex flex-wrap gap-1 mt-1 font-mono text-[10px] font-black">
                       {hHit.dmg > 0 && (
@@ -557,7 +548,7 @@ export default function CombatTab({
           </div>
         </div>
 
-        {/* 戰鬥指令列（4 欄：普通攻擊 ＋ 3 招職業技能） */}
+        {/* 戰鬥指令列（4 欄：普通攻擊 ＋ 3 招職業技能含冷卻與等級限制） */}
         <div className="pt-3 border-t border-slate-800/80 space-y-3">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             <button
@@ -565,36 +556,58 @@ export default function CombatTab({
               onClick={() => handleExecuteRound({ type: 'attack' })}
               className="bg-rose-700 hover:bg-rose-600 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white py-3 px-2 rounded-2xl font-bold text-xs sm:text-sm shadow-lg transition-all active:scale-95 text-center"
             >
-              <div>普通攻擊</div>
+              <div>{['術士', '藥師', '風水師'].includes(player.job) ? '靈訣普攻' : '普通攻擊'}</div>
               <div className="text-[10px] opacity-80 mt-0.5">
                 {player.job === '猛將' ? '+25怒氣' : player.job === '巧匠' ? (player.ammo > 6 ? '二連射 +4彈' : '+4彈藥') : '+20MP'}
               </div>
             </button>
 
             {classSkills.map((sk, sIdx) => {
-              const skLvl = player.skillLevels[sIdx] || 0;
+              const skLvl = player.skillLevels?.[sIdx] || 0;
+              const { unlockLevel, cooldown } = getSkillMeta(sk, sIdx);
+              const isLevelLocked = (player.level || 1) < unlockLevel;
               const isUnlearned = skLvl <= 0;
-              let canAfford = !isUnlearned;
+              const cdRemaining = combatBuffs?.skillCooldowns?.[sIdx] || 0;
+              const isOnCooldown = cdRemaining > 0;
+
+              let canAfford = !isLevelLocked && !isUnlearned && !isOnCooldown;
               if (sk.costType === 'rage' && player.rage < sk.cost) canAfford = false;
               if (sk.costType === 'mp' && player.mp < sk.cost) canAfford = false;
               if (sk.costType === 'ammo' && player.ammo < sk.cost) canAfford = false;
 
               const costLabel = sk.costType === 'rage' ? `${sk.cost}怒` : sk.costType === 'ammo' ? `${sk.cost}彈` : `${sk.cost}MP`;
+              const isDisabled = !isInCombat || isLevelLocked || isUnlearned || isOnCooldown;
 
               return (
                 <button
                   key={sk.id}
-                  disabled={!isInCombat || isUnlearned}
+                  disabled={isDisabled}
                   onClick={() => handleExecuteRound({ type: 'skill', skill: sk, skillIdx: sIdx })}
-                  className={`py-3 px-2 rounded-2xl font-bold text-xs sm:text-sm shadow-lg transition-all active:scale-95 text-center disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed ${
-                    canAfford && isInCombat ? 'bg-cyan-700 hover:bg-cyan-600 text-white' : 'bg-slate-800 text-slate-500 opacity-60'
+                  className={`py-3 px-2 rounded-2xl font-bold text-xs sm:text-sm shadow-lg transition-all active:scale-95 text-center disabled:cursor-not-allowed ${
+                    isOnCooldown && isInCombat
+                      ? 'bg-amber-950/50 text-amber-300/80 border border-amber-700/60'
+                      : canAfford && isInCombat
+                        ? 'bg-cyan-700 hover:bg-cyan-600 text-white'
+                        : 'bg-slate-800 text-slate-500 opacity-65'
                   }`}
                 >
                   <div className="truncate">
-                    {isUnlearned ? `🔒 ${sk.name}` : `${sk.name} (Lv.${skLvl})`}
+                    {isLevelLocked
+                      ? `🔒 ${sk.name}`
+                      : isUnlearned
+                        ? `🔒 ${sk.name}`
+                        : isOnCooldown
+                          ? `⏳ ${sk.name}`
+                          : `${sk.name} (Lv.${skLvl})`}
                   </div>
-                  <div className="text-[10px] opacity-80 mt-0.5 font-mono">
-                    {isUnlearned ? '未學習 (Lv.0)' : `消耗 ${costLabel}`}
+                  <div className="text-[10px] opacity-85 mt-0.5 font-mono">
+                    {isLevelLocked
+                      ? `需 Lv.${unlockLevel} 解鎖`
+                      : isUnlearned
+                        ? '未學習 (Lv.0)'
+                        : isOnCooldown
+                          ? `冷卻中 (剩 ${cdRemaining} 回合)`
+                          : `消耗 ${costLabel}${cooldown > 0 ? ` • CD${cooldown}` : ''}`}
                   </div>
                 </button>
               );
@@ -614,7 +627,7 @@ export default function CombatTab({
         </div>
       </div>
 
-      {/* 實時戰況日誌（含色彩圖例與數字高亮） */}
+      {/* 實時戰況日誌 */}
       <div className="lg:col-span-4 bg-slate-900/80 border border-slate-800/80 rounded-3xl p-5 flex flex-col shadow-2xl backdrop-blur">
         <div className="border-b border-slate-800/80 pb-2.5 mb-3 space-y-1.5">
           <h3 className="font-extrabold text-amber-400 text-sm flex items-center gap-1.5">
