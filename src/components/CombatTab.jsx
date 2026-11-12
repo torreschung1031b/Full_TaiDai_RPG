@@ -2,6 +2,7 @@ import React from 'react';
 import { ScrollText, Compass, HelpCircle } from 'lucide-react';
 import { ELEMENTS, ZONES } from '../data/constants';
 import { calculateHeroEffectiveStats, getElementMultiplier } from '../utils/statCalculator';
+import { getPlayerCritProfile } from '../utils/combatEngine';
 
 const ROW_LABELS = ['🛡️前排', '⚡中排', '✨後排'];
 
@@ -30,29 +31,166 @@ export default function CombatTab({
   handleExecuteRound,
   handleFleeCombat,
   combatLogs,
+  lastRoundHits,
   chatEndRef
 }) {
   const playerRowIdx = getHeroRowIdx('PLAYER');
   const playerRowLabel = ROW_LABELS[playerRowIdx] || '⚡中排';
   const playerHpPct = Math.max(0, Math.min(100, (player.hp / (playerTotalMaxHp || 1)) * 100));
   const playerElem = ELEMENTS[player.element];
+  const { critRate: playerCritRate } = getPlayerCritProfile(player);
 
-  const getLogStyle = (log) => {
+  const getLogBaseStyle = (log) => {
     const txt = log.text || '';
     if (log.type === 'danger' || /戰敗|陣亡|重傷|氣血耗盡/.test(txt)) {
-      return 'text-rose-400 font-bold';
+      return 'text-rose-300 font-bold bg-rose-950/30 px-2 py-1 rounded-lg border-l-2 border-rose-500';
     }
-    if (/暴擊|首領|奧義|大捷|升級|通關/.test(txt)) {
+    if (log.dmgRole === 'player_crit') {
+      return 'text-amber-100 bg-amber-950/35 px-2 py-1 rounded-lg border-l-2 border-amber-400';
+    }
+    if (log.dmgRole === 'monster_crit') {
+      return 'text-rose-100 bg-rose-950/45 px-2 py-1 rounded-lg border-l-2 border-rose-500';
+    }
+    if (/首領|大捷|升級|通關/.test(txt)) {
       return 'text-amber-300 font-bold';
-    }
-    if (/恢復|治療|回血|護盾|藥力/.test(txt)) {
-      return 'text-emerald-300';
     }
     if (/獲得|掉落|招募|技能卡/.test(txt)) {
       return 'text-purple-300 font-semibold';
     }
     return 'text-slate-300';
   };
+
+  /**
+   * 智慧高亮日誌中的特殊數字，並依「是否暴擊」與「敵我類型」切換色彩
+   */
+  const renderHighlightedLog = (log) => {
+    const text = log.text || '';
+    const isPlayerCrit = log.dmgRole === 'player_crit' || (log.type !== 'monster' && text.includes('暴擊'));
+    const isMonsterCrit = log.dmgRole === 'monster_crit' || (log.type === 'monster' && text.includes('暴擊'));
+
+    const parts = text.split(/(\+\d+|\d+(?:\.\d+)?%|\d+(?:\.\d+)?x|\d+)/g);
+
+    return parts.map((part, i) => {
+      if (!part) return null;
+
+      // 百分比或倍率數字（如 40%, 1.5x）
+      if (/^\d+(?:\.\d+)?(%|x)$/.test(part)) {
+        return (
+          <span key={i} className="text-amber-300 font-extrabold underline decoration-amber-500/50 mx-0.5">
+            {part}
+          </span>
+        );
+      }
+
+      // 增益正數（如 +95 HP, +25怒氣, +20MP）
+      if (/^\+\d+$/.test(part)) {
+        const nextStr = parts[i + 1] || '';
+        const isResource = /MP|怒|彈/.test(nextStr);
+        return (
+          <span
+            key={i}
+            className={`font-black px-1 py-0.2 rounded mx-0.5 ${
+              isResource
+                ? 'text-cyan-200 bg-cyan-950/80 border border-cyan-600/60'
+                : 'text-emerald-200 bg-emerald-950/80 border border-emerald-500/60'
+            }`}
+          >
+            {part}
+          </span>
+        );
+      }
+
+      // 傷害與關鍵數值
+      if (/^\d+$/.test(part)) {
+        const prevStr = parts[i - 1] || '';
+        const nextStr = parts[i + 1] || '';
+        const isDamageNumber = /造成|受到|吸收了|反彈|累計造成/.test(prevStr) || /點傷害|點重創|點打擊|點法傷|點毀滅|點毒傷|點重擊|點無視|點護盾/.test(nextStr);
+
+        if (isDamageNumber) {
+          if (isPlayerCrit) {
+            return (
+              <span
+                key={i}
+                className="inline-flex items-center gap-0.5 bg-gradient-to-r from-amber-500/35 to-orange-500/35 text-amber-200 border border-amber-400 px-1.5 py-0.2 rounded-md font-black text-[13px] shadow-sm mx-0.5"
+              >
+                💥{part}
+              </span>
+            );
+          }
+          if (isMonsterCrit) {
+            return (
+              <span
+                key={i}
+                className="inline-flex items-center gap-0.5 bg-rose-600/45 text-rose-100 border border-rose-400 px-1.5 py-0.2 rounded-md font-black text-[13px] shadow-sm mx-0.5"
+              >
+                💢{part}
+              </span>
+            );
+          }
+          if (log.dmgRole === 'monster_normal' || log.type === 'monster') {
+            return (
+              <span
+                key={i}
+                className="text-rose-400 bg-rose-950/60 border border-rose-800/70 px-1.5 py-0.2 rounded font-black text-[13px] mx-0.5"
+              >
+                {part}
+              </span>
+            );
+          }
+          if (log.dmgRole === 'dot_poison') {
+            return (
+              <span
+                key={i}
+                className="text-purple-200 bg-purple-950/70 border border-purple-600/70 px-1.5 py-0.2 rounded font-black text-[13px] mx-0.5"
+              >
+                ☠️{part}
+              </span>
+            );
+          }
+          if (log.dmgRole === 'dot_burn') {
+            return (
+              <span
+                key={i}
+                className="text-orange-200 bg-orange-950/70 border border-orange-600/70 px-1.5 py-0.2 rounded font-black text-[13px] mx-0.5"
+              >
+                🔥{part}
+              </span>
+            );
+          }
+          if (log.dmgRole === 'shield') {
+            return (
+              <span
+                key={i}
+                className="text-sky-200 bg-sky-950/70 border border-sky-500/70 px-1.5 py-0.2 rounded font-black text-[13px] mx-0.5"
+              >
+                🛡️{part}
+              </span>
+            );
+          }
+          // 我方普通傷害
+          return (
+            <span
+              key={i}
+              className="text-cyan-200 bg-cyan-950/60 border border-cyan-700/70 px-1.5 py-0.2 rounded font-black text-[13px] mx-0.5"
+            >
+              {part}
+            </span>
+          );
+        }
+
+        // 其他一般數字（等級、回合、剩餘護盾等）
+        return (
+          <span key={i} className="text-slate-100 font-bold">
+            {part}
+          </span>
+        );
+      }
+
+      return <span key={i}>{part}</span>;
+    });
+  };
+
+  const playerHit = lastRoundHits?.allies?.['PLAYER'];
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -168,27 +306,46 @@ export default function CombatTab({
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5 max-h-64 overflow-y-auto p-1">
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5 max-h-72 overflow-y-auto p-1">
               {monsters.map((m, idx) => {
                 const isDead = m.hp <= 0;
                 const isSelected = selectedTargetIndex === idx && !isDead;
                 const elemInfo = ELEMENTS[m.element];
                 const elemMult = getElementMultiplier ? getElementMultiplier(player.element, m.element) : 1;
+                const mHit = lastRoundHits?.monsters?.[m.id];
+                const mHpPct = Math.max(0, Math.min(100, (m.hp / (m.maxHp || 1)) * 100));
 
                 return (
                   <div
                     key={m.id}
                     onClick={() => !isDead && setSelectedTargetIndex(idx)}
-                    className={`p-3 rounded-2xl border text-center cursor-pointer transition-all shadow-md space-y-1 ${
+                    className={`p-3 rounded-2xl border text-center cursor-pointer transition-all shadow-md space-y-1 relative ${
                       isDead
-                        ? 'opacity-30 bg-slate-950 border-slate-800'
+                        ? 'opacity-35 bg-slate-950 border-slate-800'
                         : isSelected
-                          ? 'border-amber-400 bg-amber-950/40 ring-2 ring-amber-400/60 scale-105'
+                          ? 'border-amber-400 bg-amber-950/40 ring-2 ring-amber-400/60 scale-[1.03]'
                           : m.isBoss
                             ? 'border-rose-500/80 bg-rose-950/30 hover:border-rose-400'
-                            : 'border-slate-800/80 bg-slate-950/60 hover:border-slate-700'
+                            : m.isElite
+                              ? 'border-purple-500/70 bg-purple-950/20 hover:border-purple-400'
+                              : 'border-slate-800/80 bg-slate-950/60 hover:border-slate-700'
                     }`}
                   >
+                    {/* 本回合受擊傷害／暴擊徽章 */}
+                    {mHit && mHit.dmg > 0 && (
+                      <div className="flex justify-center">
+                        <span
+                          className={`text-[10px] font-mono font-black px-2 py-0.5 rounded-full border shadow ${
+                            mHit.isCrit
+                              ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-slate-950 border-amber-200 animate-pulse'
+                              : 'bg-cyan-950/90 text-cyan-200 border-cyan-500/70'
+                          }`}
+                        >
+                          {mHit.isCrit ? `💥 -${mHit.dmg} 暴擊` : `-${mHit.dmg}`}
+                        </span>
+                      </div>
+                    )}
+
                     <div className="text-xs font-bold truncate text-slate-200">
                       {m.isBoss ? `👑 ${m.name}` : m.name}
                     </div>
@@ -208,7 +365,22 @@ export default function CombatTab({
                         </span>
                       </div>
                     )}
-                    <div className="text-[10px] text-rose-400 font-mono">HP {m.hp}</div>
+
+                    {/* 血量數字依殘血比例變色 */}
+                    <div
+                      className={`text-[11px] font-mono font-black ${
+                        isDead
+                          ? 'text-slate-600'
+                          : mHpPct <= 25
+                            ? 'text-rose-400 animate-pulse'
+                            : mHpPct <= 60
+                              ? 'text-amber-300'
+                              : 'text-emerald-300'
+                      }`}
+                    >
+                      HP {m.hp}/{m.maxHp}
+                    </div>
+
                     {!isDead && (
                       <div className="flex flex-wrap justify-center gap-1 pt-0.5 text-[9px] font-bold">
                         {m.poisonTurns > 0 && (
@@ -276,7 +448,7 @@ export default function CombatTab({
                 </span>
               </div>
               <div className="text-[10px] text-slate-300 font-mono mt-0.5 truncate">
-                Lv.{player.level} {player.job} • {playerElem?.icon}攻{playerTotalAtk}
+                {playerElem?.icon}攻{playerTotalAtk} • 暴{Math.round(playerCritRate * 100)}%
               </div>
               <div className="text-[10px] font-mono mt-0.5 text-cyan-300">
                 {player.job === '猛將'
@@ -288,10 +460,33 @@ export default function CombatTab({
                   <span className="text-sky-300 ml-1">🛡️+{combatBuffs.shield}</span>
                 )}
               </div>
+
+              {/* 主角本回合承傷／暴擊／回血浮動徽章 */}
+              {isInCombat && playerHit && (playerHit.dmg > 0 || playerHit.heal > 0) && (
+                <div className="flex flex-wrap gap-1 mt-1 font-mono text-[10px] font-black">
+                  {playerHit.dmg > 0 && (
+                    <span
+                      className={`px-1.5 py-0.2 rounded border ${
+                        playerHit.isCrit
+                          ? 'bg-rose-600/50 text-rose-100 border-rose-400 animate-pulse'
+                          : 'bg-rose-950/80 text-rose-300 border-rose-800'
+                      }`}
+                    >
+                      {playerHit.isCrit ? `💢-${playerHit.dmg} 遭暴擊` : `-${playerHit.dmg}`}
+                    </span>
+                  )}
+                  {playerHit.heal > 0 && (
+                    <span className="bg-emerald-950/80 text-emerald-300 border border-emerald-700 px-1.5 py-0.2 rounded">
+                      +{playerHit.heal}
+                    </span>
+                  )}
+                </div>
+              )}
+
               <div className="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden mt-1.5 border border-slate-800">
                 <div className="bg-amber-400 h-full transition-all" style={{ width: `${playerHpPct}%` }} />
               </div>
-              <div className="text-[10px] text-right font-mono text-amber-200 mt-0.5">
+              <div className="text-[10px] text-right font-mono font-bold text-amber-200 mt-0.5">
                 {player.hp <= 0 ? (
                   <span className="text-rose-400 font-bold">☠️ 氣血耗盡</span>
                 ) : (
@@ -306,6 +501,8 @@ export default function CombatTab({
               const hRowIdx = getHeroRowIdx(h.instanceId);
               const { effectiveMaxHp, effectiveAtk, skillChance } = calculateHeroEffectiveStats(h, isFengShui, hBuff, hRowIdx);
               const hpPct = Math.max(0, Math.min(100, (h.hp / effectiveMaxHp) * 100));
+              const hHit = lastRoundHits?.allies?.[h.instanceId];
+
               return (
                 <div
                   key={h.instanceId}
@@ -325,6 +522,29 @@ export default function CombatTab({
                       💊 藥力激發 ({hBuff.surgeTurns}回合)
                     </div>
                   )}
+
+                  {/* 英雄本回合承傷／暴擊／回血浮動徽章 */}
+                  {isInCombat && hHit && (hHit.dmg > 0 || hHit.heal > 0) && (
+                    <div className="flex flex-wrap gap-1 mt-1 font-mono text-[10px] font-black">
+                      {hHit.dmg > 0 && (
+                        <span
+                          className={`px-1.5 py-0.2 rounded border ${
+                            hHit.isCrit
+                              ? 'bg-rose-600/50 text-rose-100 border-rose-400 animate-pulse'
+                              : 'bg-rose-950/80 text-rose-300 border-rose-800'
+                          }`}
+                        >
+                          {hHit.isCrit ? `💢-${hHit.dmg} 遭暴擊` : `-${hHit.dmg}`}
+                        </span>
+                      )}
+                      {hHit.heal > 0 && (
+                        <span className="bg-emerald-950/80 text-emerald-300 border border-emerald-700 px-1.5 py-0.2 rounded">
+                          +{hHit.heal}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   <div className="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden mt-1.5 border border-slate-800">
                     <div className="bg-emerald-500 h-full transition-all" style={{ width: `${hpPct}%` }} />
                   </div>
@@ -387,26 +607,43 @@ export default function CombatTab({
                 onClick={handleFleeCombat}
                 className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-xl text-xs font-bold transition-all"
               >
-                🏃 撤退逃跑 (70% 成功脫離)
+                🏃 撤退逃跑 (65% 成功脫離)
               </button>
             </div>
           )}
         </div>
       </div>
 
-      {/* 實時戰況日誌 */}
+      {/* 實時戰況日誌（含色彩圖例與數字高亮） */}
       <div className="lg:col-span-4 bg-slate-900/80 border border-slate-800/80 rounded-3xl p-5 flex flex-col shadow-2xl backdrop-blur">
-        <h3 className="font-extrabold text-amber-400 mb-3 border-b border-slate-800/80 pb-2 text-sm flex items-center gap-1.5">
-          <ScrollText className="w-4 h-4" />
-          <span>實時戰況日誌</span>
-        </h3>
+        <div className="border-b border-slate-800/80 pb-2.5 mb-3 space-y-1.5">
+          <h3 className="font-extrabold text-amber-400 text-sm flex items-center gap-1.5">
+            <ScrollText className="w-4 h-4" />
+            <span>實時戰況日誌</span>
+          </h3>
+          <div className="flex flex-wrap gap-1.5 text-[10px] font-mono">
+            <span className="bg-amber-500/25 text-amber-200 border border-amber-400/70 px-1.5 py-0.2 rounded font-bold">
+              💥我方暴擊
+            </span>
+            <span className="bg-cyan-950 text-cyan-200 border border-cyan-700 px-1.5 py-0.2 rounded font-bold">
+              我方普傷
+            </span>
+            <span className="bg-rose-600/40 text-rose-100 border border-rose-400 px-1.5 py-0.2 rounded font-bold">
+              💢敵方暴擊
+            </span>
+            <span className="bg-emerald-950 text-emerald-200 border border-emerald-600 px-1.5 py-0.2 rounded font-bold">
+              +治療
+            </span>
+          </div>
+        </div>
+
         <div className="flex-1 overflow-y-auto space-y-2 text-xs font-mono max-h-[480px] p-1">
           {combatLogs.map(log => (
             <div
               key={log.id}
-              className={`leading-relaxed border-b border-slate-800/40 pb-1.5 ${getLogStyle(log)}`}
+              className={`leading-relaxed border-b border-slate-800/40 pb-1.5 ${getLogBaseStyle(log)}`}
             >
-              {log.text}
+              {renderHighlightedLog(log)}
             </div>
           ))}
           <div ref={chatEndRef} />
