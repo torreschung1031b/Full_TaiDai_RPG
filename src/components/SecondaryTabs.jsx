@@ -4,6 +4,7 @@ import { MAX_LEVEL, ELEMENTS } from '../data/constants';
 import { FORMATIONS_CONFIG } from '../data/formations';
 import { HERO_TEMPLATES } from '../data/heroes';
 import { GEMS_DB, enrichEquipmentMeta } from '../data/equipment';
+import { getPlayerStatScaling, getPlayerCritProfile } from '../utils/combatEngine';
 
 export const CODEX_MILESTONES = [
   { count: 3, label: '初窺門徑（3 位）', bonusText: '主角攻擊力 +5%', atkPct: 0.05, hpPct: 0, defPct: 0, speedPct: 0 },
@@ -51,6 +52,56 @@ export function CharacterTab({
   playerTotalDef,
   playerTotalSpeed
 }) {
+  const statScaling = getPlayerStatScaling(player.job);
+  const { critRate } = getPlayerCritProfile(player);
+  const isWarrior = player.job === '猛將';
+  const isArtisan = player.job === '巧匠';
+  const isWarlock = player.job === '術士';
+  const isMagic = ['術士', '藥師', '風水師'].includes(player.job);
+
+  const statCards = [
+    {
+      key: 'str',
+      label: isWarrior ? '力量 (STR) ★主攻' : isArtisan ? '力量 (STR) ☆副攻' : '力量 (STR)',
+      desc: isWarrior
+        ? '每點 +3.2 攻擊力（主屬性）'
+        : isArtisan
+          ? '每點 +1.6 攻擊力（敏力雙修）'
+          : '物理筋骨（法系主看智力）',
+      val: player.stats.str,
+      highlight: isWarrior || isArtisan
+    },
+    {
+      key: 'con',
+      label: isWarrior ? '體質 (CON) ★重裝' : '體質 (CON)',
+      desc: isWarrior
+        ? '每點 +24 HP / +2 防禦（重裝專精）'
+        : '每點 +16 HP / +1 防禦',
+      val: player.stats.con,
+      highlight: isWarrior
+    },
+    {
+      key: 'int',
+      label: isMagic ? '智力 (INT) ★主攻' : '智力 (INT)',
+      desc: isWarlock
+        ? '每點 +3.5 法攻 / +10 MP（主屬性）'
+        : isMagic
+          ? '每點 +3.2 法攻 / +10 MP（主屬性）'
+          : '每點 +10 最大 MP',
+      val: player.stats.int,
+      highlight: isMagic
+    },
+    {
+      key: 'agi',
+      label: isArtisan ? '敏捷 (AGI) ★主攻' : '敏捷 (AGI)',
+      desc: isArtisan
+        ? '每點 +2.2 攻擊 / +1 速度 / +0.4% 暴擊'
+        : '每點 +1 速度 / +0.4% 暴擊率',
+      val: player.stats.agi,
+      highlight: isArtisan
+    }
+  ];
+
   return (
     <div className="bg-slate-900/80 border border-slate-800/80 rounded-3xl p-6 shadow-2xl backdrop-blur space-y-6 max-w-4xl mx-auto">
       <div className="flex flex-wrap justify-between items-center gap-3 border-b border-slate-800 pb-4">
@@ -74,58 +125,71 @@ export function CharacterTab({
       </div>
 
       <div className="bg-emerald-950/30 border border-emerald-700/60 rounded-2xl p-4 space-y-1">
-        <div className="text-xs font-extrabold text-emerald-300 flex items-center gap-1.5">
-          <Sparkles className="w-4 h-4" />
-          <span>{classInfo.icon} {player.job}專屬天賦：{classInfo.passiveName}</span>
+        <div className="text-xs font-extrabold text-emerald-300 flex items-center justify-between flex-wrap gap-1">
+          <span className="flex items-center gap-1.5">
+            <Sparkles className="w-4 h-4" />
+            <span>{classInfo.icon} {player.job}專屬天賦：{classInfo.passiveName}</span>
+          </span>
+          <span className="text-[11px] bg-slate-950/80 text-amber-300 border border-amber-600/50 px-2.5 py-0.5 rounded-full font-mono">
+            輸出係數：{statScaling.primaryLabel}
+          </span>
         </div>
         <p className="text-xs text-slate-300 leading-relaxed">{classInfo.passiveDesc}</p>
       </div>
 
       <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-5 space-y-4">
-        <div className="flex justify-between items-center">
-          <span className="text-xs font-bold text-amber-300">📊 主角綜合戰鬥屬性（含裝備、陣法與圖鑑加成）</span>
+        <div className="flex justify-between items-center flex-wrap gap-2">
+          <span className="text-xs font-bold text-amber-300">📊 主角綜合戰鬥屬性（含職業係數、裝備、陣法與圖鑑加成）</span>
           <span className="text-xs font-mono text-slate-400">
             {player.level >= MAX_LEVEL ? 'EXP: MAX (Lv.30 滿級上限)' : `EXP: ${player.exp} / ${player.maxExp}`}
           </span>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 font-mono">
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5 font-mono">
           <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 text-center">
             <div className="text-[11px] text-slate-400">❤️ 最大生命</div>
-            <div className="text-base font-bold text-rose-400 mt-1">{player.hp} / {playerTotalMaxHp}</div>
+            <div className="text-sm sm:text-base font-bold text-rose-400 mt-1">{player.hp} / {playerTotalMaxHp}</div>
           </div>
           <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 text-center">
             <div className="text-[11px] text-slate-400">💧 內力 / 資源</div>
-            <div className="text-base font-bold text-cyan-400 mt-1">
+            <div className="text-sm sm:text-base font-bold text-cyan-400 mt-1">
               {player.job === '猛將' ? `${player.rage}/100 怒` : player.job === '巧匠' ? `${player.ammo}/${player.maxAmmo} 彈` : `${player.mp}/${playerTotalMaxMp}`}
             </div>
           </div>
           <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 text-center">
-            <div className="text-[11px] text-slate-400">⚔️ 總攻擊力</div>
-            <div className="text-base font-bold text-amber-300 mt-1">{playerTotalAtk}</div>
+            <div className="text-[11px] text-slate-400">{isMagic ? '🔮 法術攻擊' : '⚔️ 總攻擊力'}</div>
+            <div className="text-sm sm:text-base font-bold text-amber-300 mt-1">{playerTotalAtk}</div>
           </div>
           <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 text-center">
             <div className="text-[11px] text-slate-400">🛡️ 總防禦力</div>
-            <div className="text-base font-bold text-indigo-300 mt-1">{playerTotalDef}</div>
+            <div className="text-sm sm:text-base font-bold text-indigo-300 mt-1">{playerTotalDef}</div>
           </div>
-          <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 text-center col-span-2 sm:col-span-1">
+          <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 text-center">
             <div className="text-[11px] text-slate-400">⚡ 行動速度</div>
-            <div className="text-base font-bold text-emerald-300 mt-1">{playerTotalSpeed}</div>
+            <div className="text-sm sm:text-base font-bold text-emerald-300 mt-1">{playerTotalSpeed}</div>
+          </div>
+          <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 text-center">
+            <div className="text-[11px] text-slate-400">💥 暴擊機率</div>
+            <div className="text-sm sm:text-base font-bold text-orange-300 mt-1">{Math.round(critRate * 100)}%</div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        {[
-          { key: 'str', label: '力量 (STR)', desc: '每點 +3 攻擊力', val: player.stats.str },
-          { key: 'con', label: '體質 (CON)', desc: '每點 +16 HP / +1 防禦', val: player.stats.con },
-          { key: 'int', label: '智慧 (INT)', desc: '每點 +10 最大 MP', val: player.stats.int },
-          { key: 'agi', label: '敏捷 (AGI)', desc: '每點 +1 行動速度', val: player.stats.agi }
-        ].map(st => (
-          <div key={st.key} className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2 text-center">
-            <div className="text-xs font-bold text-amber-300">{st.label}</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {statCards.map(st => (
+          <div
+            key={st.key}
+            className={`bg-slate-950 p-4 rounded-2xl border space-y-2 text-center ${
+              st.highlight ? 'border-amber-500/60 shadow-md shadow-amber-950/20' : 'border-slate-800'
+            }`}
+          >
+            <div className={`text-xs font-bold ${st.highlight ? 'text-amber-300' : 'text-slate-300'}`}>
+              {st.label}
+            </div>
             <div className="text-2xl font-black font-mono text-slate-100">{st.val}</div>
-            <div className="text-[10px] text-slate-400">{st.desc}</div>
+            <div className="text-[10px] text-slate-400 min-h-[28px] flex items-center justify-center">
+              {st.desc}
+            </div>
             <button
               onClick={() => {
                 if (player.statPoints > 0) {
@@ -187,7 +251,6 @@ export function ForgeTab({
         </div>
       </div>
 
-      {/* 鍛造規則與風險提示橫幅 */}
       <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-3.5 text-xs text-slate-300 flex flex-wrap justify-between gap-2">
         <div>
           <span className="text-amber-300 font-bold">⚒️ 精鍊規則：</span>
@@ -201,7 +264,6 @@ export function ForgeTab({
         </div>
       </div>
 
-      {/* 即時鍛造結果提示 */}
       {forgeFeedback && (
         <div
           className={`rounded-2xl p-3.5 border text-xs sm:text-sm font-bold flex items-center gap-2 shadow-md ${
@@ -249,7 +311,6 @@ export function ForgeTab({
 
                   <div className="text-xs text-slate-400">{item.desc}</div>
 
-                  {/* 精鍊按鈕與成功率標示 */}
                   <div className="pt-1 space-y-1.5">
                     <div className="flex justify-between items-center text-[11px] font-mono">
                       <span className="text-slate-400">
@@ -283,7 +344,6 @@ export function ForgeTab({
                   </div>
                 </div>
 
-                {/* 寶石插槽區（支援 4 種寶石自由鑲嵌或替換） */}
                 <div className="pt-2.5 border-t border-slate-800/80 space-y-2">
                   <div className="text-[11px] text-slate-400 flex items-center justify-between">
                     <span className="flex items-center gap-1 font-bold text-cyan-300">
@@ -505,7 +565,6 @@ export function CodexTab({ heroRoster }) {
         </span>
       </div>
 
-      {/* 收錄進度條與里程碑 */}
       <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-4 space-y-3">
         <div className="w-full bg-slate-900 h-2.5 rounded-full overflow-hidden border border-slate-800">
           <div className="bg-gradient-to-r from-amber-500 to-emerald-400 h-full transition-all" style={{ width: `${pct}%` }} />
