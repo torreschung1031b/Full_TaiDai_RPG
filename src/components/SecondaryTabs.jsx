@@ -2,7 +2,6 @@ import React from 'react';
 import { Sparkles, HelpCircle } from 'lucide-react';
 import { MAX_LEVEL, ELEMENTS } from '../data/constants';
 import { FORMATIONS_CONFIG } from '../data/formations';
-import { SKILL_CARDS_DB, createSkillCardInstance } from '../data/skillCards';
 import { HERO_TEMPLATES } from '../data/heroes';
 import { GEMS_DB } from '../data/equipment';
 
@@ -289,29 +288,73 @@ export function FormationsTab({
 
 export function TowerTab({
   towerFloor,
-  setTowerFloor,
+  towerBestFloor,
   isInCombat,
-  setSkillCardsInventory,
-  spawnEncounter,
-  setActiveTab
+  handleStartTowerChallenge
 }) {
+  const isBossFloor = towerFloor % 5 === 0;
+  const nextBossFloor = Math.ceil(towerFloor / 5) * 5;
+  const expectedTierText =
+    towerFloor >= 20 ? 'Tier 4 靈寶 ～ Tier 5 仙器' :
+    towerFloor >= 11 ? 'Tier 3 玄鐵 ～ Tier 4 靈寶' :
+    towerFloor >= 5 ? 'Tier 2 精鋼 ～ Tier 3 玄鐵' : 'Tier 1 凡鐵 ～ Tier 2 精鋼';
+
   return (
-    <div className="bg-slate-900/80 border border-slate-800/80 rounded-3xl p-6 shadow-2xl backdrop-blur text-center space-y-4 max-w-xl mx-auto">
-      <h2 className="font-extrabold text-amber-400 text-xl">🗼 鎮魔塔挑戰 (目前: 第 {towerFloor} 層)</h2>
-      <p className="text-xs text-slate-400">挑戰鎮魔塔守衛可贏取稀有英雄技能卡與精鍊石！</p>
-      <div className="flex justify-center gap-3">
+    <div className="bg-slate-900/80 border border-slate-800/80 rounded-3xl p-6 shadow-2xl backdrop-blur space-y-5 max-w-2xl mx-auto">
+      <div className="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-4">
+        <div>
+          <h2 className="font-extrabold text-amber-400 text-xl">🗼 鎮魔塔試煉（目前：第 {towerFloor} 層）</h2>
+          <p className="text-xs text-slate-400 mt-0.5">
+            實際擊敗本層守衛後方可晉升下一層；每 5 層鎮守首領必掉高階神兵！
+          </p>
+        </div>
+        <span className="text-xs font-mono font-bold bg-slate-950 text-emerald-300 border border-emerald-700/60 px-3 py-1.5 rounded-full">
+          🏆 最高通關紀錄：第 {Math.max(0, towerBestFloor - 1)} 層
+        </span>
+      </div>
+
+      <div className={`p-5 rounded-2xl border space-y-2.5 ${
+        isBossFloor
+          ? 'bg-rose-950/30 border-rose-600/80'
+          : 'bg-slate-950/90 border-slate-800'
+      }`}>
+        <div className="flex items-center justify-between">
+          <span className={`text-sm font-extrabold ${isBossFloor ? 'text-rose-300' : 'text-amber-300'}`}>
+            {isBossFloor
+              ? `🔥 第 ${towerFloor} 層・鎮守妖王首領戰（BOSS）`
+              : `⚔️ 第 ${towerFloor} 層・鎮魔塔守衛戰（距離首領層：第 ${nextBossFloor} 層）`}
+          </span>
+          <span className="text-[11px] font-mono bg-slate-900 text-slate-300 px-2.5 py-0.5 rounded border border-slate-700">
+            難度倍率 ×{(1 + (towerFloor - 1) * 0.20).toFixed(1)}
+          </span>
+        </div>
+
+        <div className="text-xs text-slate-300 space-y-1 leading-relaxed">
+          <div>• 產出裝備階級：<span className="text-amber-300 font-bold">{expectedTierText}</span></div>
+          <div>
+            • 通關獎勵：
+            {isBossFloor
+              ? <span className="text-emerald-300 font-bold">100% 必掉高階神裝 ＋ 100% 必掉技能卡 ＋ 額外 {2 + Math.floor(towerFloor / 5)} 顆精鍊石</span>
+              : <span>45% 機率掉落裝備、50% 機率掉落技能卡，並解鎖第 {towerFloor + 1} 層</span>}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex justify-center pt-1">
         <button
           disabled={isInCombat}
-          onClick={() => {
-            setTowerFloor(prev => prev + 1);
-            const randTemplate = SKILL_CARDS_DB[Math.floor(Math.random() * SKILL_CARDS_DB.length)];
-            setSkillCardsInventory(prev => [...prev, createSkillCardInstance(randTemplate)]);
-            spawnEncounter(3);
-            setActiveTab('combat');
-          }}
-          className="px-6 py-3 bg-amber-600 hover:bg-amber-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold rounded-2xl text-sm shadow-lg"
+          onClick={handleStartTowerChallenge}
+          className={`px-7 py-3.5 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-black rounded-2xl text-sm shadow-xl transition-all ${
+            isBossFloor
+              ? 'bg-gradient-to-r from-rose-700 to-amber-600 hover:from-rose-600 hover:to-amber-500'
+              : 'bg-amber-600 hover:bg-amber-500'
+          }`}
         >
-          {isInCombat ? '🔒 戰鬥進行中' : '⚔️ 挑戰本層並進入戰鬥'}
+          {isInCombat
+            ? '🔒 戰鬥進行中'
+            : isBossFloor
+              ? `🔥 迎戰第 ${towerFloor} 層鎮守首領`
+              : `⚔️ 挑戰第 ${towerFloor} 層守衛`}
         </button>
       </div>
     </div>
