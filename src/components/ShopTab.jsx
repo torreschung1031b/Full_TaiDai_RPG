@@ -43,14 +43,24 @@ const SHOP_ITEMS = [
     desc: '隨機開出 1 張英雄主動或被動技能卡，自動存入技能卡庫存。'
   },
   {
-    id: 'equip_box',
+    id: 'equip_box_mid',
     category: '神兵利器',
     icon: '🎁',
-    name: '江湖神兵寶箱',
-    price: 500,
-    badge: '25% 附帶 +1',
-    badgeStyle: 'bg-orange-950 text-orange-300 border-orange-700',
-    desc: '隨機開出 1 件六大部位裝備，有 25% 機率直接附帶 +1 精鍊等級！'
+    name: '江湖兵器箱（Tier 1～3）',
+    price: 450,
+    badge: '凡鐵～玄鐵',
+    badgeStyle: 'bg-sky-950 text-sky-300 border-sky-700',
+    desc: '隨機開出 1 件 Tier 1 至 Tier 3 裝備，有 25% 機率直接附帶 +1 精鍊！'
+  },
+  {
+    id: 'equip_box_high',
+    category: '神兵利器',
+    icon: '⚱️',
+    name: '天工神兵匣（Tier 3～5）',
+    price: 1600,
+    badge: '玄鐵～仙器',
+    badgeStyle: 'bg-amber-950 text-amber-300 border-amber-500',
+    desc: '西域秘藏神兵匣，必定開出 Tier 3 至 Tier 5 稀有神裝（30% 附帶 +1 精鍊）！'
   },
   {
     id: 'hero_scroll_normal',
@@ -88,7 +98,7 @@ export default function ShopTab({
           <div>
             <h2 className="font-extrabold text-amber-400 text-lg">🏮 江湖市集（西域行腳商）</h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              消耗多餘金幣採購精鍊耗材、秘傳技能卡與高階英雄招募令
+              消耗金幣採購精鍊耗材、分階神兵寶箱與高階英雄招募令
             </p>
           </div>
         </div>
