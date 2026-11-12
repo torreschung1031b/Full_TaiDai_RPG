@@ -10,6 +10,7 @@ import CombatTab from './components/CombatTab';
 import HeroTeamTab from './components/HeroTeamTab';
 import SkillTreeTab from './components/SkillTreeTab';
 import EquipBagTab from './components/EquipBagTab';
+import ShopTab from './components/ShopTab';
 import {
   CharacterTab,
   ForgeTab,
@@ -68,6 +69,8 @@ export default function GameUI(props) {
     setSkillCardsInventory,
     handleRefineEquipment,
     handleSocketGem,
+    shopLastReward,
+    handleShopPurchase,
     currentFormation,
     towerFloor,
     setTowerFloor,
@@ -167,7 +170,7 @@ export default function GameUI(props) {
         {isInCombat && (
           <div className="bg-rose-950/80 border-b border-rose-800/70 px-3 py-1 text-center text-[11px] text-rose-200 font-bold flex items-center justify-center gap-1.5">
             <Lock className="w-3 h-3 text-rose-400 shrink-0" />
-            <span className="truncate">戰鬥交鋒中：已鎖定更換裝備、調整陣容與站位、切換陣法及回客棧休息</span>
+            <span className="truncate">戰鬥交鋒中：已鎖定更換裝備、調整陣容與站位、切換陣法、市集交易及回客棧休息</span>
           </div>
         )}
 
@@ -178,6 +181,7 @@ export default function GameUI(props) {
             { id: 'skills', label: `✨ 技能樹${player.sp > 0 ? ` (+${player.sp}SP)` : ''}` },
             { id: 'equip', label: '🛡️ 裝備背包' },
             { id: 'forge', label: '🔨 鐵匠精鍊' },
+            { id: 'shop', label: '🏮 江湖市集' },
             { id: 'formations', label: '☯️ 陣法五行' },
             { id: 'heroes', label: `👥 英雄隊伍 (${activeHeroes.length}/4)` },
             { id: 'tower', label: '🗼 鎮魔塔' },
@@ -273,6 +277,15 @@ export default function GameUI(props) {
             equipmentInventory={equipmentInventory}
             handleRefineEquipment={handleRefineEquipment}
             handleSocketGem={handleSocketGem}
+          />
+        )}
+
+        {activeTab === 'shop' && (
+          <ShopTab
+            player={player}
+            isInCombat={isInCombat}
+            shopLastReward={shopLastReward}
+            handleShopPurchase={handleShopPurchase}
           />
         )}
 
