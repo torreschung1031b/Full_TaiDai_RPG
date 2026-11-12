@@ -7,6 +7,7 @@ const ROW_LABELS = ['🛡️前排', '⚡中排', '✨後排'];
 
 export default function CombatTab({
   isInCombat,
+  activeTowerFloor,
   currentZoneIndex,
   handleSelectZone,
   spawnEncounter,
@@ -41,7 +42,7 @@ export default function CombatTab({
     if (log.type === 'danger' || /戰敗|陣亡|重傷|氣血耗盡/.test(txt)) {
       return 'text-rose-400 font-bold';
     }
-    if (/暴擊|全軍合擊|奧義|大捷|升級/.test(txt)) {
+    if (/暴擊|首領|奧義|大捷|升級|通關/.test(txt)) {
       return 'text-amber-300 font-bold';
     }
     if (/恢復|治療|回血|護盾|藥力/.test(txt)) {
@@ -66,7 +67,7 @@ export default function CombatTab({
                   disabled={isInCombat}
                   onClick={() => handleSelectZone(zIdx)}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-                    currentZoneIndex === zIdx ? 'bg-amber-600 text-white shadow' : 'bg-slate-950/60 text-slate-400 border border-slate-800'
+                    !activeTowerFloor && currentZoneIndex === zIdx ? 'bg-amber-600 text-white shadow' : 'bg-slate-950/60 text-slate-400 border border-slate-800'
                   }`}
                 >
                   {zone.name}
@@ -91,6 +92,24 @@ export default function CombatTab({
               </button>
             </div>
           </div>
+
+          {/* 鎮魔塔層數橫幅 */}
+          {isInCombat && activeTowerFloor && (
+            <div className={`mb-3 px-3.5 py-2 rounded-2xl border text-xs font-extrabold flex items-center justify-between ${
+              activeTowerFloor % 5 === 0
+                ? 'bg-rose-950/70 border-rose-500 text-amber-300'
+                : 'bg-indigo-950/70 border-indigo-500/70 text-indigo-200'
+            }`}>
+              <span>
+                {activeTowerFloor % 5 === 0
+                  ? `🔥 鎮魔塔第 ${activeTowerFloor} 層・鎮守首領討伐戰！`
+                  : `🗼 鎮魔塔第 ${activeTowerFloor} 層・守衛試煉戰`}
+              </span>
+              <span className="text-[11px] font-mono">
+                {activeTowerFloor % 5 === 0 ? '勝出必掉高階神裝＋技能卡' : '勝出推進樓層'}
+              </span>
+            </div>
+          )}
 
           {/* 我方全局戰鬥增益條 */}
           {isInCombat && (combatBuffs?.tauntTurns > 0 || combatBuffs?.reflectTurns > 0 || combatBuffs?.baguaTurns > 0 || combatBuffs?.shield > 0) && (
@@ -161,10 +180,18 @@ export default function CombatTab({
                     key={m.id}
                     onClick={() => !isDead && setSelectedTargetIndex(idx)}
                     className={`p-3 rounded-2xl border text-center cursor-pointer transition-all shadow-md space-y-1 ${
-                      isDead ? 'opacity-30 bg-slate-950 border-slate-800' : isSelected ? 'border-amber-400 bg-amber-950/40 ring-2 ring-amber-400/60 scale-105' : 'border-slate-800/80 bg-slate-950/60 hover:border-slate-700'
+                      isDead
+                        ? 'opacity-30 bg-slate-950 border-slate-800'
+                        : isSelected
+                          ? 'border-amber-400 bg-amber-950/40 ring-2 ring-amber-400/60 scale-105'
+                          : m.isBoss
+                            ? 'border-rose-500/80 bg-rose-950/30 hover:border-rose-400'
+                            : 'border-slate-800/80 bg-slate-950/60 hover:border-slate-700'
                     }`}
                   >
-                    <div className="text-xs font-bold truncate text-slate-200">{m.name}</div>
+                    <div className="text-xs font-bold truncate text-slate-200">
+                      {m.isBoss ? `👑 ${m.name}` : m.name}
+                    </div>
                     <div className={`text-[10px] ${elemInfo?.color.split(' ')[0]} font-bold`}>
                       {elemInfo?.icon} {m.element} {m.elemShiftTurns > 0 ? `(轉${m.elemShiftTurns})` : ''}
                     </div>
@@ -310,12 +337,12 @@ export default function CombatTab({
           </div>
         </div>
 
-        {/* 戰鬥指令列 */}
+        {/* 戰鬥指令列（4 欄：普通攻擊 ＋ 3 招職業技能） */}
         <div className="pt-3 border-t border-slate-800/80 space-y-3">
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
             <button
               disabled={!isInCombat}
-              onClick={() => handleExecuteRound({ type: 'attack' }, false)}
+              onClick={() => handleExecuteRound({ type: 'attack' })}
               className="bg-rose-700 hover:bg-rose-600 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white py-3 px-2 rounded-2xl font-bold text-xs sm:text-sm shadow-lg transition-all active:scale-95 text-center"
             >
               <div>普通攻擊</div>
@@ -338,7 +365,7 @@ export default function CombatTab({
                 <button
                   key={sk.id}
                   disabled={!isInCombat || isUnlearned}
-                  onClick={() => handleExecuteRound({ type: 'skill', skill: sk, skillIdx: sIdx }, false)}
+                  onClick={() => handleExecuteRound({ type: 'skill', skill: sk, skillIdx: sIdx })}
                   className={`py-3 px-2 rounded-2xl font-bold text-xs sm:text-sm shadow-lg transition-all active:scale-95 text-center disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed ${
                     canAfford && isInCombat ? 'bg-cyan-700 hover:bg-cyan-600 text-white' : 'bg-slate-800 text-slate-500 opacity-60'
                   }`}
@@ -352,15 +379,6 @@ export default function CombatTab({
                 </button>
               );
             })}
-
-            <button
-              disabled={!isInCombat}
-              onClick={() => handleExecuteRound({ type: 'attack' }, true)}
-              className="bg-gradient-to-r from-amber-600 via-amber-500 to-amber-600 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-slate-950 font-black py-3 px-2 rounded-2xl text-xs sm:text-sm shadow-lg transition-all active:scale-95 text-center"
-            >
-              <div>⚡ 全軍合擊</div>
-              <div className="text-[10px] opacity-80 mt-0.5">主僕集火奧義</div>
-            </button>
           </div>
 
           {isInCombat && (
