@@ -86,6 +86,7 @@ export default function App() {
   const [victorySummary, setVictorySummary] = useState(null);
   const [defeatSummary, setDefeatSummary] = useState(null);
   const [shopLastReward, setShopLastReward] = useState('');
+  const [forgeFeedback, setForgeFeedback] = useState(null);
 
   const [combatBuffs, setCombatBuffs] = useState({
     shield: 0,
@@ -368,7 +369,7 @@ export default function App() {
     return list;
   };
 
-  // Stage 3B：開啟鎮魔塔當前樓層挑戰（強化樓層難度倍率）
+  // Stage 3B：開啟鎮魔塔當前樓層挑戰
   const handleStartTowerChallenge = () => {
     if (isInCombat) {
       addLog(`⚠️ 當前已在戰鬥中，無法開啟新的鎮魔塔挑戰！`, 'sys');
@@ -922,9 +923,14 @@ export default function App() {
       return;
     }
     const level = item.refineLevel || 0;
-    if (player.gold < (level + 1) * 120 || player.refineStones < 1) return;
+    const goldCost = (level + 1) * 120;
+    if (player.gold < goldCost || player.refineStones < 1) {
+      setForgeFeedback({ type: 'danger', text: `⚠️ 金幣或精鍊石不足，無法強化【${item.name}】！` });
+      return;
+    }
+
     const isSuccess = Math.random() < (level < 4 ? 1.0 : 0.65);
-    setPlayer(p => ({ ...p, gold: p.gold - (level + 1) * 120, refineStones: p.refineStones - 1 }));
+    setPlayer(p => ({ ...p, gold: p.gold - goldCost, refineStones: p.refineStones - 1 }));
     const nextLevel = isSuccess ? level + 1 : Math.max(0, level - 1);
     const updated = { ...item, refineLevel: nextLevel };
 
@@ -932,6 +938,12 @@ export default function App() {
     if (player.equipped[item.type]?.uid === item.uid) {
       setPlayer(p => ({ ...p, equipped: { ...p.equipped, [item.type]: updated } }));
     }
+
+    const msg = isSuccess
+      ? `🔨 精鍊成功！【${item.name}】強化至 +${nextLevel}（基礎屬性額外 +${nextLevel * 15}%）！`
+      : `💥 精鍊失敗！【${item.name}】靈氣震盪，精鍊等級倒退至 +${nextLevel}！`;
+    setForgeFeedback({ type: isSuccess ? 'success' : 'danger', text: msg });
+    addLog(msg, isSuccess ? 'sys' : 'danger');
   };
 
   const handleSocketGem = (item, gem, socketIdx) => {
@@ -939,14 +951,28 @@ export default function App() {
       addLog(`🔒 戰鬥進行中，無法鑲嵌寶石！`, 'sys');
       return;
     }
+    const socketCost = 100;
+    if (player.gold < socketCost) {
+      setForgeFeedback({ type: 'danger', text: `⚠️ 金幣不足（需 100 金幣），無法鑲嵌寶石！` });
+      return;
+    }
+
+    const prevGem = item.sockets?.[socketIdx];
     const newSockets = [...(item.sockets || [null])];
     newSockets[socketIdx] = gem;
     const updated = { ...item, sockets: newSockets };
 
+    setPlayer(p => ({ ...p, gold: p.gold - socketCost }));
     setEquipmentInventory(prev => prev.map(i => i.uid === item.uid ? updated : i));
     if (player.equipped[item.type]?.uid === item.uid) {
       setPlayer(p => ({ ...p, equipped: { ...p.equipped, [item.type]: updated } }));
     }
+
+    const msg = prevGem
+      ? `💎 已花費 100 金幣將【${item.name}】第 ${socketIdx + 1} 孔的【${prevGem.name}】替換為【${gem.name}】！`
+      : `💎 已花費 100 金幣為【${item.name}】第 ${socketIdx + 1} 孔鑲嵌【${gem.name}】！`;
+    setForgeFeedback({ type: 'success', text: msg });
+    addLog(msg, 'sys');
   };
 
   const handleExportSave = () => {
@@ -1049,6 +1075,7 @@ export default function App() {
       setEquipmentInventory={setEquipmentInventory}
       skillCardsInventory={skillCardsInventory}
       setSkillCardsInventory={setSkillCardsInventory}
+      forgeFeedback={forgeFeedback}
       handleRefineEquipment={handleRefineEquipment}
       handleSocketGem={handleSocketGem}
       shopLastReward={shopLastReward}
