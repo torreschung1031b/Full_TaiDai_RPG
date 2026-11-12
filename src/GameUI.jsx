@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Lock, Coffee, HelpCircle } from 'lucide-react';
-
+//
 import { MAX_LEVEL, ELEMENTS } from './data/constants';
 import { CLASS_CONFIGS, CLASS_SKILLS_DB } from './data/classes';
 
