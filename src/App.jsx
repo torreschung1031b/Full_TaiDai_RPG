@@ -7,6 +7,7 @@ import { FORMATIONS_CONFIG } from './data/formations';
 import { SKILL_CARDS_DB, createSkillCardInstance } from './data/skillCards';
 import { HERO_TEMPLATES, instantiateHero } from './data/heroes';
 import { ITEM_DROP_POOL, calculateEquipmentBonus } from './data/equipment';
+import { calculateCodexBonus } from './components/SecondaryTabs';
 
 import { getRowPositionBuffs, syncFormationSlots } from './utils/formationHelper';
 import {
@@ -79,6 +80,7 @@ export default function App() {
   const [combatPhase, setCombatPhase] = useState('PLAYER_SELECT');
   const [victorySummary, setVictorySummary] = useState(null);
   const [defeatSummary, setDefeatSummary] = useState(null);
+  const [shopLastReward, setShopLastReward] = useState('');
 
   const [combatBuffs, setCombatBuffs] = useState({
     shield: 0,
@@ -174,6 +176,7 @@ export default function App() {
     .filter(Boolean);
 
   const { bonus: equipBonus, setAtkPct, setHpPct, setMpPct, setDefPct } = calculateEquipmentBonus(player.equipped);
+  const codexBonus = calculateCodexBonus(heroRoster);
   const effectiveFormationKey = isFengShui ? currentFormation : 'none';
   const syncedSlots = syncFormationSlots(effectiveFormationKey, formationSlots, activeHeroInstanceIds);
   const playerGridIdx = Number(Object.keys(syncedSlots).find(k => syncedSlots[k] === 'PLAYER') ?? 0);
@@ -187,11 +190,11 @@ export default function App() {
   const rawFormBonus = FORMATIONS_CONFIG[effectiveFormationKey]?.bonus || {};
   const formMultiplier = isFengShui ? 2 : 1;
 
-  const playerTotalMaxHp = Math.floor((player.maxHp + (player.stats.con * 16) + equipBonus.hp) * (1 + setHpPct + ((rawFormBonus.hpPct || 0) * formMultiplier)));
+  const playerTotalMaxHp = Math.floor((player.maxHp + (player.stats.con * 16) + equipBonus.hp) * (1 + setHpPct + ((rawFormBonus.hpPct || 0) * formMultiplier) + codexBonus.hpPct));
   const playerTotalMaxMp = Math.floor((player.maxMp + (player.stats.int * 10) + equipBonus.mp) * (1 + setMpPct));
-  const playerTotalAtk = Math.floor((player.atk + (player.stats.str * 3) + equipBonus.atk) * (1 + setAtkPct + ((rawFormBonus.atkPct || 0) * formMultiplier)));
-  const playerTotalDef = Math.floor((player.def + (player.stats.con * 1) + equipBonus.def) * (1 + (setDefPct || 0) + ((rawFormBonus.defPct || 0) * formMultiplier)));
-  const playerTotalSpeed = Math.floor((player.speed + (player.stats.agi * 1) + equipBonus.speed) * (1 + ((rawFormBonus.speedPct || 0) * formMultiplier) + (playerRowBuff.speedPct || 0)));
+  const playerTotalAtk = Math.floor((player.atk + (player.stats.str * 3) + equipBonus.atk) * (1 + setAtkPct + ((rawFormBonus.atkPct || 0) * formMultiplier) + codexBonus.atkPct));
+  const playerTotalDef = Math.floor((player.def + (player.stats.con * 1) + equipBonus.def) * (1 + (setDefPct || 0) + ((rawFormBonus.defPct || 0) * formMultiplier) + codexBonus.defPct));
+  const playerTotalSpeed = Math.floor((player.speed + (player.stats.agi * 1) + equipBonus.speed) * (1 + ((rawFormBonus.speedPct || 0) * formMultiplier) + (playerRowBuff.speedPct || 0) + codexBonus.speedPct));
 
   const addLog = (text, type = 'info') => {
     setCombatLogs(prev => [...prev, { id: Date.now() + Math.random(), turn: turnCount, text, type }]);
@@ -583,6 +586,68 @@ export default function App() {
     addLog(`🏨 客棧休養完成，全隊生命、資源恢復滿值！`, 'sys');
   };
 
+  const handleShopPurchase = (shopItem) => {
+    if (isInCombat) {
+      addLog(`🔒 戰鬥進行中，行腳商暫停交易！`, 'sys');
+      return;
+    }
+    if (player.gold < shopItem.price) {
+      addLog(`⚠️ 金幣不足，無法購買【${shopItem.name}】！`, 'sys');
+      return;
+    }
+
+    let rewardMsg = '';
+
+    if (shopItem.id === 'stone_1') {
+      setPlayer(p => ({ ...p, gold: p.gold - shopItem.price, refineStones: p.refineStones + 1 }));
+      rewardMsg = `💎 成功購入【精鍊石 ×1】，目前持有 ${player.refineStones + 1} 顆！`;
+    } else if (shopItem.id === 'stone_5') {
+      setPlayer(p => ({ ...p, gold: p.gold - shopItem.price, refineStones: p.refineStones + 5 }));
+      rewardMsg = `💠 成功購入【五連精鍊石禮盒 ×5】，目前持有 ${player.refineStones + 5} 顆！`;
+    } else if (shopItem.id === 'ration_full') {
+      setPlayer(p => ({
+        ...p,
+        gold: p.gold - shopItem.price,
+        hp: playerTotalMaxHp,
+        mp: playerTotalMaxMp,
+        rage: 0,
+        ammo: p.maxAmmo
+      }));
+      setHeroRoster(prev => prev.map(h => {
+        const { effectiveMaxHp } = calculateHeroEffectiveStats(h, isFengShui, null, getHeroRowIdx(h.instanceId));
+        return { ...h, hp: effectiveMaxHp, fatigue: 0, rage: 0, ammo: h.maxAmmo || 6, mp: h.maxMp || 100 };
+      }));
+      rewardMsg = `🍙 服用【行軍大還丹禮包】，全隊生命與資源已恢復至 100% 巔峰狀態！`;
+    } else if (shopItem.id === 'skill_box') {
+      const template = SKILL_CARDS_DB[Math.floor(Math.random() * SKILL_CARDS_DB.length)];
+      const newCard = createSkillCardInstance(template);
+      setPlayer(p => ({ ...p, gold: p.gold - shopItem.price }));
+      setSkillCardsInventory(prev => [...prev, newCard]);
+      rewardMsg = `🃏 開啟秘傳技能卡盲盒，獲得【${newCard.name}】（適用：${newCard.allowedJobs.join('、')}）！`;
+    } else if (shopItem.id === 'equip_box') {
+      const template = ITEM_DROP_POOL[Math.floor(Math.random() * ITEM_DROP_POOL.length)];
+      const bonusRefine = Math.random() < 0.25 ? 1 : 0;
+      const newEquip = { ...template, refineLevel: bonusRefine, uid: `eq_shop_${Date.now()}_${Math.random()}` };
+      setPlayer(p => ({ ...p, gold: p.gold - shopItem.price }));
+      setEquipmentInventory(prev => [...prev, newEquip]);
+      rewardMsg = `🎁 開啟江湖神兵寶箱，獲得【${newEquip.name} (+${bonusRefine})】！`;
+    } else if (shopItem.id === 'hero_scroll_normal' || shopItem.id === 'hero_scroll_rare') {
+      const pool = shopItem.id === 'hero_scroll_rare'
+        ? HERO_TEMPLATES.filter(t => t.tier >= 3 && t.tier <= 5)
+        : HERO_TEMPLATES.filter(t => t.tier >= 1 && t.tier <= 3);
+      const picked = pool[Math.floor(Math.random() * pool.length)];
+      const recruitedHero = normalizeHero(instantiateHero(picked, true, null, getRandomElement));
+      setPlayer(p => ({ ...p, gold: p.gold - shopItem.price }));
+      setHeroRoster(prev => [...prev, recruitedHero]);
+      rewardMsg = `👥 招募成功！【Tier ${recruitedHero.tier}】${recruitedHero.heroClass}【${recruitedHero.name}】（${recruitedHero.element}屬性）正式加入名冊！`;
+    }
+
+    if (rewardMsg) {
+      setShopLastReward(rewardMsg);
+      addLog(`🏮 [江湖市集] ${rewardMsg}`, 'sys');
+    }
+  };
+
   const handleEquipItem = (item) => {
     if (isInCombat) {
       addLog(`🔒 戰鬥進行中，無法更換裝備！`, 'sys');
@@ -804,6 +869,8 @@ export default function App() {
       setSkillCardsInventory={setSkillCardsInventory}
       handleRefineEquipment={handleRefineEquipment}
       handleSocketGem={handleSocketGem}
+      shopLastReward={shopLastReward}
+      handleShopPurchase={handleShopPurchase}
       currentFormation={effectiveFormationKey}
       towerFloor={towerFloor}
       setTowerFloor={setTowerFloor}
