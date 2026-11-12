@@ -287,7 +287,7 @@ export default function GameUI(props) {
             onClick={handleStartGame}
             className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black text-base shadow-xl transition-all"
           >
-            ⚔️ 踏入《天外 Online》江湖
+            ⚔️ 踏入《泰太 Online》江湖
           </button>
         </div>
       </div>
@@ -325,7 +325,7 @@ export default function GameUI(props) {
       <header className="sticky top-0 z-30 bg-slate-950/95 border-b border-slate-800 backdrop-blur px-4 py-3">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 flex-wrap">
-            <span className="font-black text-amber-400 text-base sm:text-lg">⚔️ 天外 Online</span>
+            <span className="font-black text-amber-400 text-base sm:text-lg">⚔️ 泰太 Online</span>
             <span className="text-xs bg-slate-900 border border-slate-700 px-2.5 py-1 rounded-full font-bold text-slate-200">
               {player.name} • Lv.{player.level} {player.job} ({ELEMENTS[player.element]?.icon}{player.element})
             </span>
