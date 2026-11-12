@@ -26,6 +26,7 @@ import {
   migrateAndValidateSave
 } from './utils/saveHelper';
 import {
+  getPlayerStatScaling,
   resolveCombatRound,
   resolveFleeCombat
 } from './utils/combatEngine';
@@ -95,7 +96,8 @@ export default function App() {
     reflectPct: 0,
     baguaTurns: 0,
     baguaReducePct: 0,
-    baguaReflectPct: 0
+    baguaReflectPct: 0,
+    skillCooldowns: { 0: 0, 1: 0, 2: 0 }
   });
   const [heroBattleBuffs, setHeroBattleBuffs] = useState({});
   const [battleDownedHeroIds, setBattleDownedHeroIds] = useState([]);
@@ -199,11 +201,12 @@ export default function App() {
 
   const rawFormBonus = FORMATIONS_CONFIG[effectiveFormationKey]?.bonus || {};
   const formMultiplier = isFengShui ? 2 : 1;
+  const statScaling = getPlayerStatScaling(player.job);
 
-  const playerTotalMaxHp = Math.floor((player.maxHp + (player.stats.con * 16) + equipBonus.hp) * (1 + setHpPct + ((rawFormBonus.hpPct || 0) * formMultiplier) + codexBonus.hpPct));
+  const playerTotalMaxHp = Math.floor((player.maxHp + (player.stats.con * statScaling.conHp) + equipBonus.hp) * (1 + setHpPct + ((rawFormBonus.hpPct || 0) * formMultiplier) + codexBonus.hpPct));
   const playerTotalMaxMp = Math.floor((player.maxMp + (player.stats.int * 10) + equipBonus.mp) * (1 + setMpPct));
-  const playerTotalAtk = Math.floor((player.atk + (player.stats.str * 3) + equipBonus.atk) * (1 + setAtkPct + ((rawFormBonus.atkPct || 0) * formMultiplier) + codexBonus.atkPct));
-  const playerTotalDef = Math.floor((player.def + (player.stats.con * 1) + equipBonus.def) * (1 + (setDefPct || 0) + ((rawFormBonus.defPct || 0) * formMultiplier) + codexBonus.defPct));
+  const playerTotalAtk = Math.floor((player.atk + statScaling.calcStatAtk(player.stats) + equipBonus.atk) * (1 + setAtkPct + ((rawFormBonus.atkPct || 0) * formMultiplier) + codexBonus.atkPct));
+  const playerTotalDef = Math.floor((player.def + (player.stats.con * statScaling.conDef) + equipBonus.def) * (1 + (setDefPct || 0) + ((rawFormBonus.defPct || 0) * formMultiplier) + codexBonus.defPct));
   const playerTotalSpeed = Math.floor((player.speed + (player.stats.agi * 1) + equipBonus.speed) * (1 + ((rawFormBonus.speedPct || 0) * formMultiplier) + (playerRowBuff.speedPct || 0) + codexBonus.speedPct));
 
   const addLog = (text, type = 'info') => {
@@ -292,7 +295,8 @@ export default function App() {
       reflectPct: 0,
       baguaTurns: 0,
       baguaReducePct: 0,
-      baguaReflectPct: 0
+      baguaReflectPct: 0,
+      skillCooldowns: { 0: 0, 1: 0, 2: 0 }
     });
     setHeroBattleBuffs({});
     setBattleDownedHeroIds([]);
@@ -369,7 +373,6 @@ export default function App() {
     return list;
   };
 
-  // Stage 3B：開啟鎮魔塔當前樓層挑戰
   const handleStartTowerChallenge = () => {
     if (isInCombat) {
       addLog(`⚠️ 當前已在戰鬥中，無法開啟新的鎮魔塔挑戰！`, 'sys');
