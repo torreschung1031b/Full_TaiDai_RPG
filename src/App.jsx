@@ -10,7 +10,9 @@ import {
   STARTER_WEAPONS_BY_JOB,
   calculateEquipmentBonus,
   enrichEquipmentMeta,
-  rollEquipmentFromTierRange
+  rollEquipmentFromTierRange,
+  getRefineSuccessRate,
+  getCumulativeRefineBonusPct
 } from './data/equipment';
 import { calculateCodexBonus } from './components/SecondaryTabs';
 
@@ -28,8 +30,13 @@ import {
 import {
   getPlayerStatScaling,
   resolveCombatRound,
-  resolveFleeCombat
+  resolveFleeCombat,
+  pickBestAutoCombatAction,
+  simulateZoneSweep,
+  getZoneSweepReqLevel
 } from './utils/combatEngine';
+
+export const MAX_HERO_FUSION = 5;
 
 const INITIAL_PLAYER = {
   name: "太古少俠",
@@ -49,6 +56,51 @@ const INITIAL_PLAYER = {
   skillLevels: { 0: 0, 1: 0, 2: 0 },
   equipped: { weapon: null, offhand: null, helmet: null, armor: null, shoes: null, accessory: null }
 };
+
+function mergeHeroIntoTarget(targetHero, materialHero, nextFusion) {
+  const mergedLevel = Math.min(MAX_LEVEL, Math.max(targetHero.level || 1, materialHero.level || 1));
+  const mergedMaxExp = Math.floor(100 * Math.pow(mergedLevel, 1.3));
+  const absorbedExp = Math.floor((materialHero.exp || 0) * 0.5) + 50;
+  const mergedExp = mergedLevel >= MAX_LEVEL
+    ? 0
+    : Math.min(mergedMaxExp - 1, (targetHero.exp || 0) + absorbedExp);
+
+  const tStats = targetHero.stats || { str: 4, con: 4, int: 2, agi: 2 };
+  const mStats = materialHero.stats || { str: 4, con: 4, int: 2, agi: 2 };
+  const primaryBonus = targetHero.heroClass === '猛將'
+    ? { str: 2, con: 1, int: 0, agi: 0 }
+    : targetHero.heroClass === '巧匠'
+      ? { str: 1, con: 0, int: 0, agi: 2 }
+      : { str: 0, con: 1, int: 2, agi: 0 };
+
+  const mergedStats = {
+    str: Math.max(tStats.str, mStats.str) + primaryBonus.str,
+    con: Math.max(tStats.con, mStats.con) + primaryBonus.con,
+    int: Math.max(tStats.int, mStats.int) + primaryBonus.int,
+    agi: Math.max(tStats.agi, mStats.agi) + primaryBonus.agi
+  };
+
+  const tier = targetHero.tier || 1;
+  const fusionStatMult = 1 + (nextFusion * 0.15);
+  const newMaxHp = Math.floor((140 + (tier * 50) + (mergedStats.con * 18)) * fusionStatMult);
+  const newAtk = Math.floor((18 + (tier * 12) + (mergedStats.str * 3.2) + (mergedStats.int * 2.2)) * fusionStatMult);
+  const newDef = Math.floor((6 + (tier * 4) + (mergedStats.con * 1.2)) * fusionStatMult);
+  const newSpeed = Math.floor((10 + (tier * 2) + (mergedStats.agi * 2)) * fusionStatMult);
+
+  return {
+    ...targetHero,
+    level: mergedLevel,
+    exp: mergedExp,
+    maxExp: mergedMaxExp,
+    fusionLevel: nextFusion,
+    stats: mergedStats,
+    maxHp: newMaxHp,
+    hp: newMaxHp,
+    atk: newAtk,
+    def: newDef,
+    speed: newSpeed
+  };
+}
 
 export default function App() {
   const [gameStarted, setGameStarted] = useState(false);
@@ -84,10 +136,12 @@ export default function App() {
   const [lastRoundHits, setLastRoundHits] = useState({ monsters: {}, allies: {} });
   const [turnCount, setTurnCount] = useState(1);
   const [combatPhase, setCombatPhase] = useState('PLAYER_SELECT');
+  const [autoBattle, setAutoBattle] = useState(false);
   const [victorySummary, setVictorySummary] = useState(null);
   const [defeatSummary, setDefeatSummary] = useState(null);
   const [shopLastReward, setShopLastReward] = useState('');
   const [forgeFeedback, setForgeFeedback] = useState(null);
+  const [fusionFeedback, setFusionFeedback] = useState(null);
 
   const [combatBuffs, setCombatBuffs] = useState({
     shield: 0,
@@ -126,7 +180,10 @@ export default function App() {
     const loadedFloor = Math.max(1, migratedData.towerFloor || 1);
 
     setPlayer(loadedP);
-    setHeroRoster((migratedData.heroRoster || []).map(normalizeHero));
+    setHeroRoster((migratedData.heroRoster || []).map(h => ({
+      ...normalizeHero(h),
+      fusionLevel: Math.min(MAX_HERO_FUSION, Math.max(0, h.fusionLevel || 0))
+    })));
     setActiveHeroInstanceIds(loadedActiveIds);
     setCurrentFormation(loadedForm);
     setFormationSlots(syncFormationSlots(loadedForm, migratedData.formationSlots || {}, loadedActiveIds));
@@ -139,7 +196,10 @@ export default function App() {
 
   useEffect(() => {
     const t1s = HERO_TEMPLATES.filter(t => t.tier === 1);
-    const cands = t1s.map(t => normalizeHero(instantiateHero(t, true, null, getRandomElement)));
+    const cands = t1s.map(t => ({
+      ...normalizeHero(instantiateHero(t, true, null, getRandomElement)),
+      fusionLevel: 0
+    }));
     setStarterHeroCandidates(cands);
     setCreationData(prev => ({ ...prev, selectedStarterHero: cands[0] }));
 
@@ -182,6 +242,24 @@ export default function App() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [combatLogs]);
+
+  // 🤖 自動戰鬥排程
+  useEffect(() => {
+    if (!gameStarted || !autoBattle || !isInCombat || combatPhase !== 'PLAYER_SELECT') return;
+    const timer = setTimeout(() => {
+      const classSkills = CLASS_CONFIGS[player.job]?.skills || [];
+      const nextAction = pickBestAutoCombatAction(
+        player,
+        classSkills,
+        combatBuffs,
+        activeHeroInstanceIds,
+        heroRoster
+      );
+      handleExecuteRound(nextAction);
+    }, 450);
+
+    return () => clearTimeout(timer);
+  });
 
   const activeHeroes = activeHeroInstanceIds
     .map(id => heroRoster.find(h => h.instanceId === id))
@@ -227,9 +305,22 @@ export default function App() {
     ]);
   };
 
+  const handleToggleAutoBattle = () => {
+    setAutoBattle(prev => {
+      const next = !prev;
+      addLog(
+        next
+          ? '🤖 已開啟【智能自動戰鬥】：AI 將自動釋放冷卻完畢的技能與普攻（隨時可點擊關閉接管）！'
+          : '🖐️ 已關閉【智能自動戰鬥】，切換為手動戰術操作！',
+        'sys'
+      );
+      return next;
+    });
+  };
+
   const handleStartGame = () => {
     const jobConfig = CLASS_CONFIGS[creationData.job];
-    const starterHero = normalizeHero(creationData.selectedStarterHero);
+    const starterHero = { ...normalizeHero(creationData.selectedStarterHero), fusionLevel: 0 };
     const starterWeaponTemplate = STARTER_WEAPONS_BY_JOB[creationData.job];
     const starterWeapon = starterWeaponTemplate
       ? { ...starterWeaponTemplate, refineLevel: 0, uid: `eq_starter_${Date.now()}` }
@@ -284,12 +375,30 @@ export default function App() {
     setActiveTowerFloor(null);
     setMonsters([]);
     setLastRoundHits({ monsters: {}, allies: {} });
-    addLog(`🗺️ 已前往【${ZONES[zoneIdx].name}】安全營地，請點擊「🔍 尋找怪群」主動搜敵！`, 'sys');
+    addLog(`🗺️ 已前往【${ZONES[zoneIdx].name}】安全營地，請點擊「🔍 尋找怪群」或「⚡ 快速掃蕩」！`, 'sys');
   };
 
-  const resetCombatStates = () => {
+  /**
+   * 計算出戰 ★+3 覺醒英雄帶來的開戰護盾與真元加成
+   */
+  const computeOpeningAwakeningBonus = (deployedHeroes) => {
+    const awakenedList = deployedHeroes.filter(h => h.hp > 0 && (h.fusionLevel || 0) >= 3);
+    let openingShield = 0;
+    awakenedList.forEach(h => {
+      const { effectiveMaxHp } = calculateHeroEffectiveStats(
+        h,
+        isFengShui,
+        null,
+        getHeroRowIdx(h.instanceId)
+      );
+      openingShield += Math.floor(effectiveMaxHp * 0.15);
+    });
+    return { awakenedList, openingShield };
+  };
+
+  const resetCombatStates = (initialShield = 0) => {
     setCombatBuffs({
-      shield: 0,
+      shield: initialShield,
       tauntTurns: 0,
       reflectTurns: 0,
       reflectPct: 0,
@@ -334,6 +443,7 @@ export default function App() {
       const scaledHp = Math.floor(template.hp * 1.45 * zoneScale * eliteHpMult);
       const scaledAtk = Math.floor(template.atk * 1.32 * zoneScale * eliteAtkMult);
       const scaledDef = Math.floor(template.def * 1.35 * zoneScale * eliteDefMult);
+      const scaledSpeed = Math.floor((9 + (zoneIdx * 4) + Math.floor(Math.random() * 4)) * (isElite ? 1.15 : 1.0));
 
       list.push({
         id: `m_${Date.now()}_${i}`,
@@ -345,6 +455,7 @@ export default function App() {
         hp: scaledHp,
         atk: scaledAtk,
         def: scaledDef,
+        speed: scaledSpeed,
         exp: Math.floor(template.exp * eliteRewardMult),
         gold: Math.floor(template.gold * eliteRewardMult),
         armorBreakTurns: 0, armorBreakPct: 0,
@@ -356,21 +467,79 @@ export default function App() {
       });
     }
 
+    const { awakenedList, openingShield } = computeOpeningAwakeningBonus(deployed);
+    const awakenCount = awakenedList.length;
+
+    setPlayer(prev => ({
+      ...prev,
+      ammo: prev.job === '巧匠' ? 12 : prev.ammo,
+      maxAmmo: prev.job === '巧匠' ? 12 : prev.maxAmmo,
+      rage: prev.job === '猛將' ? Math.min(100, awakenCount * 15) : prev.rage,
+      mp: ['術士', '藥師', '風水師'].includes(prev.job)
+        ? Math.min(playerTotalMaxMp, prev.mp + (awakenCount * 20))
+        : prev.mp
+    }));
+
     if (player.job === '巧匠') {
-      setPlayer(prev => ({ ...prev, ammo: 12, maxAmmo: 12 }));
       addLog(`🏹 【連環機巧】巧匠開戰前裝填完畢，機關彈藥補滿至 12/12！`, 'sys');
-    } else if (player.job === '猛將') {
-      setPlayer(prev => ({ ...prev, rage: 0 }));
+    }
+    if (awakenCount > 0) {
+      addLog(
+        `🌟 【★+3 護主靈罡覺醒】${awakenedList.map(h => h.name).join('、')} 激發護體真氣，開戰提供 +${openingShield} 點護盾並補充少俠初始真元！`,
+        'sys'
+      );
     }
 
-    resetCombatStates();
+    resetCombatStates(openingShield);
     setActiveTowerFloor(null);
     setMonsters(list);
     setSelectedTargetIndex(0);
     setTurnCount(1);
     setCombatPhase('PLAYER_SELECT');
-    addLog(`⚔️ 【${zone.name}】主動搜敵遭遇 ${list.length} 隻敵怪！戰鬥開始（整備功能已鎖定）！`, 'sys');
+    addLog(`⚔️ 【${zone.name}】主動搜敵遭遇 ${list.length} 隻敵怪！戰鬥開始${autoBattle ? '（🤖 自動戰鬥託管中）' : ''}！`, 'sys');
     return list;
+  };
+
+  const handleSweepZone = (sweepCount = 3) => {
+    if (isInCombat) {
+      addLog(`🔒 戰鬥進行中，無法進行快速掃蕩！`, 'sys');
+      return;
+    }
+    if (player.hp <= 0) {
+      addLog(`⚠️ 少俠氣血耗盡，請先前往客棧休息恢復再進行掃蕩！`, 'danger');
+      return;
+    }
+
+    const reqLvl = getZoneSweepReqLevel(currentZoneIndex);
+    if ((player.level || 1) < reqLvl) {
+      addLog(`🔒 【${ZONES[currentZoneIndex]?.name}】需少俠達到 Lv.${reqLvl} 方可解鎖快速掃蕩！`, 'sys');
+      return;
+    }
+
+    const res = simulateZoneSweep({
+      player,
+      currentRoster: heroRoster,
+      activeHeroInstanceIds,
+      currentZoneIndex,
+      sweepCount,
+      isFengShui,
+      getHeroRowIdx
+    });
+
+    setPlayer(res.newPlayer);
+    setHeroRoster(res.finalRoster);
+    if (res.allDroppedEquipments?.length > 0) {
+      setEquipmentInventory(prev => [...prev, ...res.allDroppedEquipments]);
+    }
+    if (res.allDroppedSkillCards?.length > 0) {
+      setSkillCardsInventory(prev => [...prev, ...res.allDroppedSkillCards]);
+    }
+
+    setVictorySummary(res.sweepSummary);
+    addLog(
+      `⚡ 快速掃蕩【${ZONES[currentZoneIndex]?.name}】×${sweepCount} 場完成！累計獲得 +${res.sweepSummary.gold} 金幣、+${res.sweepSummary.exp} 經驗${res.sweepSummary.stones > 0 ? `、+${res.sweepSummary.stones} 精鍊石` : ''}！`,
+      'sys'
+    );
   };
 
   const handleStartTowerChallenge = () => {
@@ -407,6 +576,7 @@ export default function App() {
         hp: Math.floor(bossTemplate.hp * hpScale * 2.6),
         atk: Math.floor(bossTemplate.atk * atkScale * 1.55),
         def: Math.floor(bossTemplate.def * defScale * 1.4),
+        speed: Math.floor(14 + (floor * 1.3)),
         exp: Math.floor(bossTemplate.exp * rewardScale * 2.5),
         gold: Math.floor(bossTemplate.gold * rewardScale * 2.5),
         armorBreakTurns: 0, armorBreakPct: 0,
@@ -430,6 +600,7 @@ export default function App() {
           hp: Math.floor(guardTpl.hp * hpScale * 1.25),
           atk: Math.floor(guardTpl.atk * atkScale * 1.15),
           def: Math.floor(guardTpl.def * defScale * 1.1),
+          speed: Math.floor(12 + (floor * 1.15)),
           exp: Math.floor(guardTpl.exp * rewardScale),
           gold: Math.floor(guardTpl.gold * rewardScale),
           armorBreakTurns: 0, armorBreakPct: 0,
@@ -455,6 +626,7 @@ export default function App() {
           hp: Math.floor(tpl.hp * hpScale),
           atk: Math.floor(tpl.atk * atkScale),
           def: Math.floor(tpl.def * defScale),
+          speed: Math.floor(10 + (floor * 1.1) + i),
           exp: Math.floor(tpl.exp * rewardScale),
           gold: Math.floor(tpl.gold * rewardScale),
           armorBreakTurns: 0, armorBreakPct: 0,
@@ -467,13 +639,27 @@ export default function App() {
       }
     }
 
-    if (player.job === '巧匠') {
-      setPlayer(prev => ({ ...prev, ammo: 12, maxAmmo: 12 }));
-    } else if (player.job === '猛將') {
-      setPlayer(prev => ({ ...prev, rage: 0 }));
+    const { awakenedList, openingShield } = computeOpeningAwakeningBonus(activeHeroes);
+    const awakenCount = awakenedList.length;
+
+    setPlayer(prev => ({
+      ...prev,
+      ammo: prev.job === '巧匠' ? 12 : prev.ammo,
+      maxAmmo: prev.job === '巧匠' ? 12 : prev.maxAmmo,
+      rage: prev.job === '猛將' ? Math.min(100, awakenCount * 15) : prev.rage,
+      mp: ['術士', '藥師', '風水師'].includes(prev.job)
+        ? Math.min(playerTotalMaxMp, prev.mp + (awakenCount * 20))
+        : prev.mp
+    }));
+
+    if (awakenCount > 0) {
+      addLog(
+        `🌟 【★+3 護主靈罡覺醒】${awakenedList.map(h => h.name).join('、')} 激發護體真氣，開戰提供 +${openingShield} 點護盾！`,
+        'sys'
+      );
     }
 
-    resetCombatStates();
+    resetCombatStates(openingShield);
     setActiveTowerFloor(floor);
     setMonsters(list);
     setSelectedTargetIndex(0);
@@ -490,6 +676,7 @@ export default function App() {
 
   const handleFleeCombat = () => {
     if (!isInCombat) return;
+    setAutoBattle(false);
     const res = resolveFleeCombat({
       monsters,
       player,
@@ -499,6 +686,7 @@ export default function App() {
       combatBuffs,
       heroBattleBuffs,
       playerTotalDef,
+      playerTotalSpeed,
       playerRowBuff,
       rawFormBonus,
       formMultiplier,
@@ -558,6 +746,7 @@ export default function App() {
       playerTotalMaxMp,
       playerTotalAtk,
       playerTotalDef,
+      playerTotalSpeed,
       playerRowBuff,
       rawFormBonus,
       formMultiplier,
@@ -597,6 +786,7 @@ export default function App() {
     }
 
     if (res.outcome === 'DEFEAT') {
+      setAutoBattle(false);
       setPlayer(res.defeatedPlayer);
       setHeroRoster(res.finalRoster);
       setMonsters([]);
@@ -634,7 +824,7 @@ export default function App() {
         return;
       }
       if (activeHeroes.some(h => h.baseId === hero.baseId)) {
-        addLog(`⚠️ 同名英雄【${hero.name}】不可重複登場！`, 'sys');
+        addLog(`⚠️ 同名英雄【${hero.name}】不可重複登場（可進行同名合成升星）！`, 'sys');
         return;
       }
       const nextIds = [...activeHeroInstanceIds, hero.instanceId];
@@ -642,6 +832,156 @@ export default function App() {
       setFormationSlots(prev => syncFormationSlots(effectiveFormationKey, prev, nextIds));
       addLog(`⚔️ 英雄【${hero.name}】加入出戰陣容！`, 'sys');
     }
+  };
+
+  const handleFuseHero = (targetInstanceId, materialInstanceId = null) => {
+    if (isInCombat) {
+      addLog(`🔒 戰鬥進行中，無法進行英雄合成！`, 'sys');
+      return;
+    }
+
+    const targetHero = heroRoster.find(h => h.instanceId === targetInstanceId);
+    if (!targetHero) return;
+
+    const currentFusion = Math.min(MAX_HERO_FUSION, targetHero.fusionLevel || 0);
+    if (currentFusion >= MAX_HERO_FUSION) {
+      const msg = `⚠️ 英雄【${targetHero.name}】已達最高突破星級（★+${MAX_HERO_FUSION}）！`;
+      setFusionFeedback({ type: 'danger', text: msg });
+      addLog(msg, 'sys');
+      return;
+    }
+
+    const duplicates = heroRoster.filter(
+      h => h.baseId === targetHero.baseId && h.instanceId !== targetHero.instanceId
+    );
+    if (duplicates.length === 0) {
+      const msg = `⚠️ 名冊中沒有多餘的同名英雄【${targetHero.name}】可供合成！`;
+      setFusionFeedback({ type: 'danger', text: msg });
+      addLog(msg, 'sys');
+      return;
+    }
+
+    let materialHero = materialInstanceId
+      ? duplicates.find(d => d.instanceId === materialInstanceId)
+      : null;
+    if (!materialHero) {
+      const sorted = [...duplicates].sort((a, b) => {
+        const aDep = activeHeroInstanceIds.includes(a.instanceId) ? 1 : 0;
+        const bDep = activeHeroInstanceIds.includes(b.instanceId) ? 1 : 0;
+        return aDep - bDep || (a.level || 1) - (b.level || 1);
+      });
+      materialHero = sorted[0];
+    }
+
+    const nextFusion = currentFusion + 1;
+    const upgradedTarget = mergeHeroIntoTarget(targetHero, materialHero, nextFusion);
+
+    const recoveredCards = [
+      ...(materialHero.activeSkillSlots || []),
+      ...(materialHero.passiveSkillSlots || [])
+    ];
+    if (recoveredCards.length > 0) {
+      setSkillCardsInventory(prev => [...prev, ...recoveredCards]);
+    }
+
+    const nextRoster = heroRoster
+      .filter(h => h.instanceId !== materialHero.instanceId)
+      .map(h => (h.instanceId === targetHero.instanceId ? upgradedTarget : h));
+    setHeroRoster(nextRoster);
+
+    if (activeHeroInstanceIds.includes(materialHero.instanceId)) {
+      const nextActiveIds = activeHeroInstanceIds.filter(id => id !== materialHero.instanceId);
+      setActiveHeroInstanceIds(nextActiveIds);
+      setFormationSlots(prev => syncFormationSlots(effectiveFormationKey, prev, nextActiveIds));
+    }
+
+    const milestoneHint = nextFusion === 3
+      ? '【解鎖 ★+3 覺醒：護主靈罡（開戰護盾＋真元補給）】'
+      : nextFusion === 5
+        ? '【解鎖 ★+5 覺醒：無雙連攜（25% 機率技能卡二連發）】'
+        : '';
+
+    const successMsg = `🌟 同名合成成功！【${targetHero.name}】突破至 ★+${nextFusion}（全基礎屬性 +${nextFusion * 15}%、主屬性 +3、技能卡威力 +${nextFusion * 12}%）${milestoneHint}${recoveredCards.length > 0 ? `，並收回素材身上 ${recoveredCards.length} 張技能卡` : ''}！`;
+    setFusionFeedback({ type: 'success', text: successMsg });
+    addLog(successMsg, 'sys');
+  };
+
+  const handleFuseAllHeroes = () => {
+    if (isInCombat) {
+      addLog(`🔒 戰鬥進行中，無法進行一鍵合成！`, 'sys');
+      return;
+    }
+
+    const groups = {};
+    heroRoster.forEach(h => {
+      if (!groups[h.baseId]) groups[h.baseId] = [];
+      groups[h.baseId].push(h);
+    });
+
+    const consumedIds = new Set();
+    const updatedMap = {};
+    const recoveredCards = [];
+    let fusionOps = 0;
+
+    Object.values(groups).forEach(group => {
+      if (group.length < 2) return;
+
+      const sorted = [...group].sort((a, b) => {
+        const aDep = activeHeroInstanceIds.includes(a.instanceId) ? 1 : 0;
+        const bDep = activeHeroInstanceIds.includes(b.instanceId) ? 1 : 0;
+        return (
+          bDep - aDep ||
+          (b.fusionLevel || 0) - (a.fusionLevel || 0) ||
+          (b.level || 1) - (a.level || 1)
+        );
+      });
+
+      let mainHero = sorted[0];
+      for (let i = 1; i < sorted.length; i++) {
+        const curFusion = Math.min(MAX_HERO_FUSION, mainHero.fusionLevel || 0);
+        if (curFusion >= MAX_HERO_FUSION) break;
+
+        const matHero = sorted[i];
+        mainHero = mergeHeroIntoTarget(mainHero, matHero, curFusion + 1);
+        consumedIds.add(matHero.instanceId);
+        fusionOps += 1;
+
+        recoveredCards.push(
+          ...(matHero.activeSkillSlots || []),
+          ...(matHero.passiveSkillSlots || [])
+        );
+      }
+
+      if (mainHero.instanceId !== sorted[0].instanceId || fusionOps > 0) {
+        updatedMap[mainHero.instanceId] = mainHero;
+      }
+    });
+
+    if (fusionOps === 0) {
+      const msg = `ℹ️ 目前沒有可進行同名合成的英雄（需持有重複分身且未達 ★+${MAX_HERO_FUSION}）。`;
+      setFusionFeedback({ type: 'danger', text: msg });
+      addLog(msg, 'sys');
+      return;
+    }
+
+    if (recoveredCards.length > 0) {
+      setSkillCardsInventory(prev => [...prev, ...recoveredCards]);
+    }
+
+    const nextRoster = heroRoster
+      .filter(h => !consumedIds.has(h.instanceId))
+      .map(h => updatedMap[h.instanceId] || h);
+    setHeroRoster(nextRoster);
+
+    const nextActiveIds = activeHeroInstanceIds.filter(id => !consumedIds.has(id));
+    if (nextActiveIds.length !== activeHeroInstanceIds.length) {
+      setActiveHeroInstanceIds(nextActiveIds);
+      setFormationSlots(prev => syncFormationSlots(effectiveFormationKey, prev, nextActiveIds));
+    }
+
+    const summaryMsg = `✨ 一鍵同名合成完成！共執行 ${fusionOps} 次星級突破${recoveredCards.length > 0 ? `，並安全收回 ${recoveredCards.length} 張素材技能卡` : ''}！`;
+    setFusionFeedback({ type: 'success', text: summaryMsg });
+    addLog(summaryMsg, 'sys');
   };
 
   const handleSwapFormationSlots = (slotA, slotB) => {
@@ -691,7 +1031,7 @@ export default function App() {
     if (!targetHero) return;
 
     if (!card.allowedJobs.includes(targetHero.heroClass)) {
-      addLog(`⚠️ 職業不符！【${targetHero.heroClass}】無法裝備【${card.name}】！`, 'sys');
+      addLog(`⚠️ 職業不符！【${targetHero.heroClass}】無法裝備【${card.name}】！`, 'danger');
       return;
     }
 
@@ -721,7 +1061,7 @@ export default function App() {
       return { ...h, passiveSkillSlots: [...(h.passiveSkillSlots || []), card] };
     }));
 
-    addLog(`🔮 英雄【${targetHero.name}】成功裝備技能卡【${card.name}】！`, 'sys');
+    addLog(`🔮 英雄【${targetHero.name}】成功裝備強化技能卡【${card.name}】！`, 'sys');
   };
 
   const handleUnequipSkillCard = (heroInstanceId, card) => {
@@ -819,7 +1159,10 @@ export default function App() {
         ? HERO_TEMPLATES.filter(t => t.tier >= 3 && t.tier <= 5)
         : HERO_TEMPLATES.filter(t => t.tier >= 1 && t.tier <= 3);
       const picked = pool[Math.floor(Math.random() * pool.length)];
-      const recruitedHero = normalizeHero(instantiateHero(picked, true, null, getRandomElement));
+      const recruitedHero = {
+        ...normalizeHero(instantiateHero(picked, true, null, getRandomElement)),
+        fusionLevel: 0
+      };
       setPlayer(p => ({ ...p, gold: p.gold - shopItem.price }));
       setHeroRoster(prev => [...prev, recruitedHero]);
       rewardMsg = `👥 招募成功！【Tier ${recruitedHero.tier}】${recruitedHero.heroClass}【${recruitedHero.name}】（${recruitedHero.element}屬性）正式加入名冊！`;
@@ -932,7 +1275,8 @@ export default function App() {
       return;
     }
 
-    const isSuccess = Math.random() < (level < 4 ? 1.0 : 0.65);
+    const successRate = getRefineSuccessRate(level);
+    const isSuccess = Math.random() < successRate;
     setPlayer(p => ({ ...p, gold: p.gold - goldCost, refineStones: p.refineStones - 1 }));
     const nextLevel = isSuccess ? level + 1 : Math.max(0, level - 1);
     const updated = { ...item, refineLevel: nextLevel };
@@ -942,9 +1286,10 @@ export default function App() {
       setPlayer(p => ({ ...p, equipped: { ...p.equipped, [item.type]: updated } }));
     }
 
+    const nextBonusPct = Math.round(getCumulativeRefineBonusPct(nextLevel) * 100);
     const msg = isSuccess
-      ? `🔨 精鍊成功！【${item.name}】強化至 +${nextLevel}（基礎屬性額外 +${nextLevel * 15}%）！`
-      : `💥 精鍊失敗！【${item.name}】靈氣震盪，精鍊等級倒退至 +${nextLevel}！`;
+      ? `🔨 精鍊成功！【${item.name}】強化至 +${nextLevel}（基礎屬性累計額外 +${nextBonusPct}%）！`
+      : `💥 精鍊失敗（成功率 ${Math.round(successRate * 100)}%）！【${item.name}】靈氣震盪，精鍊等級為 +${nextLevel}（基礎屬性累計 +${nextBonusPct}%）！`;
     setForgeFeedback({ type: isSuccess ? 'success' : 'danger', text: msg });
     addLog(msg, isSuccess ? 'sys' : 'danger');
   };
@@ -1009,6 +1354,7 @@ export default function App() {
       applyMigratedSaveState(res.data);
       setMonsters([]);
       resetCombatStates();
+      setAutoBattle(false);
       setGameStarted(true);
       const migrateHint = res.migratedFrom < CURRENT_SAVE_VERSION
         ? `（已自動從 v${res.migratedFrom} 遷移至 v${CURRENT_SAVE_VERSION}）`
@@ -1031,6 +1377,8 @@ export default function App() {
       gameStarted={gameStarted}
       isInCombat={isInCombat}
       activeTowerFloor={activeTowerFloor}
+      autoBattle={autoBattle}
+      handleToggleAutoBattle={handleToggleAutoBattle}
       creationData={creationData}
       setCreationData={setCreationData}
       starterHeroCandidates={starterHeroCandidates}
@@ -1047,6 +1395,10 @@ export default function App() {
       heroRoster={heroRoster}
       setHeroRoster={setHeroRoster}
       handleToggleDeployHero={handleToggleDeployHero}
+      handleFuseHero={handleFuseHero}
+      handleFuseAllHeroes={handleFuseAllHeroes}
+      fusionFeedback={fusionFeedback}
+      MAX_HERO_FUSION={MAX_HERO_FUSION}
       handleReleaseHero={handleReleaseHero}
       handleEquipSkillCard={handleEquipSkillCard}
       handleUnequipSkillCard={handleUnequipSkillCard}
@@ -1059,6 +1411,7 @@ export default function App() {
       formationSlots={syncedSlots}
       handleSwapFormationSlots={handleSwapFormationSlots}
       handleSelectZone={handleSelectZone}
+      handleSweepZone={handleSweepZone}
       handleFleeCombat={handleFleeCombat}
       monsters={monsters}
       selectedTargetIndex={selectedTargetIndex}
