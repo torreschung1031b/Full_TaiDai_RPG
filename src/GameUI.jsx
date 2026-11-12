@@ -25,6 +25,7 @@ export default function GameUI(props) {
   const {
     gameStarted,
     isInCombat,
+    activeTowerFloor,
     creationData,
     setCreationData,
     starterHeroCandidates,
@@ -66,14 +67,14 @@ export default function GameUI(props) {
     handleExecuteRound,
     equipmentInventory,
     skillCardsInventory,
-    setSkillCardsInventory,
     handleRefineEquipment,
     handleSocketGem,
     shopLastReward,
     handleShopPurchase,
     currentFormation,
     towerFloor,
-    setTowerFloor,
+    towerBestFloor,
+    handleStartTowerChallenge,
     jsonSaveText,
     setJsonSaveText,
     saveLoadStatus,
@@ -184,7 +185,7 @@ export default function GameUI(props) {
             { id: 'shop', label: '🏮 江湖市集' },
             { id: 'formations', label: '☯️ 陣法五行' },
             { id: 'heroes', label: `👥 英雄隊伍 (${activeHeroes.length}/4)` },
-            { id: 'tower', label: '🗼 鎮魔塔' },
+            { id: 'tower', label: `🗼 鎮魔塔 (第${towerFloor}層)` },
             { id: 'codex', label: '📖 圖鑑成就' },
             { id: 'saveload', label: '💾 存檔管理' }
           ].map(tab => (
@@ -208,6 +209,7 @@ export default function GameUI(props) {
         {activeTab === 'combat' && (
           <CombatTab
             isInCombat={isInCombat}
+            activeTowerFloor={activeTowerFloor}
             currentZoneIndex={currentZoneIndex}
             handleSelectZone={handleSelectZone}
             spawnEncounter={spawnEncounter}
@@ -325,11 +327,9 @@ export default function GameUI(props) {
         {activeTab === 'tower' && (
           <TowerTab
             towerFloor={towerFloor}
-            setTowerFloor={setTowerFloor}
+            towerBestFloor={towerBestFloor}
             isInCombat={isInCombat}
-            setSkillCardsInventory={setSkillCardsInventory}
-            spawnEncounter={spawnEncounter}
-            setActiveTab={setActiveTab}
+            handleStartTowerChallenge={handleStartTowerChallenge}
           />
         )}
 
