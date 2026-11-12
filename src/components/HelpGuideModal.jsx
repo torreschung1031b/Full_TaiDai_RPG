@@ -2,7 +2,7 @@ import React from 'react';
 import { X, BookOpen } from 'lucide-react';
 
 const GUIDE_TABS = [
-  { id: 'combat', label: '⚔️ 戰鬥與暴擊色彩' },
+  { id: 'combat', label: '⚔️ 職業屬性與技能CD' },
   { id: 'equip', label: '🛡️ 裝備五階與鍛造' },
   { id: 'elements', label: '☯️ 五行與陣法站位' },
   { id: 'heroes', label: '👥 英雄與技能卡' },
@@ -17,7 +17,6 @@ export default function HelpGuideModal({ helpModalTab, setHelpModalTab }) {
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-slate-900 border border-amber-500/50 rounded-3xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
-        {/* 標題列 */}
         <div className="px-6 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <BookOpen className="w-5 h-5 text-amber-400" />
@@ -31,7 +30,6 @@ export default function HelpGuideModal({ helpModalTab, setHelpModalTab }) {
           </button>
         </div>
 
-        {/* 分頁標籤 */}
         <div className="px-4 py-2.5 bg-slate-900/90 border-b border-slate-800 flex gap-1.5 overflow-x-auto shrink-0">
           {GUIDE_TABS.map(tab => (
             <button
@@ -48,22 +46,30 @@ export default function HelpGuideModal({ helpModalTab, setHelpModalTab }) {
           ))}
         </div>
 
-        {/* 內容區 */}
         <div className="p-6 overflow-y-auto space-y-4 text-xs sm:text-sm text-slate-300 leading-relaxed">
           {activeGuide === 'combat' && (
             <>
               <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
-                <div className="font-bold text-amber-300">1. 回合指令與資源循環</div>
-                <p>
-                  每回合可選擇<strong>「普通攻擊」</strong>（積攢職業資源：猛將 +25怒氣、巧匠 +4彈藥、其餘職業 +20MP）或施放 <strong>3 招職業技能</strong>（需先在「✨ 技能樹」消耗 SP 學習）。
-                </p>
-                <p className="text-slate-400 text-xs">
-                  • 野外遭遇戰有 <strong>25% 機率出現「🔥精英」變異怪</strong>；若戰況危急可點擊「撤退逃跑」（65% 機率脫離戰場）。
-                </p>
+                <div className="font-bold text-amber-300">1. 五大職業核心屬性與體質成長</div>
+                <ul className="space-y-1 text-xs">
+                  <li>• <strong>猛將</strong>：主攻看<strong>力量 (STR × 3.2)</strong>；享重裝專精，每點<strong>體質 (CON)</strong> 額外提供 <strong>+24 生命與 +2 防禦</strong>，並強化護盾與反震威力。</li>
+                  <li>• <strong>巧匠</strong>：敏力雙修，普攻與技能吃<strong>敏捷 (AGI × 2.2) ＋ 力量 (STR × 1.6)</strong>，兼顧高速度與高暴擊。</li>
+                  <li>• <strong>術士</strong>：法術爆發吃<strong>智力 (INT × 3.5)</strong>，五行相剋倍率高達 1.45x。</li>
+                  <li>• <strong>藥師／風水師</strong>：道法與治療吃<strong>智力 (INT × 3.2)</strong>。</li>
+                </ul>
               </div>
 
               <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
-                <div className="font-bold text-amber-300">2. 戰鬥數值高亮與暴擊色彩圖例</div>
+                <div className="font-bold text-amber-300">2. 技能學習等級門檻與冷卻時間（CD）</div>
+                <ul className="space-y-1 text-xs">
+                  <li>• <strong>第 1 招（核心循環技）</strong>：<strong>Lv.1 解鎖</strong>，<strong>無冷卻（CD 0 回合）</strong>，可每回合施放。</li>
+                  <li>• <strong>第 2 招（戰術機能技）</strong>：<strong>Lv.5 解鎖</strong>，施放後進入 <strong>2 回合冷卻</strong>。</li>
+                  <li>• <strong>第 3 招（終極爆發技）</strong>：<strong>Lv.10 解鎖</strong>，施放後進入 <strong>4 回合冷卻</strong>。</li>
+                </ul>
+              </div>
+
+              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2">
+                <div className="font-bold text-amber-300">3. 戰鬥數值高亮與暴擊色彩圖例</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs font-mono">
                   <div className="bg-amber-500/20 border border-amber-400 text-amber-200 px-3 py-1.5 rounded-lg font-bold">
                     💥 琥珀金框：我方暴擊傷害
@@ -76,12 +82,6 @@ export default function HelpGuideModal({ helpModalTab, setHelpModalTab }) {
                   </div>
                   <div className="bg-rose-950 border border-rose-800 text-rose-300 px-3 py-1.5 rounded-lg font-bold">
                     玫紅色數字：敵方普通傷害
-                  </div>
-                  <div className="bg-emerald-950 border border-emerald-600 text-emerald-200 px-3 py-1.5 rounded-lg font-bold">
-                    +翡翠綠數字：氣血治療與資源回復
-                  </div>
-                  <div className="bg-sky-950 border border-sky-500 text-sky-200 px-3 py-1.5 rounded-lg font-bold">
-                    🛡️天藍色數字：護盾吸收傷害
                   </div>
                 </div>
               </div>
