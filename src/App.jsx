@@ -201,9 +201,54 @@ function normalizeHero(h) {
     maxAmmo: h.maxAmmo ?? 6,
     mp: h.mp ?? 50,
     maxMp: h.maxMp ?? 100,
+    statLossTotal: h.statLossTotal ?? 0,
     activeSkillSlots: Array.isArray(h.activeSkillSlots) ? h.activeSkillSlots : [],
     passiveSkillSlots: Array.isArray(h.passiveSkillSlots) ? h.passiveSkillSlots : [],
     stats: h.stats || { str: 4, con: 4, int: 2, agi: 2 }
+  };
+}
+
+// 方案 B：英雄 HP 歸 0 時隨機扣除 1~5 點屬性並隨機分散至四維（單項最低保底 1 點）
+function applyHeroDeathStatPenalty(hero) {
+  const totalRoll = Math.floor(Math.random() * 5) + 1; // 1 ~ 5 點
+  const statKeys = ['str', 'con', 'int', 'agi'];
+  const statLabels = { str: '力量', con: '體質', int: '智慧', agi: '敏捷' };
+  const newStats = { ...(hero.stats || { str: 4, con: 4, int: 2, agi: 2 }) };
+  const deducted = { str: 0, con: 0, int: 0, agi: 0 };
+
+  for (let i = 0; i < totalRoll; i++) {
+    const reducible = statKeys.filter(k => (newStats[k] || 1) > 1);
+    if (reducible.length === 0) break;
+    const chosen = reducible[Math.floor(Math.random() * reducible.length)];
+    newStats[chosen] -= 1;
+    deducted[chosen] += 1;
+  }
+
+  const actualLoss = Object.values(deducted).reduce((a, b) => a + b, 0);
+  const tier = hero.tier || 1;
+  const newMaxHp = 130 + (tier * 45) + (newStats.con * 16);
+  const newAtk = 16 + (tier * 11) + (newStats.str * 3) + (newStats.int * 2);
+  const newDef = 5 + (tier * 4) + (newStats.con * 1);
+  const newSpeed = 10 + (tier * 2) + (newStats.agi * 2);
+
+  const breakdownParts = statKeys
+    .filter(k => deducted[k] > 0)
+    .map(k => `${statLabels[k]} -${deducted[k]}`);
+
+  const updatedHero = {
+    ...hero,
+    stats: newStats,
+    maxHp: newMaxHp,
+    atk: newAtk,
+    def: newDef,
+    speed: newSpeed,
+    statLossTotal: (hero.statLossTotal || 0) + actualLoss
+  };
+
+  return {
+    updatedHero,
+    actualLoss,
+    breakdownText: breakdownParts.length > 0 ? breakdownParts.join('、') : '屬性已達下限未再扣除'
   };
 }
 
@@ -290,17 +335,24 @@ export default function App() {
 
   const [activeTab, setActiveTab] = useState('combat');
   const [currentZoneIndex, setCurrentZoneIndex] = useState(0);
-  const [monsters, setMonsters] = useState([]);
+  const [monsters, setMonsters] = useState([]); // 空陣列 = 安全整備狀態；有存活怪 = 戰鬥狀態
   const [selectedTargetIndex, setSelectedTargetIndex] = useState(0);
   const [combatLogs, setCombatLogs] = useState([]);
   const [turnCount, setTurnCount] = useState(1);
   const [combatPhase, setCombatPhase] = useState('PLAYER_SELECT');
   const [victorySummary, setVictorySummary] = useState(null);
+  const [defeatSummary, setDefeatSummary] = useState(null);
+
+  // 追蹤單場戰鬥內已觸發過陣亡扣屬的英雄 ID（確保同場最多觸發 1 次）
+  const [battleDownedHeroIds, setBattleDownedHeroIds] = useState([]);
 
   const [jsonSaveText, setJsonSaveText] = useState('');
   const [saveLoadStatus, setSaveLoadStatus] = useState('');
 
   const chatEndRef = useRef(null);
+
+  // 核心狀態旗標：是否正處於戰鬥中
+  const isInCombat = monsters.some(m => m.hp > 0);
 
   useEffect(() => {
     const t1s = HERO_TEMPLATES.filter(t => t.tier === 1);
@@ -370,6 +422,7 @@ export default function App() {
     setCombatLogs(prev => [...prev, { id: Date.now() + Math.random(), turn: turnCount, text, type }]);
   };
 
+  // 創角開始：預設為安全整備狀態，需主動按「尋找怪群」開戰
   const handleStartGame = () => {
     const jobConfig = JOBS_CONFIG[creationData.job];
     const starterHero = normalizeHero(creationData.selectedStarterHero);
@@ -387,12 +440,35 @@ export default function App() {
     setPlayer(newPlayer);
     setHeroRoster([starterHero]);
     setActiveHeroInstanceIds([starterHero.instanceId]);
+    setMonsters([]);
     setGameStarted(true);
-    spawnEncounter(0, [starterHero]);
-    setCombatLogs([{ id: 1, turn: 1, type: 'sys', text: `📜 少俠【${newPlayer.name}】踏入《天外 Online》！` }]);
+    setCombatLogs([
+      { id: 1, turn: 1, type: 'sys', text: `📜 少俠【${newPlayer.name}】踏入《天外 Online》！目前處於安全整備狀態，請準備妥當後點擊「🔍 尋找怪群」開戰！` }
+    ]);
   };
 
+  // 切換地圖（僅在非戰鬥狀態下允許，切換後維持安全整備狀態）
+  const handleSelectZone = (zoneIdx) => {
+    if (isInCombat) {
+      addLog(`🔒 戰鬥中無法切換地圖！`, 'sys');
+      return;
+    }
+    setCurrentZoneIndex(zoneIdx);
+    setMonsters([]);
+    addLog(`🗺️ 已前往【${ZONES[zoneIdx].name}】安全營地，請點擊「🔍 尋找怪群」主動搜敵！`, 'sys');
+  };
+
+  // 主動搜敵進入戰鬥
   const spawnEncounter = (zoneIdx, customActiveHeroes = null) => {
+    if (isInCombat) {
+      addLog(`⚠️ 當前已在戰鬥中，請先擊敗敵軍或嘗試撤退！`, 'sys');
+      return [];
+    }
+    if (player.hp <= 0) {
+      addLog(`⚠️ 少俠氣血耗盡，請先前往客棧休息恢復再搜敵！`, 'danger');
+      return [];
+    }
+
     const deployed = customActiveHeroes !== null ? customActiveHeroes : activeHeroes;
     const totalCombatants = 1 + deployed.length;
     const count = Math.floor(Math.random() * (totalCombatants * 2)) + totalCombatants;
@@ -415,14 +491,20 @@ export default function App() {
     }
 
     setMonsters(list);
+    setBattleDownedHeroIds([]);
     setSelectedTargetIndex(0);
     setTurnCount(1);
     setCombatPhase('PLAYER_SELECT');
+    addLog(`⚔️ 【${zone.name}】主動搜敵遭遇 ${list.length} 隻敵怪！戰鬥開始（整備功能已鎖定）！`, 'sys');
     return list;
   };
 
-  // 派遣 / 卸下登場英雄
+  // 派遣 / 卸下登場英雄（戰鬥中鎖定）
   const handleToggleDeployHero = (hero) => {
+    if (isInCombat) {
+      addLog(`🔒 戰鬥進行中，無法調整出戰陣容！`, 'sys');
+      return;
+    }
     if (activeHeroInstanceIds.includes(hero.instanceId)) {
       setActiveHeroInstanceIds(prev => prev.filter(id => id !== hero.instanceId));
       addLog(`🛡️ 英雄【${hero.name}】卸下登場，返回客棧休養。`, 'sys');
@@ -440,8 +522,12 @@ export default function App() {
     }
   };
 
-  // 放走英雄（自動退還身上所有已裝配的技能卡至背包）
+  // 放走英雄（戰鬥中鎖定；自動退還身上所有已裝配的技能卡至背包）
   const handleReleaseHero = (hero) => {
+    if (isInCombat) {
+      addLog(`🔒 戰鬥進行中，無法放走英雄！`, 'sys');
+      return;
+    }
     const returnedCards = [
       ...(hero.activeSkillSlots || []),
       ...(hero.passiveSkillSlots || [])
@@ -456,18 +542,20 @@ export default function App() {
     addLog(`👋 已放走英雄【${hero.name}】${returnedCards.length > 0 ? `（自動收回 ${returnedCards.length} 張技能卡）` : ''}。`, 'sys');
   };
 
-  // 裝配技能卡給指定英雄（單卡獨佔：從背包移出；同職業限定；不可重複同名卡）
+  // 裝配技能卡給指定英雄（戰鬥中鎖定）
   const handleEquipSkillCard = (heroInstanceId, card) => {
+    if (isInCombat) {
+      addLog(`🔒 戰鬥進行中，無法更換技能卡！`, 'sys');
+      return;
+    }
     const targetHero = heroRoster.find(h => h.instanceId === heroInstanceId);
     if (!targetHero) return;
 
-    // 1. 檢查職業限制
     if (!card.allowedJobs.includes(targetHero.heroClass)) {
       addLog(`⚠️ 職業不符！【${targetHero.heroClass}】無法裝備【${card.name}】！`, 'sys');
       return;
     }
 
-    // 2. 檢查是否已裝備同名/同ID技能卡
     const allEquipped = [
       ...(targetHero.activeSkillSlots || []),
       ...(targetHero.passiveSkillSlots || [])
@@ -477,7 +565,6 @@ export default function App() {
       return;
     }
 
-    // 3. 檢查槽位上限（主動最多 2 張、被動最多 2 張）
     const targetSlots = card.type === 'active' 
       ? (targetHero.activeSkillSlots || []) 
       : (targetHero.passiveSkillSlots || []);
@@ -486,10 +573,8 @@ export default function App() {
       return;
     }
 
-    // 從背包移出該獨立卡片（確保一張卡片同時只能用一次）
     setSkillCardsInventory(prev => prev.filter(c => c.uid !== card.uid));
 
-    // 裝配至英雄身上
     setHeroRoster(prev => prev.map(h => {
       if (h.instanceId !== heroInstanceId) return h;
       if (card.type === 'active') {
@@ -502,8 +587,12 @@ export default function App() {
     addLog(`🔮 英雄【${targetHero.name}】成功裝備技能卡【${card.name}】！`, 'sys');
   };
 
-  // 拆下英雄身上的技能卡（退回背包供其他英雄使用）
+  // 拆下英雄身上的技能卡（戰鬥中鎖定）
   const handleUnequipSkillCard = (heroInstanceId, card) => {
+    if (isInCombat) {
+      addLog(`🔒 戰鬥進行中，無法拆下技能卡！`, 'sys');
+      return;
+    }
     setHeroRoster(prev => prev.map(h => {
       if (h.instanceId !== heroInstanceId) return h;
       if (card.type === 'active') {
@@ -568,8 +657,125 @@ export default function App() {
     return { updatedHero: currentHero, upgradedMsgs };
   };
 
+  // 執行存活怪物反擊（共用於正常回合反擊與撤退失敗追擊）
+  const executeMonsterAttacks = (currentMonsters, pObj, rosterArr, downedIdsArr) => {
+    let updatedPlayer = { ...pObj };
+    let updatedRoster = [...rosterArr];
+    let updatedDownedIds = [...downedIdsArr];
+    let casualtiesSummary = [];
+
+    const aliveMonsters = currentMonsters.filter(m => m.hp > 0);
+    for (const m of aliveMonsters) {
+      if (updatedPlayer.hp <= 0) break;
+
+      const em = getElementMultiplier(m.element, updatedPlayer.element);
+      const dmg = Math.max(3, Math.floor((m.atk - playerTotalDef) * em));
+      updatedPlayer.hp = Math.max(0, updatedPlayer.hp - dmg);
+      addLog(`👹 【${m.name}】襲擊少俠，造成 ${dmg} 點傷害！`, 'monster');
+
+      if (updatedPlayer.job === '猛將') {
+        updatedPlayer.rage = Math.min(100, updatedPlayer.rage + 15);
+      }
+
+      if (updatedPlayer.hp <= 0) {
+        addLog(`💀 少俠氣血歸零，不敵倒下！`, 'danger');
+        break;
+      }
+
+      // 怪物波及登場英雄
+      updatedRoster = updatedRoster.map(h => {
+        if (!activeHeroInstanceIds.includes(h.instanceId) || h.hp <= 0) return h;
+        if (Math.random() < 0.38) {
+          const { effectiveDef } = calculateHeroEffectiveStats(h);
+          const hDmg = Math.max(2, Math.floor(m.atk * 0.65) - Math.floor(effectiveDef * 0.5));
+          const newHp = Math.max(0, h.hp - hDmg);
+
+          if (newHp === 0) {
+            if (!updatedDownedIds.includes(h.instanceId)) {
+              updatedDownedIds.push(h.instanceId);
+              const { updatedHero, actualLoss, breakdownText } = applyHeroDeathStatPenalty({ ...h, hp: 0 });
+              const penaltyMsg = `💔 英雄【${h.name}】HP 歸零重傷瀕死！永久扣除 ${actualLoss} 點屬性（${breakdownText}）！`;
+              addLog(penaltyMsg, 'danger');
+              casualtiesSummary.push(penaltyMsg);
+              return updatedHero;
+            } else {
+              addLog(`💀 英雄【${h.name}】再次倒下！`, 'sys');
+              return { ...h, hp: 0 };
+            }
+          }
+          return { ...h, hp: newHp };
+        }
+        return h;
+      });
+    }
+
+    return { updatedPlayer, updatedRoster, updatedDownedIds, casualtiesSummary };
+  };
+
+  // 主角戰敗處理（扣 30% 當前等級升級所需經驗，最低扣至 0、不掉級，退回安全狀態）
+  const handleBattleDefeat = (pObj, finalRoster, casualtiesSummary = []) => {
+    const expLoss = Math.floor(pObj.maxExp * 0.30);
+    const actualExpLost = Math.min(pObj.exp, expLoss);
+    const remainingExp = Math.max(0, pObj.exp - expLoss);
+
+    const defeatedPlayer = {
+      ...pObj,
+      hp: 1, // 保留 1 點微弱氣息退回營地
+      exp: remainingExp
+    };
+
+    setPlayer(defeatedPlayer);
+    setHeroRoster(finalRoster);
+    setMonsters([]); // 清空戰場退回安全整備狀態
+    setBattleDownedHeroIds([]);
+    setCombatPhase('PLAYER_SELECT');
+
+    addLog(`☠️ 戰鬥失敗！少俠損失了 ${actualExpLost} 點經驗值（退回安全營地，請立即前往客棧休養）。`, 'danger');
+
+    setDefeatSummary({
+      expLost: actualExpLost,
+      remainingExp,
+      maxExp: pObj.maxExp,
+      casualties: casualtiesSummary
+    });
+  };
+
+  // 撤退逃跑（70% 成功率）
+  const handleFleeCombat = () => {
+    if (!isInCombat) return;
+    if (Math.random() < 0.70) {
+      addLog(`🏃 少俠施展輕功順利擺脫敵群，返回安全營地（整備功能已解鎖）！`, 'sys');
+      setMonsters([]);
+      setBattleDownedHeroIds([]);
+      setCombatPhase('PLAYER_SELECT');
+    } else {
+      addLog(`⚠️ 撤退失敗！敵軍封鎖退路並趁勢發動追擊！`, 'danger');
+      const { updatedPlayer, updatedRoster, updatedDownedIds, casualtiesSummary } = executeMonsterAttacks(
+        monsters,
+        player,
+        heroRoster,
+        battleDownedHeroIds
+      );
+      setPlayer(updatedPlayer);
+      setHeroRoster(updatedRoster);
+      setBattleDownedHeroIds(updatedDownedIds);
+
+      if (updatedPlayer.hp <= 0) {
+        handleBattleDefeat(updatedPlayer, updatedRoster, casualtiesSummary);
+        return;
+      }
+      setTurnCount(prev => prev + 1);
+      setCombatPhase('PLAYER_SELECT');
+    }
+  };
+
   // 核心回合處理
   const handleExecuteRound = (actionInput = { type: 'attack' }, isFusionUltimate = false) => {
+    if (!isInCombat) {
+      addLog(`⚠️ 當前沒有敵人，請先點擊「🔍 尋找怪群」主動搜敵！`, 'sys');
+      return;
+    }
+
     setCombatPhase('EXECUTING');
     let currentMonsters = [...monsters];
     let currentPlayer = { ...player };
@@ -686,7 +892,6 @@ export default function App() {
       const { effectiveAtk, elemDmgPct, skillChance } = calculateHeroEffectiveStats(h);
       const activeCards = h.activeSkillSlots || [];
 
-      // 依 Tier 機率抽籤是否施放主動技能卡
       if (activeCards.length > 0 && Math.random() < skillChance) {
         const cardToCast = activeCards[Math.floor(Math.random() * activeCards.length)];
         const mult = cardToCast.mult || 1.8;
@@ -713,7 +918,6 @@ export default function App() {
           addLog(`⚡ 【Tier ${h.tier}】英雄【${h.name}】爆發技能卡【${cardToCast.name}】，對【${validTarget.name}】造成 ${dmg} 點重創！`, 'hero');
         }
       } else {
-        // 普通攻擊
         let em = getElementMultiplier(h.element, validTarget.element);
         if (em > 1.0) em += elemDmgPct;
         const dmg = Math.max(5, Math.floor((effectiveAtk - validTarget.def) * em));
@@ -721,7 +925,6 @@ export default function App() {
         addLog(`💥 英雄【${h.name}】普通攻擊，對【${validTarget.name}】造成 ${dmg} 點打擊！`, 'hero');
       }
 
-      // 職業資源積攢
       let updatedRage = h.rage || 0;
       let updatedAmmo = h.ammo || 6;
       let updatedMp = h.mp || 50;
@@ -733,7 +936,6 @@ export default function App() {
       return { ...h, rage: updatedRage, ammo: updatedAmmo, mp: updatedMp };
     });
 
-    // 套用英雄治療卡效果
     if (teamHealFromHeroes > 0) {
       currentPlayer.hp = Math.min(playerTotalMaxHp, currentPlayer.hp + teamHealFromHeroes);
       currentRoster = currentRoster.map(h => {
@@ -743,49 +945,36 @@ export default function App() {
       });
     }
 
-    // 5. 怪物反擊
-    const aliveMonsters = currentMonsters.filter(m => m.hp > 0);
-    if (aliveMonsters.length > 0) {
-      aliveMonsters.forEach(m => {
-        const em = getElementMultiplier(m.element, currentPlayer.element);
-        const dmg = Math.max(3, Math.floor((m.atk - playerTotalDef) * em));
-        currentPlayer.hp = Math.max(0, currentPlayer.hp - dmg);
-        addLog(`👹 【${m.name}】襲擊少俠，造成 ${dmg} 點傷害！`, 'monster');
-
-        if (currentPlayer.job === '猛將') {
-          currentPlayer.rage = Math.min(100, currentPlayer.rage + 15);
-        }
-
-        // 怪物隨機波及登場英雄
-        currentRoster = currentRoster.map(h => {
-          if (!activeHeroInstanceIds.includes(h.instanceId) || h.hp <= 0) return h;
-          if (Math.random() < 0.35) {
-            const { effectiveDef } = calculateHeroEffectiveStats(h);
-            const hDmg = Math.max(2, Math.floor(m.atk * 0.65) - Math.floor(effectiveDef * 0.5));
-            const newHp = Math.max(0, h.hp - hDmg);
-            if (newHp === 0) addLog(`💀 英雄【${h.name}】重傷倒下！`, 'sys');
-            return { ...h, hp: newHp };
-          }
-          return h;
-        });
-      });
-    }
-
-    setMonsters(currentMonsters);
-    setPlayer(currentPlayer);
-    setHeroRoster(currentRoster);
-
+    // 檢查敵方是否已全滅
     if (currentMonsters.every(m => m.hp <= 0)) {
-      addLog(`🎉 敵方全數殲滅！`, 'sys');
+      addLog(`🎉 敵方全數殲滅！戰鬥勝利（整備功能已解鎖）！`, 'sys');
       handleBattleVictory(currentPlayer, currentMonsters, currentRoster);
       return;
     }
 
+    // 5. 怪物反擊（含英雄 HP 歸 0 扣屬性與主角 HP 歸 0 戰敗判定）
+    const { updatedPlayer, updatedRoster, updatedDownedIds, casualtiesSummary } = executeMonsterAttacks(
+      currentMonsters,
+      currentPlayer,
+      currentRoster,
+      battleDownedHeroIds
+    );
+
+    setBattleDownedHeroIds(updatedDownedIds);
+
+    if (updatedPlayer.hp <= 0) {
+      handleBattleDefeat(updatedPlayer, updatedRoster, casualtiesSummary);
+      return;
+    }
+
+    setMonsters(currentMonsters);
+    setPlayer(updatedPlayer);
+    setHeroRoster(updatedRoster);
     setTurnCount(prev => prev + 1);
     setCombatPhase('PLAYER_SELECT');
   };
 
-  // ✅ 戰鬥勝利結算：確保新掉落英雄與英雄 EXP 成長完美共存不被覆寫
+  // 戰鬥勝利結算（結束後自動退回安全整備狀態，需主動再搜敵）
   const handleBattleVictory = (pObj, defeatedMonsters, currentRoster) => {
     let totalGold = 0, totalExp = 0, droppedStones = 0;
     let droppedEquipments = [];
@@ -814,7 +1003,6 @@ export default function App() {
       setSkillCardsInventory(prev => [...prev, droppedSkillCard]);
     }
 
-    // 先將新掉落英雄併入名冊，再統一結算經驗值
     let mergedRoster = [...currentRoster];
     if (droppedHero) {
       mergedRoster.push(droppedHero);
@@ -851,6 +1039,10 @@ export default function App() {
 
     setPlayer(newPlayer);
     setHeroRoster(finalRoster);
+    setMonsters([]); // 勝利後清空戰場，回到安全整備狀態
+    setBattleDownedHeroIds([]);
+    setCombatPhase('PLAYER_SELECT');
+
     if (droppedEquipments.length > 0) {
       setEquipmentInventory(prev => [...prev, ...droppedEquipments]);
     }
@@ -866,7 +1058,12 @@ export default function App() {
     });
   };
 
+  // 回客棧休息（戰鬥中鎖定）
   const handleRestInn = () => {
+    if (isInCombat) {
+      addLog(`🔒 戰鬥進行中，無法返回客棧休息！`, 'sys');
+      return;
+    }
     setPlayer(prev => ({
       ...prev,
       hp: playerTotalMaxHp,
@@ -888,7 +1085,31 @@ export default function App() {
     addLog(`🏨 客棧休養完成，全隊生命、資源恢復滿值且疲勞歸零！`, 'sys');
   };
 
+  // 穿戴裝備（戰鬥中鎖定）
+  const handleEquipItem = (item) => {
+    if (isInCombat) {
+      addLog(`🔒 戰鬥進行中，無法更換裝備！`, 'sys');
+      return;
+    }
+    setPlayer(p => ({ ...p, equipped: { ...p.equipped, [item.type]: item } }));
+    addLog(`🛡️ 少俠已裝備【${item.name}】。`, 'sys');
+  };
+
+  // 切換陣法（戰鬥中鎖定）
+  const handleSelectFormation = (fKey) => {
+    if (isInCombat) {
+      addLog(`🔒 戰鬥進行中，無法變換陣法！`, 'sys');
+      return;
+    }
+    setCurrentFormation(fKey);
+    addLog(`☯️ 隊伍已切換為【${FORMATIONS_CONFIG[fKey].name}】。`, 'sys');
+  };
+
   const handleRefineEquipment = (item) => {
+    if (isInCombat) {
+      addLog(`🔒 戰鬥進行中，無法進行鐵匠精鍊！`, 'sys');
+      return;
+    }
     const level = item.refineLevel || 0;
     if (player.gold < (level + 1) * 120 || player.refineStones < 1) return;
     const isSuccess = Math.random() < (level < 4 ? 1.0 : 0.65);
@@ -903,6 +1124,10 @@ export default function App() {
   };
 
   const handleSocketGem = (item, gem, socketIdx) => {
+    if (isInCombat) {
+      addLog(`🔒 戰鬥進行中，無法鑲嵌寶石！`, 'sys');
+      return;
+    }
     let newSockets = [...(item.sockets || [null])];
     newSockets[socketIdx] = gem;
     const updated = { ...item, sockets: newSockets };
@@ -928,6 +1153,10 @@ export default function App() {
   };
 
   const handleImportSave = () => {
+    if (isInCombat) {
+      setSaveLoadStatus('🔒 戰鬥中無法讀取存檔！');
+      return;
+    }
     try {
       const parsed = JSON.parse(jsonSaveText);
       if (parsed && parsed.player) {
@@ -938,6 +1167,7 @@ export default function App() {
         setEquipmentInventory(parsed.equipmentInventory || []);
         setSkillCardsInventory(parsed.skillCardsInventory || []);
         setTowerFloor(parsed.towerFloor || 1);
+        setMonsters([]);
         setGameStarted(true);
         setSaveLoadStatus('✅ 成功匯入遊戲進度！');
       }
@@ -956,6 +1186,7 @@ export default function App() {
   return (
     <GameUI
       gameStarted={gameStarted}
+      isInCombat={isInCombat}
       creationData={creationData}
       setCreationData={setCreationData}
       starterHeroCandidates={starterHeroCandidates}
@@ -976,6 +1207,10 @@ export default function App() {
       handleEquipSkillCard={handleEquipSkillCard}
       handleUnequipSkillCard={handleUnequipSkillCard}
       handleRestInn={handleRestInn}
+      handleEquipItem={handleEquipItem}
+      handleSelectFormation={handleSelectFormation}
+      handleSelectZone={handleSelectZone}
+      handleFleeCombat={handleFleeCombat}
       monsters={monsters}
       selectedTargetIndex={selectedTargetIndex}
       setSelectedTargetIndex={setSelectedTargetIndex}
@@ -985,7 +1220,6 @@ export default function App() {
       activeTab={activeTab}
       setActiveTab={setActiveTab}
       currentZoneIndex={currentZoneIndex}
-      setCurrentZoneIndex={setCurrentZoneIndex}
       spawnEncounter={spawnEncounter}
       handleExecuteRound={handleExecuteRound}
       equipmentInventory={equipmentInventory}
@@ -995,7 +1229,6 @@ export default function App() {
       handleRefineEquipment={handleRefineEquipment}
       handleSocketGem={handleSocketGem}
       currentFormation={currentFormation}
-      setCurrentFormation={setCurrentFormation}
       towerFloor={towerFloor}
       setTowerFloor={setTowerFloor}
       jsonSaveText={jsonSaveText}
@@ -1006,6 +1239,8 @@ export default function App() {
       handleResetSave={handleResetSave}
       victorySummary={victorySummary}
       setVictorySummary={setVictorySummary}
+      defeatSummary={defeatSummary}
+      setDefeatSummary={setDefeatSummary}
       chatEndRef={chatEndRef}
     />
   );
