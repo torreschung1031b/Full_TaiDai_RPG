@@ -13,6 +13,58 @@ import {
 } from './statCalculator';
 
 /**
+ * 依據主角職業回傳屬性成長係數與主屬性公式
+ * - 猛將：力量主攻 (STR × 3.2)，體質重裝專精 (+24 HP / +2 DEF)
+ * - 巧匠：敏力雙修 (AGI × 2.2 + STR × 1.6)
+ * - 術士：智力法爆 (INT × 3.5)
+ * - 藥師 / 風水師：智力道法 (INT × 3.2)
+ */
+export function getPlayerStatScaling(job) {
+  if (job === '猛將') {
+    return {
+      conHp: 24,
+      conDef: 2,
+      primaryLabel: '力量 (STR × 3.2)',
+      calcStatAtk: (stats) => Math.floor((stats?.str || 0) * 3.2)
+    };
+  }
+  if (job === '巧匠') {
+    return {
+      conHp: 16,
+      conDef: 1,
+      primaryLabel: '敏捷 (AGI × 2.2) ＋ 力量 (STR × 1.6)',
+      calcStatAtk: (stats) => Math.floor(((stats?.agi || 0) * 2.2) + ((stats?.str || 0) * 1.6))
+    };
+  }
+  if (job === '術士') {
+    return {
+      conHp: 16,
+      conDef: 1,
+      primaryLabel: '智力 (INT × 3.5)',
+      calcStatAtk: (stats) => Math.floor((stats?.int || 0) * 3.5)
+    };
+  }
+  return {
+    conHp: 16,
+    conDef: 1,
+    primaryLabel: '智力 (INT × 3.2)',
+    calcStatAtk: (stats) => Math.floor((stats?.int || 0) * 3.2)
+  };
+}
+
+/**
+ * 取得技能的解鎖等級門檻與冷卻回合數（CD）
+ * - 第 1 招 (idx 0): Lv.1 解鎖, CD 0 回合
+ * - 第 2 招 (idx 1): Lv.5 解鎖, CD 2 回合
+ * - 第 3 招 (idx 2): Lv.10 解鎖, CD 4 回合
+ */
+export function getSkillMeta(skill, skillIdx) {
+  const unlockLevel = skill?.unlockLevel ?? (skillIdx === 0 ? 1 : skillIdx * 5);
+  const cooldown = skill?.cd ?? (skillIdx === 0 ? 0 : skillIdx === 1 ? 2 : 4);
+  return { unlockLevel, cooldown };
+}
+
+/**
  * 計算主角暴擊率與暴擊倍率
  */
 export function getPlayerCritProfile(player) {
@@ -88,7 +140,6 @@ export function processHeroExpGain(hero, expGained, isFengShui, getHeroRowIdx) {
       null,
       getHeroRowIdx(currentHero.instanceId)
     );
-    // 升級恢復 40% 最大生命（保留地城消耗難度）
     currentHero.hp = Math.min(effectiveMaxHp, currentHero.hp + Math.floor(effectiveMaxHp * 0.40));
 
     upgradedMsgs.push(
@@ -135,7 +186,7 @@ export function calculateDamageToMonster(rawAtk, monster, attElem, options = {})
 }
 
 /**
- * 結算敵方怪群行動回合（強化難度：敵方暴擊、首領橫掃、依仇恨點名英雄）
+ * 結算敵方怪群行動回合
  */
 export function executeMonsterAttacks({
   monsters,
@@ -220,7 +271,8 @@ export function executeMonsterAttacks({
     if (updatedBuffs.baguaTurns > 0) totalReflectPct += updatedBuffs.baguaReflectPct || 0;
 
     if (totalReflectPct > 0 && rawDmg > 0) {
-      const reflectDmg = Math.max(1, Math.floor(rawDmg * totalReflectPct));
+      const conReflectBonus = updatedPlayer.job === '猛將' ? Math.floor((updatedPlayer.stats?.con || 0) * 1.5) : 0;
+      const reflectDmg = Math.max(1, Math.floor(rawDmg * totalReflectPct) + conReflectBonus);
       m.hp = Math.max(0, m.hp - reflectDmg);
       recordMonsterHit(m.id, reflectDmg, false);
       logs.push({
@@ -292,7 +344,6 @@ export function executeMonsterAttacks({
     const monsterCritChance = m.isBoss ? 0.25 : m.isElite ? 0.18 : 0.12;
     const isCrit = Math.random() < monsterCritChance;
 
-    // 妖王首領 35% 機率施展「狂暴橫掃」（同時攻擊主角＋最多 2 位存活英雄）
     if (m.isBoss && Math.random() < 0.35) {
       applyDamageToPlayer(m, effectiveMonsterAtk, isCrit, '施展【狂暴橫掃】');
       const aliveHeroes = updatedRoster.filter(h => activeHeroInstanceIds.includes(h.instanceId) && h.hp > 0);
@@ -300,10 +351,8 @@ export function executeMonsterAttacks({
         applyDamageToHero(m, h.instanceId, effectiveMonsterAtk, 0.75, false, '【狂暴橫掃】餘波');
       });
     } else if (updatedBuffs.tauntTurns > 0) {
-      // 嘲諷期間強制攻擊主角
       applyDamageToPlayer(m, effectiveMonsterAtk, isCrit);
     } else {
-      // 依前後排仇恨權重選擇目標（主角或存活英雄）
       const aliveHeroes = updatedRoster.filter(h => activeHeroInstanceIds.includes(h.instanceId) && h.hp > 0);
       const candidates = [
         { type: 'PLAYER', weight: Math.max(20, playerRowBuff.aggroWeight * (updatedPlayer.job === '猛將' ? 1.4 : 1.0)) },
@@ -449,14 +498,18 @@ export function resolveBattleVictory({
     newPlayer.maxExp = Math.floor(newPlayer.maxExp * 1.45);
     newPlayer.maxHp += 30;
     newPlayer.maxMp += 20;
-    // 升級恢復 35% 最大生命與內力（維持冒險消耗感）
     newPlayer.hp = Math.min(newPlayer.maxHp, newPlayer.hp + Math.floor(newPlayer.maxHp * 0.35));
     newPlayer.mp = Math.min(newPlayer.maxMp, newPlayer.mp + Math.floor(newPlayer.maxMp * 0.35));
     newPlayer.statPoints += 5;
     newPlayer.sp += 1;
     newPlayer.tp += 1;
+    const unlockNotice = newPlayer.level === 5
+      ? '（解鎖第 2 招職業技能學習權限！）'
+      : newPlayer.level === 10
+        ? '（解鎖第 3 招終極職業技能學習權限！）'
+        : '';
     msgs.push(
-      `🎉 少俠升級至 Level ${newPlayer.level}${newPlayer.level === MAX_LEVEL ? ' (已達滿級上限!)' : ''}！獲得 5 點屬性點與 1 點 SP！`
+      `🎉 少俠升級至 Level ${newPlayer.level}${newPlayer.level === MAX_LEVEL ? ' (已達滿級上限!)' : ''}！獲得 5 點屬性點與 1 點 SP${unlockNotice}！`
     );
   }
 
@@ -562,7 +615,7 @@ export function resolveFleeCombat(context) {
 }
 
 /**
- * 完整單回合戰鬥推進純函數（支援全職業暴擊與傷害類型標記）
+ * 完整單回合戰鬥推進純函數（支援職業主屬性、技能解鎖等級與冷卻時間 CD）
  */
 export function resolveCombatRound({
   actionInput = { type: 'attack' },
@@ -590,7 +643,10 @@ export function resolveCombatRound({
   let currentMonsters = monsters.map(m => ({ ...m }));
   const currentPlayer = { ...player };
   let currentRoster = heroRoster.map(h => normalizeHero(h));
-  const currentBuffs = { ...combatBuffs };
+  const currentBuffs = {
+    ...combatBuffs,
+    skillCooldowns: { 0: 0, 1: 0, 2: 0, ...(combatBuffs?.skillCooldowns || {}) }
+  };
   const currentHeroBuffs = { ...heroBattleBuffs };
 
   const monsterHits = {};
@@ -613,6 +669,7 @@ export function resolveCombatRound({
 
   const isWarlock = currentPlayer.job === '術士';
   const isArtisan = currentPlayer.job === '巧匠';
+  const isMagicClass = ['術士', '藥師', '風水師'].includes(currentPlayer.job);
   const innateIgnoreDef = isArtisan ? 0.20 : 0;
   const { critRate: playerCritRate, critDamage: playerCritDmg } = getPlayerCritProfile(currentPlayer);
 
@@ -622,6 +679,7 @@ export function resolveCombatRound({
   if (actionInput.type === 'attack' && currentMonsters[targetIdx]) {
     const targetM = currentMonsters[targetIdx];
     const hits = isArtisan && currentPlayer.ammo > 6 ? 2 : 1;
+    const attackLabel = isMagicClass ? '靈訣普攻' : isArtisan ? '連弩射擊' : '普通攻擊';
 
     for (let hIdx = 0; hIdx < hits; hIdx++) {
       if (targetM.hp <= 0) break;
@@ -635,7 +693,7 @@ export function resolveCombatRound({
       recordMonsterHit(targetM.id, dmg, isCrit);
 
       logs.push({
-        text: `${isCrit ? '💥暴擊！' : '🗡️ '}${hits === 2 ? `【連環二連射 第${hIdx + 1}箭】` : '普通攻擊'}對【${targetM.name}】造成 ${dmg} 點傷害！`,
+        text: `${isCrit ? '💥暴擊！' : '🗡️ '}${hits === 2 ? `【連環二連射 第${hIdx + 1}箭】` : attackLabel}對【${targetM.name}】造成 ${dmg} 點傷害！`,
         type: 'player',
         dmgRole: isCrit ? 'player_crit' : 'player_normal'
       });
@@ -657,12 +715,29 @@ export function resolveCombatRound({
     }
   } else if (actionInput.type === 'skill' && actionInput.skill) {
     const sk = actionInput.skill;
-    const skLvl = currentPlayer.skillLevels[actionInput.skillIdx] || 0;
+    const skIdx = actionInput.skillIdx;
+    const skLvl = currentPlayer.skillLevels[skIdx] || 0;
+    const { unlockLevel, cooldown } = getSkillMeta(sk, skIdx);
+
+    if ((currentPlayer.level || 1) < unlockLevel) {
+      return {
+        outcome: 'ABORTED',
+        logs: [{ text: `🔒 技能【${sk.name}】需主角達到 Lv.${unlockLevel} 方可施展！`, type: 'sys' }]
+      };
+    }
 
     if (skLvl <= 0) {
       return {
         outcome: 'ABORTED',
         logs: [{ text: `🔒 技能【${sk.name}】尚未學習（Lv.0），請先至「技能樹」配點學習！`, type: 'sys' }]
+      };
+    }
+
+    const activeCd = currentBuffs.skillCooldowns[skIdx] || 0;
+    if (activeCd > 0) {
+      return {
+        outcome: 'ABORTED',
+        logs: [{ text: `⏳ 技能【${sk.name}】冷卻調息中，尚需 ${activeCd} 回合方可再次施放！`, type: 'sys' }]
       };
     }
 
@@ -702,14 +777,20 @@ export function resolveCombatRound({
     if (sk.costType === 'mp') currentPlayer.mp -= sk.cost;
     if (sk.costType === 'ammo') currentPlayer.ammo -= sk.cost;
 
+    // 寫入技能冷卻（本回合末會統一 -1，故設為 cooldown + 1）
+    if (cooldown > 0) {
+      currentBuffs.skillCooldowns[skIdx] = cooldown + 1;
+    }
+
     const skStats = sk.getStatsAtLevel(skLvl);
 
     if (sk.id === 'w_s1') {
-      const shieldGain = Math.floor(playerTotalMaxHp * skStats.shieldPct);
+      const conShieldBonus = currentPlayer.job === '猛將' ? Math.floor((currentPlayer.stats?.con || 0) * 3) : 0;
+      const shieldGain = Math.floor(playerTotalMaxHp * skStats.shieldPct) + conShieldBonus;
       currentBuffs.shield += shieldGain;
       currentBuffs.tauntTurns = 2;
       logs.push({
-        text: `🛡️ 猛將施展【金剛怒吼 (Lv.${skLvl})】，嘲諷全場敵怪 2 回合，並獲得 +${shieldGain} 點護盾！`,
+        text: `🛡️ 猛將施展【金剛怒吼 (Lv.${skLvl})】，嘲諷全場敵怪 2 回合，並獲得 +${shieldGain} 點重裝護盾！`,
         type: 'player',
         dmgRole: 'shield'
       });
@@ -919,8 +1000,9 @@ export function resolveCombatRound({
           null,
           getHeroRowIdx(targetHero.instanceId)
         );
-        const revivedHp = Math.max(1, Math.floor(effectiveMaxHp * skStats.reviveHpPct));
-        currentRoster = currentRoster.map(h => (h.instanceId === targetHero.instanceId ? { ...h, hp: revivedHp } : h));
+        const intHealBonus = Math.floor((currentPlayer.stats?.int || 0) * 3);
+        const revivedHp = Math.max(1, Math.floor(effectiveMaxHp * skStats.reviveHpPct) + intHealBonus);
+        currentRoster = currentRoster.map(h => (h.instanceId === targetHero.instanceId ? { ...h, hp: Math.min(effectiveMaxHp, revivedHp) } : h));
         recordAllyHeal(targetHero.instanceId, revivedHp);
         currentHeroBuffs[targetHero.instanceId] = {
           surgeTurns: 2,
@@ -936,9 +1018,10 @@ export function resolveCombatRound({
       const aliveHeroes = currentRoster.filter(h => activeHeroInstanceIds.includes(h.instanceId) && h.hp > 0);
       const chosenHero = aliveHeroes[Math.floor(Math.random() * aliveHeroes.length)];
       if (chosenHero) {
+        const intBonusPct = ((currentPlayer.stats?.int || 0) * 0.005);
         forcedHeroAction = {
           heroInstanceId: chosenHero.instanceId,
-          bonusDmgPct: skStats.bonusDmgPct
+          bonusDmgPct: skStats.bonusDmgPct + intBonusPct
         };
         logs.push({
           text: `☯️ 風水師施展【乾坤借法 (Lv.${skLvl})】，引動天地靈氣令英雄【${chosenHero.name}】立即額外爆發主動技能！`,
@@ -1178,7 +1261,6 @@ export function resolveCombatRound({
   });
   logs.push(...atkRes.logs);
 
-  // 合併本回合怪物受擊紀錄
   Object.keys(atkRes.monsterHits || {}).forEach(mId => {
     const h = atkRes.monsterHits[mId];
     recordMonsterHit(mId, h.dmg, h.isCrit);
@@ -1226,7 +1308,7 @@ export function resolveCombatRound({
     };
   }
 
-  // 5. 回合末狀態遞減與藥師回藍
+  // 5. 回合末狀態遞減、技能冷卻倒數與藥師回藍
   const tickedMonsters = atkRes.updatedMonsters.map(m => {
     const nextElemShift = Math.max(0, (m.elemShiftTurns || 0) - 1);
     const nextPoison = Math.max(0, (m.poisonTurns || 0) - 1);
@@ -1243,11 +1325,19 @@ export function resolveCombatRound({
     };
   });
 
+  const prevCds = atkRes.updatedBuffs.skillCooldowns || { 0: 0, 1: 0, 2: 0 };
+  const tickedCooldowns = {
+    0: Math.max(0, (prevCds[0] || 0) - 1),
+    1: Math.max(0, (prevCds[1] || 0) - 1),
+    2: Math.max(0, (prevCds[2] || 0) - 1)
+  };
+
   const tickedBuffs = {
     ...atkRes.updatedBuffs,
     tauntTurns: Math.max(0, (atkRes.updatedBuffs.tauntTurns || 0) - 1),
     reflectTurns: Math.max(0, (atkRes.updatedBuffs.reflectTurns || 0) - 1),
-    baguaTurns: Math.max(0, (atkRes.updatedBuffs.baguaTurns || 0) - 1)
+    baguaTurns: Math.max(0, (atkRes.updatedBuffs.baguaTurns || 0) - 1),
+    skillCooldowns: tickedCooldowns
   };
 
   const tickedHeroBuffs = {};
