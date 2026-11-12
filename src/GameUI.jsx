@@ -186,7 +186,7 @@ export default function GameUI(props) {
       <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
         <div className="max-w-3xl w-full bg-slate-900/90 border border-amber-500/40 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
           <div className="text-center space-y-1">
-            <h1 className="text-2xl sm:text-3xl font-black text-amber-400 tracking-wider">⚔️ 《天外 Online》文字武俠 RPG</h1>
+            <h1 className="text-2xl sm:text-3xl font-black text-amber-400 tracking-wider">⚔️ 《泰太 Online》文字武俠 RPG</h1>
             <p className="text-xs text-slate-400">創立少俠名號、選擇本命五行與門派職業，招募同行俠客踏入江湖</p>
           </div>
 
