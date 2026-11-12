@@ -1,27 +1,55 @@
-export const SKILL_CARDS_DB = [
-  { id: 'sc_a1', name: '烈焰斬', type: 'active', category: 'physical', allowedJobs: ['猛將', '巧匠'], target: 'single', mult: 2.2, desc: '【物理】發動火焰重擊單體敵人，造成 2.2x 物理傷害。', icon: '🔥' },
-  { id: 'sc_a2', name: '萬箭齊發', type: 'active', category: 'physical', allowedJobs: ['巧匠', '猛將'], target: 'aoe', mult: 1.5, desc: '【物理】散射箭雨橫掃全場，造成 1.5x 廣域物理打擊。', icon: '🏹' },
-  { id: 'sc_a3', name: '九天雷劫', type: 'active', category: 'magic', allowedJobs: ['術士', '風水師'], target: 'single', mult: 3.0, desc: '【法術】引九天雷霆轟擊單體，爆發 3.0x 雷霆法傷。', icon: '⚡' },
-  { id: 'sc_a4', name: '奇門遁甲', type: 'active', category: 'magic', allowedJobs: ['術士', '風水師'], target: 'aoe', mult: 2.0, desc: '【法術】召喚遁甲大陣，造成全場 2.0x 五行法傷。', icon: '☯️' },
-  { id: 'sc_a5', name: '神農妙手', type: 'active', category: 'heal', allowedJobs: ['藥師', '風水師'], target: 'heal', mult: 1.8, desc: '【治療】施展回春妙術，為少俠與全隊恢復 1.8x 生命值。', icon: '🌿' },
-  { id: 'sc_a6', name: '天羅地網', type: 'active', category: 'trap', allowedJobs: ['巧匠', '風水師'], target: 'aoe', mult: 1.6, desc: '【陷阱】佈下機關毒網，對全體敵怪造成 1.6x 穿刺傷。', icon: '🕸️' },
-  { id: 'sc_p1', name: '鋼筋鐵骨', type: 'passive', category: 'universal', allowedJobs: ['猛將', '巧匠', '術士', '藥師', '風水師'], bonus: { defPct: 0.15, hpPct: 0.10 }, desc: '【通用】常駐護甲 +15%、生命上限 +10%。', icon: '🛡️' },
-  { id: 'sc_p2', name: '怒火中燒', type: 'passive', category: 'physical', allowedJobs: ['猛將', '巧匠'], bonus: { atkPct: 0.18 }, desc: '【物理】戰意沸騰，常駐攻擊力 +18%。', icon: '⚔️' },
-  { id: 'sc_p3', name: '五行貫通', type: 'passive', category: 'magic', allowedJobs: ['術士', '藥師', '風水師'], bonus: { atkPct: 0.15, elemDmgPct: 0.20 }, desc: '【法術】常駐攻擊力 +15%，五行相剋傷害額外 +20%。', icon: '🔮' },
-  { id: 'sc_p4', name: '神行百變', type: 'passive', category: 'universal', allowedJobs: ['猛將', '巧匠', '術士', '藥師', '風水師'], bonus: { speedPct: 0.20 }, desc: '【通用】身輕如燕，常駐速度 +20%。', icon: '💨' }
-];
-
-export const TIER_SKILL_CHANCE = {
-  1: 0.15,
-  2: 0.25,
-  3: 0.35,
-  4: 0.50,
-  5: 0.70
+export const SKILL_CARD_RARITIES = {
+  1: { label: '良品', badgeClass: 'bg-emerald-950/70 text-emerald-300 border-emerald-600/70' },
+  2: { label: '上品', badgeClass: 'bg-cyan-950/70 text-cyan-300 border-cyan-500/70' },
+  3: { label: '絕品', badgeClass: 'bg-purple-950/70 text-purple-300 border-purple-500/70' },
+  4: { label: '仙品', badgeClass: 'bg-amber-950/80 text-amber-200 border-amber-400/90' }
 };
 
+export const SKILL_CARDS_DB = [
+  { id: 'sc_act_slash', name: '開山裂石斬', type: 'active', rarity: 1, target: 'single', mult: 1.65, debuff: 'armorBreak', allowedJobs: ['猛將'], desc: '單體 1.65x 猛擊並破甲降防 20%（2回合）。' },
+  { id: 'sc_act_arrow', name: '追風連珠箭', type: 'active', rarity: 1, target: 'single', mult: 1.70, ignoreDefPct: 0.30, allowedJobs: ['巧匠'], desc: '單體 1.70x 穿甲射擊（無視 30% 防禦）。' },
+  { id: 'sc_act_fireball', name: '赤炎符咒訣', type: 'active', rarity: 1, target: 'aoe', mult: 1.15, debuff: 'burn', allowedJobs: ['術士', '風水師'], desc: '全體 1.15x 法術轟炸並附加灼燒持續傷害。' },
+  { id: 'sc_act_mend', name: '回春甘露訣', type: 'active', rarity: 1, target: 'heal', mult: 1.35, allowedJobs: ['藥師', '風水師'], desc: '全隊恢復 1.35x 生命並補充少俠真元。' },
+  { id: 'sc_act_whirlwind', name: '橫掃千軍槍', type: 'active', rarity: 2, target: 'aoe', mult: 1.30, debuff: 'armorBreak', allowedJobs: ['猛將'], desc: '橫掃全場敵軍造成 1.30x 傷害並破甲 20%。' },
+  { id: 'sc_act_rain_needle', name: '暴雨梨花針', type: 'active', rarity: 2, target: 'aoe', mult: 1.25, debuff: 'blind', allowedJobs: ['巧匠'], desc: '全體 1.25x 暗器齊發並使敵軍致盲（30% 揮空）。' },
+  { id: 'sc_act_poison_mist', name: '萬蠱噬心瘴', type: 'active', rarity: 2, target: 'aoe', mult: 1.20, debuff: 'poison', allowedJobs: ['藥師', '術士'], desc: '全體 1.20x 毒傷並疊加劇毒。' },
+  { id: 'sc_act_bagua_light', name: '紫氣東來護體陣', type: 'active', rarity: 2, target: 'heal', mult: 1.45, shieldPct: 0.16, allowedJobs: ['風水師', '藥師'], desc: '全隊回血 1.45x 並展開 16% 護盾。' },
+  { id: 'sc_act_blood_blade', name: '修羅嗜血斬', type: 'active', rarity: 3, target: 'single', mult: 2.15, lifestealPct: 0.35, allowedJobs: ['猛將', '巧匠'], desc: '單體 2.15x 重創並將 35% 傷害轉化為自身生命！' },
+  { id: 'sc_act_ice_spear', name: '九幽玄冰刺', type: 'active', rarity: 3, target: 'single', mult: 2.25, ignoreDefPct: 0.45, debuff: 'vuln', allowedJobs: ['術士'], desc: '單體 2.25x 貫穿（無視 45% 防禦）並附加易傷 +25%。' },
+  { id: 'sc_act_qimen_star', name: '奇門北斗落星陣', type: 'active', rarity: 3, target: 'aoe', mult: 1.50, debuff: 'vuln', allowedJobs: ['風水師', '術士'], desc: '星辰轟擊全場 1.50x 傷害，令敵全體易傷 +25%！' },
+  { id: 'sc_act_sky_sword', name: '天外飛仙劍訣', type: 'active', rarity: 4, target: 'single', mult: 2.65, ignoreDefPct: 0.55, allowedJobs: ['猛將', '巧匠', '術士'], desc: '【仙品絕學】單體 2.65x 毀滅劍氣，無視 55% 防禦！' },
+  { id: 'sc_act_five_thunder', name: '九霄五雷正法', type: 'active', rarity: 4, target: 'aoe', mult: 1.75, debuff: 'burn', allowedJobs: ['術士', '風水師'], desc: '【仙品絕學】天雷轟頂全體 1.75x 傷害，附加高額灼燒！' },
+  { id: 'sc_act_immortal_dew', name: '太上九轉仙露', type: 'active', rarity: 4, target: 'heal', mult: 1.90, shieldPct: 0.25, allowedJobs: ['藥師', '風水師'], desc: '【仙品絕學】全隊大幅回血 1.90x 並展開 25% 金剛護盾！' },
+  { id: 'sc_pas_iron_skin', name: '銅皮鐵骨功', type: 'passive', rarity: 1, allowedJobs: ['猛將', '藥師', '風水師'], bonus: { defPct: 0.14, hpPct: 0.08 }, desc: '防禦 +14%、生命 +8%' },
+  { id: 'sc_pas_swift_step', name: '草上飛身法', type: 'passive', rarity: 1, allowedJobs: ['巧匠', '風水師', '術士'], bonus: { speedPct: 0.14, atkPct: 0.06 }, desc: '速度 +14%、攻擊 +6%' },
+  { id: 'sc_pas_tiger_might', name: '伏虎降龍勁', type: 'passive', rarity: 2, allowedJobs: ['猛將', '巧匠'], bonus: { atkPct: 0.16, hpPct: 0.08 }, desc: '攻擊 +16%、生命 +8%' },
+  { id: 'sc_pas_spirit_eye', name: '通靈慧眼訣', type: 'passive', rarity: 2, allowedJobs: ['術士', '藥師', '風水師'], bonus: { skillChance: 0.10, atkPct: 0.10 }, desc: '技發率 +10%、攻擊 +10%' },
+  { id: 'sc_pas_herb_sutra', name: '百草長生經', type: 'passive', rarity: 2, allowedJobs: ['藥師', '猛將'], bonus: { hpPct: 0.18, defPct: 0.10 }, desc: '最大生命 +18%、防禦 +10%' },
+  { id: 'sc_pas_five_elem', name: '五行相生心經', type: 'passive', rarity: 3, allowedJobs: ['術士', '風水師'], bonus: { elemDmgPct: 0.18, atkPct: 0.14, skillChance: 0.06 }, desc: '五行剋制增傷 +18%、攻擊 +14%' },
+  { id: 'sc_pas_shadow_step', name: '神行百變無影步', type: 'passive', rarity: 3, allowedJobs: ['巧匠', '風水師'], bonus: { speedPct: 0.22, atkPct: 0.14 }, desc: '速度 +22%、攻擊 +14%' },
+  { id: 'sc_pas_vajra_body', name: '金剛不壞神功', type: 'passive', rarity: 3, allowedJobs: ['猛將'], bonus: { defPct: 0.22, hpPct: 0.20 }, desc: '防禦 +22%、最大生命 +20%' },
+  { id: 'sc_pas_yijin_sutra', name: '達摩易筋洗髓經', type: 'passive', rarity: 4, allowedJobs: ['猛將', '巧匠', '術士', '藥師', '風水師'], bonus: { atkPct: 0.18, defPct: 0.18, hpPct: 0.18, speedPct: 0.14 }, desc: '【全職仙品】攻、防、血各 +18%、速度 +14%' },
+  { id: 'sc_pas_hetu_luoshu', name: '河圖洛書天機錄', type: 'passive', rarity: 4, allowedJobs: ['術士', '藥師', '風水師'], bonus: { atkPct: 0.22, skillChance: 0.14, elemDmgPct: 0.16 }, desc: '【仙品心法】攻擊 +22%、技發率 +14%、五行增傷 +16%' }
+];
+
+export function getSkillCardRarityMeta(rarity = 1) {
+  return SKILL_CARD_RARITIES[rarity] || SKILL_CARD_RARITIES[1];
+}
+
 export function createSkillCardInstance(template) {
-  return {
-    ...template,
-    uid: `sc_${template.id}_${Date.now()}_${Math.floor(Math.random() * 100000)}`
-  };
+  return { ...template, rarity: template.rarity || 1, uid: `card_${Date.now()}_${Math.random().toString(36).slice(2, 8)}` };
+}
+
+export function rollWeightedSkillCard(minRarity = 1, maxRarity = 4) {
+  const weightsMap = { 1: 48, 2: 30, 3: 15, 4: 7 };
+  const pool = SKILL_CARDS_DB.filter(c => (c.rarity || 1) >= minRarity && (c.rarity || 1) <= maxRarity);
+  const candidates = pool.length > 0 ? pool : SKILL_CARDS_DB;
+  const totalWeight = candidates.reduce((sum, c) => sum + (weightsMap[c.rarity || 1] || 10), 0);
+  let roll = Math.random() * totalWeight;
+  let picked = candidates[0];
+  for (const card of candidates) {
+    roll -= weightsMap[card.rarity || 1] || 10;
+    if (roll <= 0) { picked = card; break; }
+  }
+  return createSkillCardInstance(picked);
 }
