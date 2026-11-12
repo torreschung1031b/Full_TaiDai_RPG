@@ -1,7 +1,7 @@
 import { MAX_LEVEL, ELEMENTS } from '../data/constants';
 import { SKILL_CARDS_DB, createSkillCardInstance } from '../data/skillCards';
 import { HERO_TEMPLATES, instantiateHero } from '../data/heroes';
-import { ITEM_DROP_POOL } from '../data/equipment';
+import { rollEquipmentFromTierRange } from '../data/equipment';
 import { getRowPositionBuffs } from './formationHelper';
 import {
   getRandomElement,
@@ -107,7 +107,7 @@ export function calculateDamageToMonster(rawAtk, monster, attElem, options = {})
 }
 
 /**
- * 結算敵方怪群行動回合（含致盲、中毒減攻、護盾吸收、反震與站位濺射）
+ * 結算敵方怪群行動回合
  */
 export function executeMonsterAttacks({
   monsters,
@@ -256,7 +256,7 @@ export function executeMonsterAttacks({
 }
 
 /**
- * 結算戰鬥勝利戰利品、英雄招募與經驗升級
+ * 結算戰鬥勝利戰利品、分階裝備掉落與鎮魔塔推進
  */
 export function resolveBattleVictory({
   player,
@@ -264,6 +264,7 @@ export function resolveBattleVictory({
   currentRoster,
   activeHeroInstanceIds,
   currentZoneIndex,
+  activeTowerFloor,
   isFengShui,
   getHeroRowIdx
 }) {
@@ -271,32 +272,68 @@ export function resolveBattleVictory({
   let totalExp = 0;
   let droppedStones = 0;
   const droppedEquipments = [];
+  const msgs = [];
 
   defeatedMonsters.forEach(m => {
     totalGold += m.gold;
     totalExp += m.exp;
-    if (Math.random() < 0.45) droppedStones += 1;
-    if (Math.random() < 0.35) {
-      const template = ITEM_DROP_POOL[Math.floor(Math.random() * ITEM_DROP_POOL.length)];
-      droppedEquipments.push({ ...template, refineLevel: 0, uid: `eq_${Date.now()}_${Math.random()}` });
-    }
+    if (Math.random() < 0.40) droppedStones += 1;
   });
 
   let droppedHero = null;
-  if (Math.random() < 0.30) {
+  if (Math.random() < 0.28) {
     const candidates = HERO_TEMPLATES.filter(t => t.tier <= Math.min(5, currentZoneIndex + 2));
     const picked = candidates[Math.floor(Math.random() * candidates.length)];
     droppedHero = normalizeHero(instantiateHero(picked, true, null, getRandomElement));
   }
 
   let droppedSkillCard = null;
-  if (Math.random() < 0.35) {
-    const cardTemplate = SKILL_CARDS_DB[Math.floor(Math.random() * SKILL_CARDS_DB.length)];
-    droppedSkillCard = createSkillCardInstance(cardTemplate);
+
+  if (activeTowerFloor && activeTowerFloor > 0) {
+    // 鎮魔塔勝利結算
+    const isBossFloor = activeTowerFloor % 5 === 0;
+    if (isBossFloor) {
+      const bossStones = 2 + Math.floor(activeTowerFloor / 5);
+      droppedStones += bossStones;
+      const minT = activeTowerFloor >= 20 ? 4 : activeTowerFloor >= 15 ? 4 : 3;
+      const maxT = activeTowerFloor >= 20 ? 5 : activeTowerFloor >= 10 ? 4 : 3;
+      droppedEquipments.push(rollEquipmentFromTierRange(minT, maxT, 'eq_tower_boss'));
+
+      const cardTemplate = SKILL_CARDS_DB[Math.floor(Math.random() * SKILL_CARDS_DB.length)];
+      droppedSkillCard = createSkillCardInstance(cardTemplate);
+      msgs.push(`🗼 討伐【鎮魔塔第 ${activeTowerFloor} 層鎮守首領】大捷！額外獲贈 +${bossStones} 顆精鍊石與首領神兵！`);
+    } else {
+      msgs.push(`🗼 成功突破【鎮魔塔第 ${activeTowerFloor} 層】，解鎖第 ${activeTowerFloor + 1} 層挑戰！`);
+      if (Math.random() < 0.45) {
+        const minT = activeTowerFloor >= 16 ? 3 : activeTowerFloor >= 6 ? 2 : 1;
+        const maxT = activeTowerFloor >= 16 ? 5 : activeTowerFloor >= 11 ? 4 : activeTowerFloor >= 6 ? 3 : 2;
+        droppedEquipments.push(rollEquipmentFromTierRange(minT, maxT, 'eq_tower'));
+      }
+      if (Math.random() < 0.50) {
+        const cardTemplate = SKILL_CARDS_DB[Math.floor(Math.random() * SKILL_CARDS_DB.length)];
+        droppedSkillCard = createSkillCardInstance(cardTemplate);
+      }
+    }
+  } else {
+    // 野外遭遇戰：整場結算 18% 機率掉落 1 件對應地圖 Tier 裝備
+    if (Math.random() < 0.18) {
+      const zoneTierRanges = [
+        [1, 2],
+        [2, 3],
+        [2, 4],
+        [3, 4]
+      ];
+      const [minT, maxT] = zoneTierRanges[currentZoneIndex] || [1, 3];
+      droppedEquipments.push(rollEquipmentFromTierRange(minT, maxT, 'eq_wild'));
+    }
+
+    if (Math.random() < 0.30) {
+      const cardTemplate = SKILL_CARDS_DB[Math.floor(Math.random() * SKILL_CARDS_DB.length)];
+      droppedSkillCard = createSkillCardInstance(cardTemplate);
+    }
   }
 
   const mergedRoster = droppedHero ? [...currentRoster, droppedHero] : [...currentRoster];
-  const msgs = [];
 
   const finalRoster = mergedRoster.map(hero => {
     if (!activeHeroInstanceIds.includes(hero.instanceId)) return hero;
@@ -309,7 +346,7 @@ export function resolveBattleVictory({
     ...player,
     gold: player.gold + totalGold,
     refineStones: player.refineStones + droppedStones,
-    exp: player.level >= MAX_LEVEL ? 0 : player.exp + totalExp
+    exp: pObjExpAfterGain(player, totalExp)
   };
 
   while (newPlayer.level < MAX_LEVEL && newPlayer.exp >= newPlayer.maxExp) {
@@ -338,6 +375,7 @@ export function resolveBattleVictory({
     finalRoster,
     droppedEquipments,
     droppedSkillCard,
+    clearedTowerFloor: activeTowerFloor || null,
     victorySummary: {
       gold: totalGold,
       exp: totalExp,
@@ -348,6 +386,10 @@ export function resolveBattleVictory({
       msgs
     }
   };
+}
+
+function pObjExpAfterGain(p, gain) {
+  return p.level >= MAX_LEVEL ? 0 : p.exp + gain;
 }
 
 /**
@@ -425,11 +467,9 @@ export function resolveFleeCombat(context) {
  */
 export function resolveCombatRound({
   actionInput = { type: 'attack' },
-  isFusionUltimate = false,
   monsters,
   player,
   heroRoster,
-  activeHeroes,
   activeHeroInstanceIds,
   selectedTargetIndex,
   combatBuffs,
@@ -443,6 +483,7 @@ export function resolveCombatRound({
   rawFormBonus,
   formMultiplier,
   currentZoneIndex,
+  activeTowerFloor,
   isFengShui,
   getHeroRowIdx
 }) {
@@ -466,35 +507,7 @@ export function resolveCombatRound({
   let forcedHeroAction = null;
 
   // 1. 主角行動階段
-  if (isFusionUltimate) {
-    const targetM = currentMonsters[targetIdx];
-    if (targetM) {
-      let teamAtk = playerTotalAtk;
-      activeHeroes.forEach(h => {
-        if (h.hp > 0) {
-          const { effectiveAtk } = calculateHeroEffectiveStats(
-            h,
-            isFengShui,
-            currentHeroBuffs[h.instanceId],
-            getHeroRowIdx(h.instanceId)
-          );
-          teamAtk += effectiveAtk;
-        }
-      });
-      const { dmg } = calculateDamageToMonster(teamAtk * 2.5, targetM, currentPlayer.element, {
-        ignoreDefPct: innateIgnoreDef,
-        isWarlock
-      });
-      targetM.hp = Math.max(0, targetM.hp - dmg);
-      logs.push({
-        text: `✨ 發動【主僕合擊奧義】，全軍集火對【${targetM.name}】爆發 ${dmg} 點巨額打擊！`,
-        type: 'player'
-      });
-    }
-    if (currentPlayer.job === '猛將') currentPlayer.rage = 0;
-    else if (currentPlayer.job === '巧匠') currentPlayer.ammo = Math.max(0, currentPlayer.ammo - 4);
-    else currentPlayer.mp = Math.max(0, currentPlayer.mp - 40);
-  } else if (actionInput.type === 'attack' && currentMonsters[targetIdx]) {
+  if (actionInput.type === 'attack' && currentMonsters[targetIdx]) {
     const targetM = currentMonsters[targetIdx];
     const hits = isArtisan && currentPlayer.ammo > 6 ? 2 : 1;
 
@@ -895,13 +908,14 @@ export function resolveCombatRound({
       currentRoster,
       activeHeroInstanceIds,
       currentZoneIndex,
+      activeTowerFloor,
       isFengShui,
       getHeroRowIdx
     });
     return { outcome: 'VICTORY', logs, ...vicRes };
   }
 
-  // 3. 持續負面傷害階段（劇毒、灼燒）
+  // 3. 持續負面傷害階段
   let anyPoisonedAlive = false;
   currentMonsters = currentMonsters.map(m => {
     if (m.hp <= 0) return m;
@@ -941,6 +955,7 @@ export function resolveCombatRound({
       currentRoster,
       activeHeroInstanceIds,
       currentZoneIndex,
+      activeTowerFloor,
       isFengShui,
       getHeroRowIdx
     });
@@ -980,7 +995,7 @@ export function resolveCombatRound({
     };
   }
 
-  // 勝利檢查 3（反震殲滅）
+  // 勝利檢查 3
   if (atkRes.updatedMonsters.every(m => m.hp <= 0)) {
     logs.push({ text: `🎉 敵軍在反震護體下全數覆滅！戰鬥勝利（整備功能已解鎖）！`, type: 'sys' });
     const vicRes = resolveBattleVictory({
@@ -989,6 +1004,7 @@ export function resolveCombatRound({
       currentRoster: atkRes.updatedRoster,
       activeHeroInstanceIds,
       currentZoneIndex,
+      activeTowerFloor,
       isFengShui,
       getHeroRowIdx
     });
