@@ -6,6 +6,42 @@ import { SKILL_CARDS_DB, createSkillCardInstance } from '../data/skillCards';
 import { HERO_TEMPLATES } from '../data/heroes';
 import { GEMS_DB } from '../data/equipment';
 
+export const CODEX_MILESTONES = [
+  { count: 3, label: '初窺門徑（3 位）', bonusText: '主角攻擊力 +5%', atkPct: 0.05, hpPct: 0, defPct: 0, speedPct: 0 },
+  { count: 6, label: '群英薈萃（6 位）', bonusText: '主角最大生命 +8%', atkPct: 0, hpPct: 0.08, defPct: 0, speedPct: 0 },
+  { count: 10, label: '名震江湖（10 位）', bonusText: '主角防禦力 +8%', atkPct: 0, hpPct: 0, defPct: 0.08, speedPct: 0 },
+  { count: 15, label: '天下歸心（15 位）', bonusText: '主角攻擊再 +5%・速度 +8%', atkPct: 0.05, hpPct: 0, defPct: 0, speedPct: 0.08 }
+];
+
+export function calculateCodexBonus(heroRoster = []) {
+  const uniqueUnlocked = HERO_TEMPLATES.filter(tmp =>
+    heroRoster.some(h => h.baseId === tmp.id_base)
+  ).length;
+
+  let atkPct = 0;
+  let hpPct = 0;
+  let defPct = 0;
+  let speedPct = 0;
+
+  CODEX_MILESTONES.forEach(m => {
+    if (uniqueUnlocked >= m.count) {
+      atkPct += m.atkPct;
+      hpPct += m.hpPct;
+      defPct += m.defPct;
+      speedPct += m.speedPct;
+    }
+  });
+
+  return {
+    unlockedCount: uniqueUnlocked,
+    totalCount: HERO_TEMPLATES.length,
+    atkPct,
+    hpPct,
+    defPct,
+    speedPct
+  };
+}
+
 export function CharacterTab({
   player,
   setPlayer,
@@ -48,7 +84,7 @@ export function CharacterTab({
 
       <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-5 space-y-4">
         <div className="flex justify-between items-center">
-          <span className="text-xs font-bold text-amber-300">📊 主角綜合戰鬥屬性（含裝備與陣法加成）</span>
+          <span className="text-xs font-bold text-amber-300">📊 主角綜合戰鬥屬性（含裝備、陣法與圖鑑加成）</span>
           <span className="text-xs font-mono text-slate-400">
             {player.level >= MAX_LEVEL ? 'EXP: MAX (Lv.30 滿級上限)' : `EXP: ${player.exp} / ${player.maxExp}`}
           </span>
@@ -283,14 +319,51 @@ export function TowerTab({
 }
 
 export function CodexTab({ heroRoster }) {
+  const codexBonus = calculateCodexBonus(heroRoster);
+  const pct = Math.min(100, Math.round((codexBonus.unlockedCount / Math.max(1, codexBonus.totalCount)) * 100));
+
   return (
-    <div className="bg-slate-900/80 border border-slate-800/80 rounded-3xl p-6 shadow-2xl backdrop-blur space-y-4 max-w-4xl mx-auto">
-      <h2 className="font-extrabold text-amber-400 text-lg">📖 天外英雄大圖鑑</h2>
+    <div className="bg-slate-900/80 border border-slate-800/80 rounded-3xl p-6 shadow-2xl backdrop-blur space-y-5 max-w-4xl mx-auto">
+      <div className="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
+        <div>
+          <h2 className="font-extrabold text-amber-400 text-lg">📖 天外英雄大圖鑑</h2>
+          <p className="text-xs text-slate-400 mt-0.5">收錄不同英雄即可永久解鎖主角全屬性里程碑加成</p>
+        </div>
+        <span className="text-xs font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 px-3.5 py-1.5 rounded-full">
+          圖鑑收錄進度：{codexBonus.unlockedCount} / {codexBonus.totalCount} ({pct}%)
+        </span>
+      </div>
+
+      {/* 收錄進度條與里程碑 */}
+      <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-4 space-y-3">
+        <div className="w-full bg-slate-900 h-2.5 rounded-full overflow-hidden border border-slate-800">
+          <div className="bg-gradient-to-r from-amber-500 to-emerald-400 h-full transition-all" style={{ width: `${pct}%` }} />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+          {CODEX_MILESTONES.map(m => {
+            const achieved = codexBonus.unlockedCount >= m.count;
+            return (
+              <div
+                key={m.count}
+                className={`px-3 py-2 rounded-xl border flex items-center justify-between ${
+                  achieved
+                    ? 'bg-emerald-950/40 border-emerald-600/60 text-emerald-300 font-bold'
+                    : 'bg-slate-900/60 border-slate-800 text-slate-500'
+                }`}
+              >
+                <span>{achieved ? '✅' : '🔒'} {m.label}</span>
+                <span>{m.bonusText}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {HERO_TEMPLATES.map(tmp => {
           const unlocked = heroRoster.some(h => h.baseId === tmp.id_base);
           return (
-            <div key={tmp.id_base} className={`p-3 rounded-2xl border text-xs ${unlocked ? 'bg-slate-950 border-amber-400 text-amber-300' : 'bg-slate-950/40 opacity-40 border-slate-800'}`}>
+            <div key={tmp.id_base} className={`p-3 rounded-2xl border text-xs ${unlocked ? 'bg-slate-950 border-amber-400 text-amber-300 font-bold' : 'bg-slate-950/40 opacity-40 border-slate-800'}`}>
               {tmp.icon} {unlocked ? tmp.name : '???'} (Tier {tmp.tier} • {tmp.heroClass})
             </div>
           );
