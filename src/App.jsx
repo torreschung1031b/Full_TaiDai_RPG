@@ -6,15 +6,19 @@ import { CLASS_CONFIGS } from './data/classes';
 import { FORMATIONS_CONFIG } from './data/formations';
 import { SKILL_CARDS_DB, createSkillCardInstance } from './data/skillCards';
 import { HERO_TEMPLATES, instantiateHero } from './data/heroes';
-import { ITEM_DROP_POOL, calculateEquipmentBonus } from './data/equipment';
+import {
+  STARTER_WEAPONS_BY_JOB,
+  calculateEquipmentBonus,
+  enrichEquipmentMeta,
+  rollEquipmentFromTierRange
+} from './data/equipment';
 import { calculateCodexBonus } from './components/SecondaryTabs';
 
 import { getRowPositionBuffs, syncFormationSlots } from './utils/formationHelper';
 import {
   getRandomElement,
   calculateHeroEffectiveStats,
-  normalizeHero,
-  enrichEquipmentMeta
+  normalizeHero
 } from './utils/statCalculator';
 import {
   CURRENT_SAVE_VERSION,
@@ -61,15 +65,15 @@ export default function App() {
   const [activeHeroInstanceIds, setActiveHeroInstanceIds] = useState([]);
   const [currentFormation, setCurrentFormation] = useState('none');
   const [formationSlots, setFormationSlots] = useState({ 0: 'PLAYER', 2: null, 4: null, 6: null, 8: null });
-  const [equipmentInventory, setEquipmentInventory] = useState(
-    ITEM_DROP_POOL.slice(0, 3).map((item, idx) => ({ ...item, refineLevel: 0, uid: `eq_init_${idx}` }))
-  );
+  const [equipmentInventory, setEquipmentInventory] = useState([]);
   const [skillCardsInventory, setSkillCardsInventory] = useState(() => [
     createSkillCardInstance(SKILL_CARDS_DB[0]),
     createSkillCardInstance(SKILL_CARDS_DB[2]),
     createSkillCardInstance(SKILL_CARDS_DB[6])
   ]);
   const [towerFloor, setTowerFloor] = useState(1);
+  const [towerBestFloor, setTowerBestFloor] = useState(1);
+  const [activeTowerFloor, setActiveTowerFloor] = useState(null);
 
   const [activeTab, setActiveTab] = useState('combat');
   const [currentZoneIndex, setCurrentZoneIndex] = useState(0);
@@ -115,6 +119,7 @@ export default function App() {
     };
     const loadedForm = loadedP.job === '風水師' ? (migratedData.currentFormation || 'none') : 'none';
     const loadedActiveIds = migratedData.activeHeroInstanceIds || [];
+    const loadedFloor = Math.max(1, migratedData.towerFloor || 1);
 
     setPlayer(loadedP);
     setHeroRoster((migratedData.heroRoster || []).map(normalizeHero));
@@ -123,7 +128,9 @@ export default function App() {
     setFormationSlots(syncFormationSlots(loadedForm, migratedData.formationSlots || {}, loadedActiveIds));
     setEquipmentInventory(migratedData.equipmentInventory || []);
     setSkillCardsInventory(migratedData.skillCardsInventory || []);
-    setTowerFloor(migratedData.towerFloor || 1);
+    setTowerFloor(loadedFloor);
+    setTowerBestFloor(Math.max(loadedFloor, migratedData.towerBestFloor || loadedFloor));
+    setActiveTowerFloor(null);
   };
 
   useEffect(() => {
@@ -158,14 +165,15 @@ export default function App() {
           formationSlots,
           equipmentInventory,
           skillCardsInventory,
-          towerFloor
+          towerFloor,
+          towerBestFloor
         });
         localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(saveData));
       } catch (e) {
         console.warn('自動存檔失敗', e);
       }
     }
-  }, [player, heroRoster, activeHeroInstanceIds, currentFormation, formationSlots, equipmentInventory, skillCardsInventory, towerFloor, gameStarted]);
+  }, [player, heroRoster, activeHeroInstanceIds, currentFormation, formationSlots, equipmentInventory, skillCardsInventory, towerFloor, towerBestFloor, gameStarted]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -216,6 +224,10 @@ export default function App() {
   const handleStartGame = () => {
     const jobConfig = CLASS_CONFIGS[creationData.job];
     const starterHero = normalizeHero(creationData.selectedStarterHero);
+    const starterWeaponTemplate = STARTER_WEAPONS_BY_JOB[creationData.job];
+    const starterWeapon = starterWeaponTemplate
+      ? { ...starterWeaponTemplate, refineLevel: 0, uid: `eq_starter_${Date.now()}` }
+      : null;
 
     const newPlayer = {
       ...INITIAL_PLAYER,
@@ -224,18 +236,35 @@ export default function App() {
       element: creationData.element,
       maxHp: jobConfig.baseHp, hp: jobConfig.baseHp,
       maxMp: jobConfig.baseMp, mp: jobConfig.baseMp,
-      atk: jobConfig.baseAtk, def: jobConfig.baseDef, speed: jobConfig.baseSpeed
+      atk: jobConfig.baseAtk, def: jobConfig.baseDef, speed: jobConfig.baseSpeed,
+      equipped: {
+        weapon: starterWeapon,
+        offhand: null,
+        helmet: null,
+        armor: null,
+        shoes: null,
+        accessory: null
+      }
     };
 
     setPlayer(newPlayer);
+    setEquipmentInventory([]);
     setHeroRoster([starterHero]);
     setActiveHeroInstanceIds([starterHero.instanceId]);
     setCurrentFormation('none');
     setFormationSlots(syncFormationSlots('none', {}, [starterHero.instanceId]));
+    setTowerFloor(1);
+    setTowerBestFloor(1);
+    setActiveTowerFloor(null);
     setMonsters([]);
     setGameStarted(true);
     setCombatLogs([
-      { id: 1, turn: 1, type: 'sys', text: `📜 少俠【${newPlayer.name}】（${newPlayer.job} • ${newPlayer.element}本命）踏入《天外 Online》！開局獲贈 1 點 SP，可先前往「✨ 技能樹」學習首招技能！` }
+      {
+        id: 1,
+        turn: 1,
+        type: 'sys',
+        text: `📜 少俠【${newPlayer.name}】（${newPlayer.job} • ${newPlayer.element}本命）手持新手武器【${starterWeapon?.name || '長劍'}】踏入《天外 Online》！開局獲贈 1 點 SP，可先前往「✨ 技能樹」學習首招技能！`
+      }
     ]);
   };
 
@@ -245,6 +274,7 @@ export default function App() {
       return;
     }
     setCurrentZoneIndex(zoneIdx);
+    setActiveTowerFloor(null);
     setMonsters([]);
     addLog(`🗺️ 已前往【${ZONES[zoneIdx].name}】安全營地，請點擊「🔍 尋找怪群」主動搜敵！`, 'sys');
   };
@@ -309,12 +339,128 @@ export default function App() {
     }
 
     resetCombatStates();
+    setActiveTowerFloor(null);
     setMonsters(list);
     setSelectedTargetIndex(0);
     setTurnCount(1);
     setCombatPhase('PLAYER_SELECT');
     addLog(`⚔️ 【${zone.name}】主動搜敵遭遇 ${list.length} 隻敵怪！戰鬥開始（整備功能已鎖定）！`, 'sys');
     return list;
+  };
+
+  // Stage 3B：開啟鎮魔塔當前樓層挑戰（勝利後才推進層數與發放獎勵）
+  const handleStartTowerChallenge = () => {
+    if (isInCombat) {
+      addLog(`⚠️ 當前已在戰鬥中，無法開啟新的鎮魔塔挑戰！`, 'sys');
+      return;
+    }
+    if (player.hp <= 0) {
+      addLog(`⚠️ 少俠氣血耗盡，請先前往客棧休息恢復再挑戰鎮魔塔！`, 'danger');
+      return;
+    }
+
+    const floor = towerFloor;
+    const isBossFloor = floor % 5 === 0;
+    const hpScale = 1 + (floor - 1) * 0.22;
+    const atkScale = 1 + (floor - 1) * 0.16;
+    const defScale = 1 + (floor - 1) * 0.14;
+    const rewardScale = 1 + (floor - 1) * 0.20;
+
+    const baseZone = ZONES[Math.min(ZONES.length - 1, Math.floor((floor - 1) / 5))];
+    const basePool = baseZone.monsters;
+    const list = [];
+
+    if (isBossFloor) {
+      const bossTemplate = basePool[basePool.length - 1];
+      const bossElem = getRandomElement();
+      list.push({
+        id: `tower_boss_${Date.now()}`,
+        isBoss: true,
+        name: `第${floor}層鎮守妖王・${bossTemplate.name}`,
+        element: bossElem,
+        originalElement: bossElem,
+        maxHp: Math.floor(bossTemplate.hp * hpScale * 2.2),
+        hp: Math.floor(bossTemplate.hp * hpScale * 2.2),
+        atk: Math.floor(bossTemplate.atk * atkScale * 1.4),
+        def: Math.floor(bossTemplate.def * defScale * 1.3),
+        exp: Math.floor(bossTemplate.exp * rewardScale * 2.5),
+        gold: Math.floor(bossTemplate.gold * rewardScale * 2.5),
+        armorBreakTurns: 0, armorBreakPct: 0,
+        blindTurns: 0, blindPct: 0,
+        elemShiftTurns: 0,
+        burnTurns: 0, burnDmg: 0,
+        poisonTurns: 0, poisonPct: 0, poisonStacks: 0,
+        vulnTurns: 0, vulnPct: 0
+      });
+
+      for (let i = 0; i < 2; i++) {
+        const guardTpl = basePool[i % basePool.length];
+        const guardElem = getRandomElement();
+        list.push({
+          id: `tower_guard_${Date.now()}_${i}`,
+          name: `妖王護法 ${i === 0 ? '左使' : '右使'}`,
+          element: guardElem,
+          originalElement: guardElem,
+          maxHp: Math.floor(guardTpl.hp * hpScale * 1.1),
+          hp: Math.floor(guardTpl.hp * hpScale * 1.1),
+          atk: Math.floor(guardTpl.atk * atkScale * 1.05),
+          def: Math.floor(guardTpl.def * defScale),
+          exp: Math.floor(guardTpl.exp * rewardScale),
+          gold: Math.floor(guardTpl.gold * rewardScale),
+          armorBreakTurns: 0, armorBreakPct: 0,
+          blindTurns: 0, blindPct: 0,
+          elemShiftTurns: 0,
+          burnTurns: 0, burnDmg: 0,
+          poisonTurns: 0, poisonPct: 0, poisonStacks: 0,
+          vulnTurns: 0, vulnPct: 0
+        });
+      }
+    } else {
+      const guardCount = Math.min(6, 3 + Math.floor(floor / 6));
+      const alphabet = '甲乙丙丁戊己';
+      for (let i = 0; i < guardCount; i++) {
+        const tpl = basePool[i % basePool.length];
+        const elem = getRandomElement();
+        list.push({
+          id: `tower_m_${Date.now()}_${i}`,
+          name: `${floor}層守衛・${tpl.name}${alphabet[i] || ''}`,
+          element: elem,
+          originalElement: elem,
+          maxHp: Math.floor(tpl.hp * hpScale),
+          hp: Math.floor(tpl.hp * hpScale),
+          atk: Math.floor(tpl.atk * atkScale),
+          def: Math.floor(tpl.def * defScale),
+          exp: Math.floor(tpl.exp * rewardScale),
+          gold: Math.floor(tpl.gold * rewardScale),
+          armorBreakTurns: 0, armorBreakPct: 0,
+          blindTurns: 0, blindPct: 0,
+          elemShiftTurns: 0,
+          burnTurns: 0, burnDmg: 0,
+          poisonTurns: 0, poisonPct: 0, poisonStacks: 0,
+          vulnTurns: 0, vulnPct: 0
+        });
+      }
+    }
+
+    if (player.job === '巧匠') {
+      setPlayer(prev => ({ ...prev, ammo: 12, maxAmmo: 12 }));
+    } else if (player.job === '猛將') {
+      setPlayer(prev => ({ ...prev, rage: 0 }));
+    }
+
+    resetCombatStates();
+    setActiveTowerFloor(floor);
+    setMonsters(list);
+    setSelectedTargetIndex(0);
+    setTurnCount(1);
+    setCombatPhase('PLAYER_SELECT');
+    setActiveTab('combat');
+    addLog(
+      isBossFloor
+        ? `🔥 踏入【鎮魔塔第 ${floor} 層】，鎮守妖王首領現身！擊敗首領必得高階神裝！`
+        : `🗼 踏入【鎮魔塔第 ${floor} 層】，迎戰 ${list.length} 名鎮塔守衛！`,
+      'sys'
+    );
   };
 
   const handleFleeCombat = () => {
@@ -339,6 +485,7 @@ export default function App() {
 
     if (res.outcome === 'ESCAPED') {
       setMonsters([]);
+      setActiveTowerFloor(null);
       resetCombatStates();
       setCombatPhase('PLAYER_SELECT');
       return;
@@ -348,6 +495,7 @@ export default function App() {
       setPlayer(res.defeatedPlayer);
       setHeroRoster(res.finalRoster);
       setMonsters([]);
+      setActiveTowerFloor(null);
       resetCombatStates();
       setCombatPhase('PLAYER_SELECT');
       setDefeatSummary(res.defeatSummary);
@@ -363,7 +511,7 @@ export default function App() {
     setCombatPhase('PLAYER_SELECT');
   };
 
-  const handleExecuteRound = (actionInput = { type: 'attack' }, isFusionUltimate = false) => {
+  const handleExecuteRound = (actionInput = { type: 'attack' }) => {
     if (!isInCombat) {
       addLog(`⚠️ 當前沒有敵人，請先點擊「🔍 尋找怪群」主動搜敵！`, 'sys');
       return;
@@ -372,11 +520,9 @@ export default function App() {
     setCombatPhase('EXECUTING');
     const res = resolveCombatRound({
       actionInput,
-      isFusionUltimate,
       monsters,
       player,
       heroRoster,
-      activeHeroes,
       activeHeroInstanceIds,
       selectedTargetIndex,
       combatBuffs,
@@ -390,6 +536,7 @@ export default function App() {
       rawFormBonus,
       formMultiplier,
       currentZoneIndex,
+      activeTowerFloor,
       isFengShui,
       getHeroRowIdx
     });
@@ -413,6 +560,12 @@ export default function App() {
       if (res.droppedSkillCard) {
         setSkillCardsInventory(prev => [...prev, res.droppedSkillCard]);
       }
+      if (res.clearedTowerFloor) {
+        const nextFloor = res.clearedTowerFloor + 1;
+        setTowerFloor(nextFloor);
+        setTowerBestFloor(prev => Math.max(prev, nextFloor));
+        setActiveTowerFloor(null);
+      }
       setVictorySummary(res.victorySummary);
       return;
     }
@@ -421,6 +574,7 @@ export default function App() {
       setPlayer(res.defeatedPlayer);
       setHeroRoster(res.finalRoster);
       setMonsters([]);
+      setActiveTowerFloor(null);
       resetCombatStates();
       setCombatPhase('PLAYER_SELECT');
       setDefeatSummary(res.defeatSummary);
@@ -624,13 +778,15 @@ export default function App() {
       setPlayer(p => ({ ...p, gold: p.gold - shopItem.price }));
       setSkillCardsInventory(prev => [...prev, newCard]);
       rewardMsg = `🃏 開啟秘傳技能卡盲盒，獲得【${newCard.name}】（適用：${newCard.allowedJobs.join('、')}）！`;
-    } else if (shopItem.id === 'equip_box') {
-      const template = ITEM_DROP_POOL[Math.floor(Math.random() * ITEM_DROP_POOL.length)];
-      const bonusRefine = Math.random() < 0.25 ? 1 : 0;
-      const newEquip = { ...template, refineLevel: bonusRefine, uid: `eq_shop_${Date.now()}_${Math.random()}` };
+    } else if (shopItem.id === 'equip_box_mid' || shopItem.id === 'equip_box_high') {
+      const isHigh = shopItem.id === 'equip_box_high';
+      const rolled = rollEquipmentFromTierRange(isHigh ? 3 : 1, isHigh ? 5 : 3, 'eq_shop');
+      const bonusRefine = Math.random() < (isHigh ? 0.30 : 0.25) ? 1 : 0;
+      const newEquip = { ...rolled, refineLevel: bonusRefine };
+      const meta = enrichEquipmentMeta(newEquip);
       setPlayer(p => ({ ...p, gold: p.gold - shopItem.price }));
       setEquipmentInventory(prev => [...prev, newEquip]);
-      rewardMsg = `🎁 開啟江湖神兵寶箱，獲得【${newEquip.name} (+${bonusRefine})】！`;
+      rewardMsg = `🎁 開啟${isHigh ? '天工神兵匣' : '江湖兵器箱'}，獲得【${meta.tierTag}・${newEquip.name} (+${bonusRefine})】！`;
     } else if (shopItem.id === 'hero_scroll_normal' || shopItem.id === 'hero_scroll_rare') {
       const pool = shopItem.id === 'hero_scroll_rare'
         ? HERO_TEMPLATES.filter(t => t.tier >= 3 && t.tier <= 5)
@@ -665,7 +821,7 @@ export default function App() {
       return prevEquipped ? [...filtered, prevEquipped] : filtered;
     });
     setPlayer(p => ({ ...p, equipped: { ...p.equipped, [item.type]: item } }));
-    addLog(`🛡️ 少俠已裝備【${item.name}】${prevEquipped ? `（原【${prevEquipped.name}】已退回背包）` : ''}。`, 'sys');
+    addLog(`🛡️ 少俠已裝備【${meta.tierTag}・${item.name}】${prevEquipped ? `（原【${prevEquipped.name}】已退回背包）` : ''}。`, 'sys');
   };
 
   const handleUnequipItem = (slotKey) => {
@@ -689,7 +845,7 @@ export default function App() {
     const meta = enrichEquipmentMeta(item);
     setEquipmentInventory(prev => prev.filter(i => i.uid !== item.uid));
     setPlayer(p => ({ ...p, gold: p.gold + meta.sellPrice }));
-    addLog(`💰 已賣出【${item.name}】，獲得 +${meta.sellPrice} 金幣！`, 'sys');
+    addLog(`💰 已賣出【${meta.tierTag}・${item.name}】，獲得 +${meta.sellPrice} 金幣！`, 'sys');
   };
 
   const handleBulkSellUnusableEquipment = () => {
@@ -779,7 +935,8 @@ export default function App() {
       formationSlots: syncedSlots,
       equipmentInventory,
       skillCardsInventory,
-      towerFloor
+      towerFloor,
+      towerBestFloor
     });
     setJsonSaveText(JSON.stringify(exportPayload, null, 2));
     setSaveLoadStatus(`✅ 存檔 JSON 匯出成功（版本 v${CURRENT_SAVE_VERSION}）！`);
@@ -821,6 +978,7 @@ export default function App() {
     <GameUI
       gameStarted={gameStarted}
       isInCombat={isInCombat}
+      activeTowerFloor={activeTowerFloor}
       creationData={creationData}
       setCreationData={setCreationData}
       starterHeroCandidates={starterHeroCandidates}
@@ -873,7 +1031,8 @@ export default function App() {
       handleShopPurchase={handleShopPurchase}
       currentFormation={effectiveFormationKey}
       towerFloor={towerFloor}
-      setTowerFloor={setTowerFloor}
+      towerBestFloor={towerBestFloor}
+      handleStartTowerChallenge={handleStartTowerChallenge}
       jsonSaveText={jsonSaveText}
       setJsonSaveText={setJsonSaveText}
       saveLoadStatus={saveLoadStatus}
