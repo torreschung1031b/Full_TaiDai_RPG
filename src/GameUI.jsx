@@ -58,6 +58,7 @@ export default function GameUI(props) {
     selectedTargetIndex,
     setSelectedTargetIndex,
     combatLogs,
+    lastRoundHits,
     combatBuffs,
     heroBattleBuffs,
     activeTab,
@@ -232,6 +233,7 @@ export default function GameUI(props) {
             handleExecuteRound={handleExecuteRound}
             handleFleeCombat={handleFleeCombat}
             combatLogs={combatLogs}
+            lastRoundHits={lastRoundHits}
             chatEndRef={chatEndRef}
           />
         )}
