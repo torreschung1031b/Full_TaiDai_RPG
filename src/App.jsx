@@ -42,7 +42,7 @@ const INITIAL_PLAYER = {
   mp: 60, maxMp: 60,
   rage: 0, ammo: 12, maxAmmo: 12,
   atk: 36, def: 18, speed: 10,
-  gold: 600, refineStones: 10,
+  gold: 300, refineStones: 4,
   statPoints: 5, sp: 1, tp: 2,
   stats: { str: 10, con: 10, int: 10, agi: 10 },
   skillLevels: { 0: 0, 1: 0, 2: 0 },
@@ -80,6 +80,7 @@ export default function App() {
   const [monsters, setMonsters] = useState([]);
   const [selectedTargetIndex, setSelectedTargetIndex] = useState(0);
   const [combatLogs, setCombatLogs] = useState([]);
+  const [lastRoundHits, setLastRoundHits] = useState({ monsters: {}, allies: {} });
   const [turnCount, setTurnCount] = useState(1);
   const [combatPhase, setCombatPhase] = useState('PLAYER_SELECT');
   const [victorySummary, setVictorySummary] = useState(null);
@@ -216,7 +217,8 @@ export default function App() {
         id: Date.now() + Math.random() + i * 0.001,
         turn: turnCount,
         text: entry.text,
-        type: entry.type || 'info'
+        type: entry.type || 'info',
+        dmgRole: entry.dmgRole || null
       }))
     ]);
   };
@@ -257,6 +259,7 @@ export default function App() {
     setTowerBestFloor(1);
     setActiveTowerFloor(null);
     setMonsters([]);
+    setLastRoundHits({ monsters: {}, allies: {} });
     setGameStarted(true);
     setCombatLogs([
       {
@@ -276,6 +279,7 @@ export default function App() {
     setCurrentZoneIndex(zoneIdx);
     setActiveTowerFloor(null);
     setMonsters([]);
+    setLastRoundHits({ monsters: {}, allies: {} });
     addLog(`🗺️ 已前往【${ZONES[zoneIdx].name}】安全營地，請點擊「🔍 尋找怪群」主動搜敵！`, 'sys');
   };
 
@@ -291,6 +295,7 @@ export default function App() {
     });
     setHeroBattleBuffs({});
     setBattleDownedHeroIds([]);
+    setLastRoundHits({ monsters: {}, allies: {} });
   };
 
   const spawnEncounter = (zoneIdx, customActiveHeroes = null) => {
@@ -305,23 +310,38 @@ export default function App() {
 
     const deployed = customActiveHeroes !== null ? customActiveHeroes : activeHeroes;
     const totalCombatants = 1 + deployed.length;
-    const count = Math.floor(Math.random() * (totalCombatants * 2)) + totalCombatants;
+    const count = Math.floor(Math.random() * (totalCombatants * 2)) + Math.max(2, totalCombatants);
 
     const zone = ZONES[zoneIdx];
+    const zoneScale = 1 + (zoneIdx * 0.22);
     const list = [];
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
     for (let i = 0; i < count; i++) {
       const template = zone.monsters[Math.floor(Math.random() * zone.monsters.length)];
       const randElem = getRandomElement();
+      const isElite = Math.random() < 0.25;
+      const eliteHpMult = isElite ? 1.35 : 1.0;
+      const eliteAtkMult = isElite ? 1.20 : 1.0;
+      const eliteDefMult = isElite ? 1.20 : 1.0;
+      const eliteRewardMult = isElite ? 1.40 : 1.0;
+
+      const scaledHp = Math.floor(template.hp * 1.45 * zoneScale * eliteHpMult);
+      const scaledAtk = Math.floor(template.atk * 1.32 * zoneScale * eliteAtkMult);
+      const scaledDef = Math.floor(template.def * 1.35 * zoneScale * eliteDefMult);
+
       list.push({
         id: `m_${Date.now()}_${i}`,
-        name: `${template.name} ${alphabet[i] || i + 1}`,
+        isElite,
+        name: `${isElite ? '🔥精英・' : ''}${template.name} ${alphabet[i] || i + 1}`,
         element: randElem,
         originalElement: randElem,
-        maxHp: template.hp, hp: template.hp,
-        atk: template.atk, def: template.def,
-        exp: template.exp, gold: template.gold,
+        maxHp: scaledHp,
+        hp: scaledHp,
+        atk: scaledAtk,
+        def: scaledDef,
+        exp: Math.floor(template.exp * eliteRewardMult),
+        gold: Math.floor(template.gold * eliteRewardMult),
         armorBreakTurns: 0, armorBreakPct: 0,
         blindTurns: 0, blindPct: 0,
         elemShiftTurns: 0,
@@ -348,7 +368,7 @@ export default function App() {
     return list;
   };
 
-  // Stage 3B：開啟鎮魔塔當前樓層挑戰（勝利後才推進層數與發放獎勵）
+  // Stage 3B：開啟鎮魔塔當前樓層挑戰（強化樓層難度倍率）
   const handleStartTowerChallenge = () => {
     if (isInCombat) {
       addLog(`⚠️ 當前已在戰鬥中，無法開啟新的鎮魔塔挑戰！`, 'sys');
@@ -361,10 +381,10 @@ export default function App() {
 
     const floor = towerFloor;
     const isBossFloor = floor % 5 === 0;
-    const hpScale = 1 + (floor - 1) * 0.22;
-    const atkScale = 1 + (floor - 1) * 0.16;
-    const defScale = 1 + (floor - 1) * 0.14;
-    const rewardScale = 1 + (floor - 1) * 0.20;
+    const hpScale = 1.25 * (1 + (floor - 1) * 0.28);
+    const atkScale = 1.20 * (1 + (floor - 1) * 0.22);
+    const defScale = 1.20 * (1 + (floor - 1) * 0.18);
+    const rewardScale = 1 + (floor - 1) * 0.22;
 
     const baseZone = ZONES[Math.min(ZONES.length - 1, Math.floor((floor - 1) / 5))];
     const basePool = baseZone.monsters;
@@ -379,10 +399,10 @@ export default function App() {
         name: `第${floor}層鎮守妖王・${bossTemplate.name}`,
         element: bossElem,
         originalElement: bossElem,
-        maxHp: Math.floor(bossTemplate.hp * hpScale * 2.2),
-        hp: Math.floor(bossTemplate.hp * hpScale * 2.2),
-        atk: Math.floor(bossTemplate.atk * atkScale * 1.4),
-        def: Math.floor(bossTemplate.def * defScale * 1.3),
+        maxHp: Math.floor(bossTemplate.hp * hpScale * 2.6),
+        hp: Math.floor(bossTemplate.hp * hpScale * 2.6),
+        atk: Math.floor(bossTemplate.atk * atkScale * 1.55),
+        def: Math.floor(bossTemplate.def * defScale * 1.4),
         exp: Math.floor(bossTemplate.exp * rewardScale * 2.5),
         gold: Math.floor(bossTemplate.gold * rewardScale * 2.5),
         armorBreakTurns: 0, armorBreakPct: 0,
@@ -398,13 +418,14 @@ export default function App() {
         const guardElem = getRandomElement();
         list.push({
           id: `tower_guard_${Date.now()}_${i}`,
+          isElite: true,
           name: `妖王護法 ${i === 0 ? '左使' : '右使'}`,
           element: guardElem,
           originalElement: guardElem,
-          maxHp: Math.floor(guardTpl.hp * hpScale * 1.1),
-          hp: Math.floor(guardTpl.hp * hpScale * 1.1),
-          atk: Math.floor(guardTpl.atk * atkScale * 1.05),
-          def: Math.floor(guardTpl.def * defScale),
+          maxHp: Math.floor(guardTpl.hp * hpScale * 1.25),
+          hp: Math.floor(guardTpl.hp * hpScale * 1.25),
+          atk: Math.floor(guardTpl.atk * atkScale * 1.15),
+          def: Math.floor(guardTpl.def * defScale * 1.1),
           exp: Math.floor(guardTpl.exp * rewardScale),
           gold: Math.floor(guardTpl.gold * rewardScale),
           armorBreakTurns: 0, armorBreakPct: 0,
@@ -416,7 +437,7 @@ export default function App() {
         });
       }
     } else {
-      const guardCount = Math.min(6, 3 + Math.floor(floor / 6));
+      const guardCount = Math.min(6, 3 + Math.floor(floor / 5));
       const alphabet = '甲乙丙丁戊己';
       for (let i = 0; i < guardCount; i++) {
         const tpl = basePool[i % basePool.length];
@@ -507,6 +528,7 @@ export default function App() {
     setHeroRoster(res.updatedRoster);
     setBattleDownedHeroIds(res.updatedDownedIds);
     setCombatBuffs(res.updatedBuffs);
+    setLastRoundHits(res.lastRoundHits || { monsters: {}, allies: {} });
     setTurnCount(prev => prev + 1);
     setCombatPhase('PLAYER_SELECT');
   };
@@ -587,6 +609,7 @@ export default function App() {
     setBattleDownedHeroIds(res.updatedDownedIds);
     setCombatBuffs(res.tickedBuffs);
     setHeroBattleBuffs(res.tickedHeroBuffs);
+    setLastRoundHits(res.lastRoundHits || { monsters: {}, allies: {} });
     setTurnCount(prev => prev + 1);
     setCombatPhase('PLAYER_SELECT');
   };
@@ -1012,6 +1035,7 @@ export default function App() {
       selectedTargetIndex={selectedTargetIndex}
       setSelectedTargetIndex={setSelectedTargetIndex}
       combatLogs={combatLogs}
+      lastRoundHits={lastRoundHits}
       combatBuffs={combatBuffs}
       heroBattleBuffs={heroBattleBuffs}
       turnCount={turnCount}
