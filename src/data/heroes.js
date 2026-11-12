@@ -617,12 +617,17 @@ export const HERO_TEMPLATES = [
   }
 ];
 
+/**
+ * 依據模板建立英雄實例（相容 4 參數呼叫）
+ */
 export function instantiateHero(template, randomElem = true, forcedElem = null, elemGenerator = null) {
   const tier = template.tier || 1;
   const elemKeys = Object.keys(ELEMENTS);
   const chosenElement = forcedElem
     || (randomElem
-      ? (typeof elemGenerator === 'function' ? elemGenerator() : elemKeys[Math.floor(Math.random() * elemKeys.length)])
+      ? (typeof elemGenerator === 'function'
+        ? elemGenerator()
+        : elemKeys[Math.floor(Math.random() * elemKeys.length)])
       : (template.element || '金'));
 
   const stats = {
@@ -671,12 +676,25 @@ export function instantiateHero(template, randomElem = true, forcedElem = null, 
   };
 }
 
+/**
+ * 計算目前出戰英雄陣容的「五行、三國、西遊與名將羈絆光環」
+ */
 export function computeTeamSynergy(deployedHeroes = []) {
   const activeList = (deployedHeroes || []).filter(Boolean);
   const auras = [];
-  const totalBonus = { atkPct: 0, defPct: 0, hpPct: 0, speedPct: 0, skillChance: 0 };
-  if (activeList.length === 0) return { auras, totalBonus };
+  const totalBonus = {
+    atkPct: 0,
+    defPct: 0,
+    hpPct: 0,
+    speedPct: 0,
+    skillChance: 0
+  };
 
+  if (activeList.length === 0) {
+    return { auras, totalBonus };
+  }
+
+  // 1. 計算五行分布
   const elemCounts = {};
   activeList.forEach(h => {
     const el = h.element || '金';
@@ -687,31 +705,72 @@ export function computeTeamSynergy(deployedHeroes = []) {
   const maxSameElem = Math.max(...Object.values(elemCounts));
 
   if (uniqueElems >= 3) {
-    auras.push({ id: 'synergy_rainbow', name: `☯️ 五行相生陣（${uniqueElems}種五行）`, desc: '全隊攻防 +8%、速度 +6%', bonus: { atkPct: 0.08, defPct: 0.08, speedPct: 0.06 } });
-    totalBonus.atkPct += 0.08; totalBonus.defPct += 0.08; totalBonus.speedPct += 0.06;
+    auras.push({
+      id: 'synergy_rainbow',
+      name: `☯️ 五行相生陣（${uniqueElems}種五行）`,
+      desc: '全隊攻防 +8%、速度 +6%',
+      bonus: { atkPct: 0.08, defPct: 0.08, speedPct: 0.06 }
+    });
+    totalBonus.atkPct += 0.08;
+    totalBonus.defPct += 0.08;
+    totalBonus.speedPct += 0.06;
   }
+
   if (maxSameElem >= 2) {
     const domElem = Object.keys(elemCounts).find(k => elemCounts[k] === maxSameElem);
-    auras.push({ id: 'synergy_mono', name: `🔥 同氣連枝陣（${maxSameElem}名${domElem}屬性）`, desc: '全隊攻擊 +10%、技能發動率 +5%', bonus: { atkPct: 0.10, skillChance: 0.05 } });
-    totalBonus.atkPct += 0.10; totalBonus.skillChance += 0.05;
+    auras.push({
+      id: 'synergy_mono',
+      name: `🔥 同氣連枝陣（${maxSameElem}名${domElem}屬性）`,
+      desc: '全隊攻擊 +10%、技能發動率 +5%',
+      bonus: { atkPct: 0.10, skillChance: 0.05 }
+    });
+    totalBonus.atkPct += 0.10;
+    totalBonus.skillChance += 0.05;
   }
 
-  const tkCount = activeList.filter(h => (h.faction || HERO_TEMPLATES.find(t => t.baseId === h.baseId)?.faction) === 'three_kingdoms').length;
+  // 2. 三國群英陣營羈絆
+  const tkCount = activeList.filter(h => {
+    const tpl = HERO_TEMPLATES.find(t => t.baseId === h.baseId);
+    return (h.faction || tpl?.faction) === 'three_kingdoms';
+  }).length;
   if (tkCount >= 2) {
-    auras.push({ id: 'synergy_three_kingdoms', name: `⚔️ 三國群英譜（${tkCount}位三國名將）`, desc: '全隊攻擊 +12%、防禦 +10%', bonus: { atkPct: 0.12, defPct: 0.10 } });
-    totalBonus.atkPct += 0.12; totalBonus.defPct += 0.10;
+    auras.push({
+      id: 'synergy_three_kingdoms',
+      name: `⚔️ 三國群英譜（${tkCount}位三國名將）`,
+      desc: '全隊攻擊 +12%、防禦 +10%',
+      bonus: { atkPct: 0.12, defPct: 0.10 }
+    });
+    totalBonus.atkPct += 0.12;
+    totalBonus.defPct += 0.10;
   }
 
-  const jwCount = activeList.filter(h => (h.faction || HERO_TEMPLATES.find(t => t.baseId === h.baseId)?.faction) === 'journey_west').length;
+  // 3. 西遊取經陣營羈絆
+  const jwCount = activeList.filter(h => {
+    const tpl = HERO_TEMPLATES.find(t => t.baseId === h.baseId);
+    return (h.faction || tpl?.faction) === 'journey_west';
+  }).length;
   if (jwCount >= 2) {
-    auras.push({ id: 'synergy_journey_west', name: `🐒 西遊取經人（${jwCount}位西遊仙佛）`, desc: '全隊最大生命 +14%、技能發動率 +8%', bonus: { hpPct: 0.14, skillChance: 0.08 } });
-    totalBonus.hpPct += 0.14; totalBonus.skillChance += 0.08;
+    auras.push({
+      id: 'synergy_journey_west',
+      name: `🐒 西遊取經人（${jwCount}位西遊仙佛）`,
+      desc: '全隊最大生命 +14%、技能發動率 +8%',
+      bonus: { hpPct: 0.14, skillChance: 0.08 }
+    });
+    totalBonus.hpPct += 0.14;
+    totalBonus.skillChance += 0.08;
   }
 
+  // 4. 高階名將共鳴（Tier 4 以上）
   const highTierCount = activeList.filter(h => (h.tier || 1) >= 4).length;
   if (highTierCount >= 2) {
-    auras.push({ id: 'synergy_legend', name: `👑 宗師雲集（${highTierCount}位高階宗師）`, desc: '全隊最大生命 +12%、速度 +8%', bonus: { hpPct: 0.12, speedPct: 0.08 } });
-    totalBonus.hpPct += 0.12; totalBonus.speedPct += 0.08;
+    auras.push({
+      id: 'synergy_legend',
+      name: `👑 宗師雲集（${highTierCount}位高階宗師）`,
+      desc: '全隊最大生命 +12%、速度 +8%',
+      bonus: { hpPct: 0.12, speedPct: 0.08 }
+    });
+    totalBonus.hpPct += 0.12;
+    totalBonus.speedPct += 0.08;
   }
 
   return { auras, totalBonus };
