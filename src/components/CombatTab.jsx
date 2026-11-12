@@ -134,43 +134,4 @@ export default function CombatTab({
                   >
                     <div className="text-xs font-bold truncate text-slate-200">{m.name}</div>
                     <div className={`text-[10px] ${elemInfo?.color.split(' ')[0]} font-bold`}>
-                      {elemInfo?.icon} {m.element} {m.elemShiftTurns > 0 ? `(轉${m.elemShiftTurns})` : ''}
-                    </div>
-                    <div className="text-[10px] text-rose-400 font-mono">HP {m.hp}</div>
-                    {!isDead && (
-                      <div className="flex flex-wrap justify-center gap-1 pt-0.5 text-[9px] font-bold">
-                        {m.poisonTurns > 0 && (
-                          <span className="bg-emerald-950 text-emerald-300 px-1 rounded border border-emerald-700">
-                            ☠️毒{m.poisonStacks}({m.poisonTurns})
-                          </span>
-                        )}
-                        {m.armorBreakTurns > 0 && (
-                          <span className="bg-amber-950 text-amber-300 px-1 rounded border border-amber-700">
-                            💔破甲({m.armorBreakTurns})
-                          </span>
-                        )}
-                        {m.blindTurns > 0 && (
-                          <span className="bg-purple-950 text-purple-300 px-1 rounded border border-purple-700">
-                            🕸️盲({m.blindTurns})
-                          </span>
-                        )}
-                        {m.vulnTurns > 0 && (
-                          <span className="bg-rose-950 text-rose-300 px-1 rounded border border-rose-700">
-                            🎯易傷({m.vulnTurns})
-                          </span>
-                        )}
-                        {m.burnTurns > 0 && (
-                          <span className="bg-orange-950 text-orange-300 px-1 rounded border border-orange-700">
-                            🔥灼({m.burnTurns})
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        <div className="bg-slate-950/70 border border-slate-800/80 rounded-2xl p-3.5 space-y-2.5
+                      {elemInfo?.icon} {m.element}
