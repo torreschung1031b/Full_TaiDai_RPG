@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { ZONES, ELEMENTS } from './data/constants';
 import { CLASS_CONFIGS } from './data/classes';
+import { PROTAGONIST_SKILLS_DB, getSkillMultiplier } from './data/skills';
 import { enrichEquipmentMeta } from './data/equipment';
 import { calculateHeroEffectiveStats } from './utils/statCalculator';
 import {
@@ -44,6 +45,46 @@ const EQUIP_SLOTS = [
   { key: 'shoes', label: '👢 戰靴' },
   { key: 'accessory', label: '💍 飾品' }
 ];
+
+function buildAdaptedClassSkills(job, fallbackSkills = []) {
+  if (fallbackSkills && fallbackSkills.length > 0) return fallbackSkills;
+  const rawList = PROTAGONIST_SKILLS_DB?.[job] || [];
+  return rawList.map((sk, idx) => {
+    const unlockLevel = sk.unlockLevel ?? (idx === 0 ? 1 : idx * 5);
+    const cd = sk.cd ?? (idx === 0 ? 0 : idx === 1 ? 2 : 4);
+    const getStatsAtLevel = sk.getStatsAtLevel || ((lvl = 1) => {
+      const effectiveLvl = Math.max(1, lvl);
+      const mult = Number(getSkillMultiplier(sk, effectiveLvl).toFixed(2));
+      return {
+        mult,
+        shieldPct: Number((0.25 + (effectiveLvl - 1) * 0.05).toFixed(2)),
+        breakPct: Number((0.20 + (effectiveLvl - 1) * 0.05).toFixed(2)),
+        reflectPct: Number((0.30 + (effectiveLvl - 1) * 0.05).toFixed(2)),
+        blindPct: Number((0.25 + (effectiveLvl - 1) * 0.05).toFixed(2)),
+        poisonPct: Number((0.08 + (effectiveLvl - 1) * 0.02).toFixed(2)),
+        reviveHpPct: Number((0.35 + (effectiveLvl - 1) * 0.08).toFixed(2)),
+        atkBuffPct: Number((0.20 + (effectiveLvl - 1) * 0.05).toFixed(2)),
+        bonusDmgPct: Number((0.20 + (effectiveLvl - 1) * 0.05).toFixed(2)),
+        reducePct: Number((0.25 + (effectiveLvl - 1) * 0.04).toFixed(2)),
+        vulnPct: Number((0.20 + (effectiveLvl - 1) * 0.05).toFixed(2))
+      };
+    });
+
+    const getDescAtLevel = sk.getDescAtLevel || ((lvl = 1) => {
+      const effectiveLvl = Math.max(1, lvl);
+      const mult = Number(getSkillMultiplier(sk, effectiveLvl).toFixed(2));
+      return `技能倍率 ${mult}x（每升 1 級倍率 +0.3x）`;
+    });
+
+    return {
+      ...sk,
+      unlockLevel,
+      cd,
+      getStatsAtLevel,
+      getDescAtLevel
+    };
+  });
+}
 
 export default function GameUI(props) {
   const {
@@ -128,7 +169,9 @@ export default function GameUI(props) {
   const isFengShui = player.job === '風水師';
   const isWarlock = player.job === '術士';
   const classInfo = CLASS_CONFIGS[player.job] || CLASS_CONFIGS['猛將'];
-  const currentClassSkills = props.classSkills || classInfo.skills || [];
+  const currentClassSkills = props.classSkills?.length > 0
+    ? props.classSkills
+    : buildAdaptedClassSkills(player.job, classInfo.skills);
   const sweepReqLevel = getZoneSweepReqLevel(currentZoneIndex);
   const canSweepCurrentZone = (player.level || 1) >= sweepReqLevel;
 
