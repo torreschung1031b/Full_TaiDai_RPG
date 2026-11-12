@@ -68,6 +68,7 @@ export default function GameUI(props) {
     handleExecuteRound,
     equipmentInventory,
     skillCardsInventory,
+    forgeFeedback,
     handleRefineEquipment,
     handleSocketGem,
     shopLastReward,
@@ -279,8 +280,10 @@ export default function GameUI(props) {
             player={player}
             isInCombat={isInCombat}
             equipmentInventory={equipmentInventory}
+            forgeFeedback={forgeFeedback}
             handleRefineEquipment={handleRefineEquipment}
             handleSocketGem={handleSocketGem}
+            setHelpModalTab={setHelpModalTab}
           />
         )}
 
