@@ -1,7 +1,6 @@
 import React from 'react';
 import { HelpCircle } from 'lucide-react';
-import { EQUIP_SLOTS } from '../data/equipment';
-import { enrichEquipmentMeta } from '../utils/statCalculator';
+import { EQUIP_SLOTS, enrichEquipmentMeta } from '../data/equipment';
 
 export default function EquipBagTab({
   player,
@@ -18,7 +17,7 @@ export default function EquipBagTab({
     <div className="bg-slate-900/80 border border-slate-800/80 rounded-3xl p-6 shadow-2xl backdrop-blur space-y-6 max-w-5xl mx-auto">
       <div className="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
         <div className="flex items-center gap-2">
-          <h2 className="font-extrabold text-amber-400 text-lg">🛡️ 6大部位與裝備欄</h2>
+          <h2 className="font-extrabold text-amber-400 text-lg">🛡️ 6大部位與裝備欄（Tier 1 凡鐵 ～ Tier 5 仙器）</h2>
           <button
             onClick={() => setHelpModalTab('equip')}
             className="text-slate-400 hover:text-amber-300 transition-colors"
@@ -44,7 +43,14 @@ export default function EquipBagTab({
                 <div className="text-slate-400 font-bold">{s.icon} {s.label}</div>
                 {item ? (
                   <>
-                    <div className="text-amber-300 font-bold mt-1 truncate">{item.name} (+{item.refineLevel || 0})</div>
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                      <span className={`text-[10px] px-1.5 py-0.2 rounded border font-bold shrink-0 ${item.tierBadgeStyle}`}>
+                        {item.tierTag}
+                      </span>
+                      <span className="text-amber-300 font-bold truncate">
+                        {item.name} (+{item.refineLevel || 0})
+                      </span>
+                    </div>
                     <div className="text-[10px] text-slate-400 truncate mt-0.5">{item.desc}</div>
                   </>
                 ) : (
@@ -82,7 +88,7 @@ export default function EquipBagTab({
 
         {equipmentInventory.length === 0 ? (
           <div className="text-xs text-slate-500 bg-slate-950 p-4 rounded-xl border border-slate-800">
-            背包中暫無閒置裝備（已穿在身上的裝備可於上方部位欄點擊「📤 除下」退回背包）。
+            背包中暫無閒置裝備（可透過野外搜敵、鎮魔塔首領或江湖市集獲取更高 Tier 裝備）。
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -93,6 +99,9 @@ export default function EquipBagTab({
                 <div key={item.uid} className={`bg-slate-950 p-3.5 rounded-2xl border flex justify-between items-center gap-3 text-xs ${canWear ? 'border-slate-800' : 'border-rose-950/80 opacity-85'}`}>
                   <div className="min-w-0 space-y-1">
                     <div className="font-bold text-amber-300 flex items-center gap-1.5 flex-wrap">
+                      <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${item.tierBadgeStyle}`}>
+                        {item.tierTag}
+                      </span>
                       <span>{item.name} (+{item.refineLevel || 0})</span>
                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${canWear ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-rose-950 text-rose-300 border border-rose-800'}`}>
                         {item.equipTag}
