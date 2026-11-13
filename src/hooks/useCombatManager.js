@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ZONES } from '../data/constants';
 import { CLASS_CONFIGS } from '../data/classes';
 import {
@@ -104,6 +104,7 @@ export function useCombatManager({
       const next = !prev;
       if (next) {
         setDefeatSummary(null);
+        setCombatPhase('PLAYER_SELECT');
       }
       addLog(
         next
@@ -121,6 +122,7 @@ export function useCombatManager({
       if (next) {
         setAutoBattle(true);
         setDefeatSummary(null);
+        setCombatPhase('PLAYER_SELECT');
       }
       addLog(
         next
@@ -633,35 +635,54 @@ export function useCombatManager({
     setTurnCount
   ]);
 
-  // 🤖 1. 戰鬥中自動出招排程
-  useEffect(() => {
-    if (!gameStarted || !autoBattle || !isInCombat || combatPhase !== 'PLAYER_SELECT') return;
-    const timer = setTimeout(() => {
-      const classSkills = CLASS_CONFIGS[player.job]?.skills || [];
-      const nextAction = pickBestAutoCombatAction(
-        player,
-        classSkills,
-        combatBuffs,
-        activeHeroInstanceIds,
-        heroRoster
-      );
-      handleExecuteRound(nextAction);
-    }, 450);
-
-    return () => clearTimeout(timer);
-  }, [
-    gameStarted,
-    autoBattle,
-    isInCombat,
-    combatPhase,
+  // 使用 Ref 鎖定最新的戰鬥執行狀態，避免血量/陣容重繪打斷 450ms 計時器
+  const autoBattleRef = useRef({
     player,
     combatBuffs,
     activeHeroInstanceIds,
     heroRoster,
-    handleExecuteRound
-  ]);
+    handleExecuteRound,
+    spawnEncounter,
+    handleStartTowerChallenge,
+    currentZoneIndex,
+    addLog
+  });
 
-  // 🤖 2. 野外自動連戰搜敵排程（營地開啟自動戰鬥，或野外勝利後自動下一場）
+  useEffect(() => {
+    autoBattleRef.current = {
+      player,
+      combatBuffs,
+      activeHeroInstanceIds,
+      heroRoster,
+      handleExecuteRound,
+      spawnEncounter,
+      handleStartTowerChallenge,
+      currentZoneIndex,
+      addLog
+    };
+  });
+
+  // 🤖 1. 戰鬥中自動出招排程（僅在回合推進時觸發，絕不被中途重繪取消）
+  useEffect(() => {
+    if (!gameStarted || !autoBattle || !isInCombat || combatPhase !== 'PLAYER_SELECT') return;
+
+    const timer = setTimeout(() => {
+      const latest = autoBattleRef.current;
+      const classSkills = CLASS_CONFIGS[latest.player.job]?.skills || [];
+      const nextAction = pickBestAutoCombatAction(
+        latest.player,
+        classSkills,
+        latest.combatBuffs,
+        latest.activeHeroInstanceIds,
+        latest.heroRoster
+      );
+      latest.handleExecuteRound(nextAction);
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [gameStarted, autoBattle, isInCombat, combatPhase, turnCount]);
+
+  // 🤖 2. 野外自動連戰搜敵排程
   useEffect(() => {
     if (!gameStarted || !autoBattle || autoTower || activeTowerFloor || isInCombat || combatPhase !== 'PLAYER_SELECT') {
       return;
@@ -670,7 +691,6 @@ export function useCombatManager({
       setAutoBattle(false);
       return;
     }
-    // 掃蕩結算不自動觸發連戰
     if (victorySummary?.isSweep) return;
 
     if (player.hp <= 1) {
@@ -679,10 +699,10 @@ export function useCombatManager({
       return;
     }
 
-    const delay = victorySummary ? 1200 : 400;
+    const delay = victorySummary ? 1200 : 450;
     const timer = setTimeout(() => {
       if (victorySummary) setVictorySummary(null);
-      spawnEncounter(currentZoneIndex);
+      autoBattleRef.current.spawnEncounter(autoBattleRef.current.currentZoneIndex);
     }, delay);
 
     return () => clearTimeout(timer);
@@ -696,12 +716,10 @@ export function useCombatManager({
     victorySummary,
     defeatSummary,
     player.hp,
-    currentZoneIndex,
-    addLog,
-    spawnEncounter
+    addLog
   ]);
 
-  // 🗼 3. 自動爬塔排程（通關後短暫顯示結算，隨即自動進入下一層）
+  // 🗼 3. 自動爬塔排程
   useEffect(() => {
     if (!gameStarted || !autoTower || isInCombat || combatPhase !== 'PLAYER_SELECT') return;
     if (defeatSummary) {
@@ -718,7 +736,7 @@ export function useCombatManager({
 
     const timer = setTimeout(() => {
       setVictorySummary(null);
-      handleStartTowerChallenge();
+      autoBattleRef.current.handleStartTowerChallenge();
     }, 1200);
 
     return () => clearTimeout(timer);
@@ -730,8 +748,7 @@ export function useCombatManager({
     victorySummary,
     defeatSummary,
     player.hp,
-    addLog,
-    handleStartTowerChallenge
+    addLog
   ]);
 
   const handleRestInn = () => {
