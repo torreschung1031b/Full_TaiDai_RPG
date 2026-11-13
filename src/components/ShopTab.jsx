@@ -11,7 +11,6 @@ export default function ShopTab({
 }) {
   const [activeCategory, setActiveCategory] = useState('全部');
 
-  // 大還丹隨主角等級動態調整價格（避免後期廉價無限續航）
   const rationDynamicPrice = 200 + (player.level || 1) * 25;
 
   const shopItems = [
@@ -25,7 +24,7 @@ export default function ShopTab({
       badgeStyle: 'bg-emerald-950 text-emerald-300 border-emerald-700',
       oddsText: '即時生效 • 價格隨少俠境界動態調整',
       allowBulk5: false,
-      desc: '立即恢復主角與全體登場英雄 100% 氣血、內力與職業資源（若在營地可優先回客棧免費休養）。'
+      desc: '立即恢復主角與全體登場英雄 100% 氣血、內力與職業資源。'
     },
     {
       id: 'stone_1',
@@ -33,11 +32,11 @@ export default function ShopTab({
       icon: '💎',
       name: '精鍊石（單顆）',
       price: 350,
-      badge: '強化耗材',
+      badge: '強化／洗鍊',
       badgeStyle: 'bg-cyan-950 text-cyan-300 border-cyan-700',
-      oddsText: '固定獲得 • +1 顆精鍊石',
+      oddsText: '固定獲得 • +1 顆精鍊石（可用於強化與詞條洗鍊）',
       allowBulk5: false,
-      desc: '鐵匠鋪強化裝備必備材料，立即獲得 +1 顆精鍊石。'
+      desc: '鐵匠鋪強化與洗鍊裝備必備材料，立即獲得 +1 顆精鍊石。'
     },
     {
       id: 'stone_5',
@@ -50,6 +49,18 @@ export default function ShopTab({
       oddsText: '批發優惠（原價 1,750 金幣）• +5 顆精鍊石',
       allowBulk5: false,
       desc: '行腳商批量採購優惠袋，立即獲得 +5 顆精鍊石。'
+    },
+    {
+      id: 'protect_scroll',
+      category: '鍛造耗材',
+      icon: '🛡️',
+      name: '天工保底符',
+      price: 680,
+      badge: '防降級神符',
+      badgeStyle: 'bg-indigo-950 text-indigo-300 border-indigo-600',
+      oddsText: '鐵匠鋪強化 +4 以上勾選啟用 • 失敗維持原級不降級',
+      allowBulk5: true,
+      desc: '西域天工秘製護符，衝擊 +5 至 +10 高階神兵失敗時自動抵銷降級懲罰！'
     },
     {
       id: 'skill_box',
@@ -119,14 +130,13 @@ export default function ShopTab({
 
   return (
     <div className="bg-slate-900/80 border border-slate-800/80 rounded-3xl p-6 shadow-2xl backdrop-blur space-y-5 max-w-5xl mx-auto">
-      {/* 標題與資產列 */}
       <div className="flex flex-wrap justify-between items-center gap-3 border-b border-slate-800 pb-4">
         <div className="flex items-center gap-2.5">
           <Store className="w-6 h-6 text-amber-400" />
           <div>
             <h2 className="font-extrabold text-amber-400 text-lg">🏮 江湖市集（西域行腳商）</h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              定價與機率已對齊副本掉落曲線，高階仙器與傳說名將需重金求購
+              採購精鍊石、天工保底符、神兵寶匣與高階英雄招募令
             </p>
           </div>
         </div>
@@ -137,10 +147,12 @@ export default function ShopTab({
           <span className="bg-slate-950 text-cyan-300 px-3.5 py-1.5 rounded-full border border-slate-800">
             💎 精鍊石: {player.refineStones}
           </span>
+          <span className="bg-slate-950 text-indigo-300 px-3.5 py-1.5 rounded-full border border-indigo-700/60">
+            🛡️ 保底符: {player.protectScrolls || 0}
+          </span>
         </div>
       </div>
 
-      {/* 分類篩選列 */}
       <div className="flex flex-wrap items-center gap-1.5">
         <Filter className="w-3.5 h-3.5 text-slate-400 mr-1" />
         {SHOP_CATEGORIES.map(cat => (
@@ -173,7 +185,6 @@ export default function ShopTab({
         </div>
       )}
 
-      {/* 商品網格 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {visibleItems.map(item => {
           const canAfford1 = player.gold >= item.price;
@@ -198,7 +209,6 @@ export default function ShopTab({
 
                 <p className="text-xs text-slate-400 leading-relaxed">{item.desc}</p>
 
-                {/* 機率 / 規則公示條 */}
                 <div className="text-[11px] font-mono bg-slate-900/90 text-slate-300 px-3 py-1.5 rounded-xl border border-slate-800/90">
                   {item.oddsText}
                 </div>
@@ -216,9 +226,8 @@ export default function ShopTab({
                       disabled={isInCombat || !canAfford5}
                       onClick={() => handleShopPurchase(item, 5)}
                       className="px-3 py-2 bg-purple-700 hover:bg-purple-600 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow transition-all active:scale-95"
-                      title={`花費 ${bulk5Price.toLocaleString()} 金幣連開 5 次`}
                     >
-                      五連開 ({bulk5Price.toLocaleString()})
+                      五連購 ({bulk5Price.toLocaleString()})
                     </button>
                   )}
 
