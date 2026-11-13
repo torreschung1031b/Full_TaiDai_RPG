@@ -478,6 +478,8 @@ export function TowerTab({
   towerFloor,
   towerBestFloor,
   isInCombat,
+  autoTower,
+  handleToggleAutoTower,
   handleStartTowerChallenge
 }) {
   const isBossFloor = towerFloor % 5 === 0;
@@ -528,7 +530,8 @@ export function TowerTab({
         </div>
       </div>
 
-      <div className="flex justify-center pt-1">
+      {/* 操作按鈕區：挑戰按鈕 + 自動爬塔開關 */}
+      <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
         <button
           disabled={isInCombat}
           onClick={handleStartTowerChallenge}
@@ -544,7 +547,25 @@ export function TowerTab({
               ? `🔥 迎戰第 ${towerFloor} 層鎮守首領`
               : `⚔️ 挑戰第 ${towerFloor} 層守衛`}
         </button>
+
+        <button
+          type="button"
+          onClick={handleToggleAutoTower}
+          className={`px-5 py-3.5 rounded-2xl font-black text-sm border transition-all flex items-center gap-2 ${
+            autoTower
+              ? 'bg-cyan-500 border-cyan-300 text-slate-950 shadow-lg shadow-cyan-500/25'
+              : 'bg-slate-950 border-slate-700 text-slate-300 hover:border-cyan-500'
+          }`}
+        >
+          <span>{autoTower ? '🤖 自動爬塔：開啟中' : '🤖 自動爬塔：關閉'}</span>
+        </button>
       </div>
+
+      {autoTower && (
+        <div className="text-center text-xs text-cyan-300 bg-cyan-950/40 border border-cyan-800/70 rounded-xl py-2 px-3">
+          ⚡ 自動爬塔已啟動：點擊挑戰後將自動託管戰鬥，每層勝利短暫結算後自動進入下一層！
+        </div>
+      )}
     </div>
   );
 }
