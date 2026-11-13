@@ -295,13 +295,19 @@ export function useRosterAndFormation({
       return;
     }
     if (slotA === slotB) return;
+
+    const base = syncFormationSlots(effectiveFormationKey, {}, activeHeroInstanceIds);
+    if (!Object.prototype.hasOwnProperty.call(base, slotA) || !Object.prototype.hasOwnProperty.call(base, slotB)) {
+      addLog(`🚫 該格不屬於當前陣法的有效陣眼，無法駐守角色！`, 'sys');
+      return;
+    }
+
     setFormationSlots(prev => {
-      const base = syncFormationSlots(effectiveFormationKey, prev, activeHeroInstanceIds);
-      if (!(slotA in base) || !(slotB in base)) return base;
-      const temp = base[slotA];
-      base[slotA] = base[slotB];
-      base[slotB] = temp;
-      return { ...base };
+      const synced = syncFormationSlots(effectiveFormationKey, prev, activeHeroInstanceIds);
+      const temp = synced[slotA];
+      synced[slotA] = synced[slotB];
+      synced[slotB] = temp;
+      return { ...synced };
     });
     addLog(`📐 已調整隊伍戰術站位！`, 'sys');
   };
