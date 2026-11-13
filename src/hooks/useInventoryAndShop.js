@@ -13,6 +13,19 @@ import {
   normalizeHero
 } from '../utils/statCalculator';
 
+/**
+ * 依權重表抽取指定 Tier
+ */
+function rollWeightedTier(weights) {
+  const total = weights.reduce((sum, w) => sum + w.weight, 0);
+  let r = Math.random() * total;
+  for (const item of weights) {
+    if (r < item.weight) return item.tier;
+    r -= item.weight;
+  }
+  return weights[weights.length - 1].tier;
+}
+
 export function useInventoryAndShop({
   isInCombat,
   isFengShui,
@@ -165,28 +178,40 @@ export function useInventoryAndShop({
     addLog(msg, 'sys');
   };
 
-  const handleShopPurchase = (shopItem) => {
+  const handleShopPurchase = (shopItem, quantity = 1) => {
     if (isInCombat) {
       addLog(`🔒 戰鬥進行中，行腳商暫停交易！`, 'sys');
       return;
     }
-    if (player.gold < shopItem.price) {
-      addLog(`⚠️ 金幣不足，無法購買【${shopItem.name}】！`, 'sys');
+    const count = Math.max(1, quantity);
+    const totalPrice = shopItem.price * count;
+
+    if (player.gold < totalPrice) {
+      addLog(`⚠️ 金幣不足（需要 ${totalPrice} 金幣），無法購買【${shopItem.name}】！`, 'sys');
       return;
     }
 
     let rewardMsg = '';
 
     if (shopItem.id === 'stone_1') {
-      setPlayer(p => ({ ...p, gold: p.gold - shopItem.price, refineStones: p.refineStones + 1 }));
-      rewardMsg = `💎 成功購入【精鍊石 ×1】，目前持有 ${player.refineStones + 1} 顆！`;
+      setPlayer(p => ({
+        ...p,
+        gold: p.gold - totalPrice,
+        refineStones: p.refineStones + count
+      }));
+      rewardMsg = `💎 成功購入【精鍊石 ×${count}】，目前持有 ${player.refineStones + count} 顆！`;
     } else if (shopItem.id === 'stone_5') {
-      setPlayer(p => ({ ...p, gold: p.gold - shopItem.price, refineStones: p.refineStones + 5 }));
-      rewardMsg = `💠 成功購入【五連精鍊石禮盒 ×5】，目前持有 ${player.refineStones + 5} 顆！`;
+      const gained = 5 * count;
+      setPlayer(p => ({
+        ...p,
+        gold: p.gold - totalPrice,
+        refineStones: p.refineStones + gained
+      }));
+      rewardMsg = `💠 成功購入【精鍊石袋 ×${gained}】，目前持有 ${player.refineStones + gained} 顆！`;
     } else if (shopItem.id === 'ration_full') {
       setPlayer(p => ({
         ...p,
-        gold: p.gold - shopItem.price,
+        gold: p.gold - totalPrice,
         hp: playerTotalMaxHp,
         mp: playerTotalMaxMp,
         rage: 0,
@@ -198,32 +223,70 @@ export function useInventoryAndShop({
       }));
       rewardMsg = `🍙 服用【行軍大還丹禮包】，全隊生命與資源已恢復至 100% 巔峰狀態！`;
     } else if (shopItem.id === 'skill_box') {
-      const template = SKILL_CARDS_DB[Math.floor(Math.random() * SKILL_CARDS_DB.length)];
-      const newCard = createSkillCardInstance(template);
-      setPlayer(p => ({ ...p, gold: p.gold - shopItem.price }));
-      setSkillCardsInventory(prev => [...prev, newCard]);
-      rewardMsg = `🃏 開啟秘傳技能卡盲盒，獲得【${newCard.name}】（適用：${newCard.allowedJobs.join('、')}）！`;
+      const newCards = [];
+      for (let i = 0; i < count; i++) {
+        const template = SKILL_CARDS_DB[Math.floor(Math.random() * SKILL_CARDS_DB.length)];
+        newCards.push(createSkillCardInstance(template));
+      }
+      setPlayer(p => ({ ...p, gold: p.gold - totalPrice }));
+      setSkillCardsInventory(prev => [...prev, ...newCards]);
+      rewardMsg = count === 1
+        ? `🃏 開啟秘傳技能卡盲盒，獲得【${newCards[0].name}】（適用：${newCards[0].allowedJobs.join('、')}）！`
+        : `🃏 連開 ${count} 個技能卡盲盒，獲得：${newCards.map(c => `【${c.name}】`).join('、')}！`;
     } else if (shopItem.id === 'equip_box_mid' || shopItem.id === 'equip_box_high') {
       const isHigh = shopItem.id === 'equip_box_high';
-      const rolled = rollEquipmentFromTierRange(isHigh ? 3 : 1, isHigh ? 5 : 3, 'eq_shop');
-      const bonusRefine = Math.random() < (isHigh ? 0.30 : 0.25) ? 1 : 0;
-      const newEquip = { ...rolled, refineLevel: bonusRefine };
-      const meta = enrichEquipmentMeta(newEquip);
-      setPlayer(p => ({ ...p, gold: p.gold - shopItem.price }));
-      setEquipmentInventory(prev => [...prev, newEquip]);
-      rewardMsg = `🎁 開啟${isHigh ? '天工神兵匣' : '江湖兵器箱'}，獲得【${meta.tierTag}・${newEquip.name} (+${bonusRefine})】！`;
+      const tierWeights = isHigh
+        ? [{ tier: 3, weight: 68 }, { tier: 4, weight: 25 }, { tier: 5, weight: 7 }]
+        : [{ tier: 1, weight: 62 }, { tier: 2, weight: 28 }, { tier: 3, weight: 10 }];
+
+      const rolledList = [];
+      for (let i = 0; i < count; i++) {
+        const targetTier = rollWeightedTier(tierWeights);
+        const rolled = rollEquipmentFromTierRange(targetTier, targetTier, 'eq_shop');
+        const bonusRefine = Math.random() < (isHigh ? 0.15 : 0.10) ? 1 : 0;
+        rolledList.push({ ...rolled, refineLevel: bonusRefine });
+      }
+
+      setPlayer(p => ({ ...p, gold: p.gold - totalPrice }));
+      setEquipmentInventory(prev => [...prev, ...rolledList]);
+
+      const summaryNames = rolledList.map(eq => {
+        const m = enrichEquipmentMeta(eq);
+        return `【${m.tierTag}・${eq.name}${eq.refineLevel > 0 ? ` +${eq.refineLevel}` : ''}】`;
+      });
+      rewardMsg = count === 1
+        ? `🎁 開啟${isHigh ? '天工神兵匣' : '江湖兵器箱'}，獲得${summaryNames[0]}！`
+        : `🎁 連開 ${count} 個${isHigh ? '天工神兵匣' : '江湖兵器箱'}，獲得：${summaryNames.join('、')}！`;
     } else if (shopItem.id === 'hero_scroll_normal' || shopItem.id === 'hero_scroll_rare') {
-      const pool = shopItem.id === 'hero_scroll_rare'
-        ? HERO_TEMPLATES.filter(t => t.tier >= 3 && t.tier <= 5)
-        : HERO_TEMPLATES.filter(t => t.tier >= 1 && t.tier <= 3);
-      const picked = pool[Math.floor(Math.random() * pool.length)];
-      const recruitedHero = {
-        ...normalizeHero(instantiateHero(picked, true, null, getRandomElement)),
-        fusionLevel: 0
-      };
-      setPlayer(p => ({ ...p, gold: p.gold - shopItem.price }));
-      setHeroRoster(prev => [...prev, recruitedHero]);
-      rewardMsg = `👥 招募成功！【Tier ${recruitedHero.tier}】${recruitedHero.heroClass}【${recruitedHero.name}】（${recruitedHero.element}屬性）正式加入名冊！`;
+      const isRare = shopItem.id === 'hero_scroll_rare';
+      const tierWeights = isRare
+        ? [{ tier: 3, weight: 72 }, { tier: 4, weight: 22 }, { tier: 5, weight: 6 }]
+        : [{ tier: 1, weight: 65 }, { tier: 2, weight: 27 }, { tier: 3, weight: 8 }];
+
+      const recruitedList = [];
+      for (let i = 0; i < count; i++) {
+        const targetTier = rollWeightedTier(tierWeights);
+        const pool = HERO_TEMPLATES.filter(t => t.tier === targetTier);
+        const fallbackPool = isRare
+          ? HERO_TEMPLATES.filter(t => t.tier >= 3 && t.tier <= 5)
+          : HERO_TEMPLATES.filter(t => t.tier >= 1 && t.tier <= 3);
+        const finalPool = pool.length > 0 ? pool : fallbackPool;
+        const picked = finalPool[Math.floor(Math.random() * finalPool.length)];
+        recruitedList.push({
+          ...normalizeHero(instantiateHero(picked, true, null, getRandomElement)),
+          fusionLevel: 0
+        });
+      }
+
+      setPlayer(p => ({ ...p, gold: p.gold - totalPrice }));
+      setHeroRoster(prev => [...prev, ...recruitedList]);
+
+      const summaryHeroes = recruitedList.map(
+        h => `【Tier ${h.tier}】${h.heroClass}・${h.name}(${h.element})`
+      );
+      rewardMsg = count === 1
+        ? `👥 招募成功！${summaryHeroes[0]} 正式加入名冊！`
+        : `👥 連開 ${count} 張招募令，延攬：${summaryHeroes.join('、')}！`;
     }
 
     if (rewardMsg) {
