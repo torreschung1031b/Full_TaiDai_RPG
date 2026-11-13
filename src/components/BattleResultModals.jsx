@@ -1,5 +1,5 @@
 import React from 'react';
-import { Trophy, Skull, Sparkles, Coffee, AlertTriangle, Swords } from 'lucide-react';
+import { Trophy, Skull, Sparkles, Coffee, AlertTriangle, Swords, Square } from 'lucide-react';
 import { enrichEquipmentMeta } from '../data/equipment';
 
 export default function BattleResultModals({
@@ -8,14 +8,21 @@ export default function BattleResultModals({
   defeatSummary,
   setDefeatSummary,
   handleRestInn,
+  autoBattle,
+  handleToggleAutoBattle,
   autoTower,
-  handleToggleAutoTower
+  handleToggleAutoTower,
+  battleSpeed = 1
 }) {
   if (!victorySummary && !defeatSummary) return null;
 
   const isSweep = Boolean(victorySummary?.isSweep);
   const isSweepDefeated = Boolean(isSweep && victorySummary?.isDefeated);
   const isAutoTowerNext = Boolean(victorySummary?.isTowerVictory && autoTower);
+  const isAutoFieldNext = Boolean(!isSweep && !victorySummary?.isTowerVictory && autoBattle && !autoTower);
+  const isAnyAutoActive = isAutoTowerNext || isAutoFieldNext;
+
+  const waitSecText = battleSpeed === 3 ? '0.9' : battleSpeed === 2 ? '1.6' : '3.0';
 
   const skillCardsList = victorySummary
     ? (victorySummary.droppedSkillCards || (victorySummary.droppedSkillCard ? [victorySummary.droppedSkillCard] : []))
@@ -29,7 +36,7 @@ export default function BattleResultModals({
       {/* 勝利 / 掃蕩結算彈窗 */}
       {victorySummary && (
         <div
-          className={`bg-slate-900 border rounded-3xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-4 animate-fade-in ${
+          className={`bg-slate-900 border rounded-3xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-4 ${
             isSweepDefeated ? 'border-rose-500/75' : 'border-amber-500/60'
           }`}
         >
@@ -53,12 +60,14 @@ export default function BattleResultModals({
                       ? `🗼 鎮魔塔第 ${victorySummary.clearedFloor} 層通關大捷`
                       : '🎉 戰鬥大捷・戰利品結算'}
               </h3>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-400 mt-0.5">
                 {isSweepDefeated
                   ? `隊伍於第 ${victorySummary.failedBattleIndex || (victorySummary.completedBattles || 0) + 1} 場力竭重傷中止掃蕩，已結算先前勝場戰利品`
                   : isAutoTowerNext
-                    ? '自動爬塔啟動中，將於 1.2 秒後自動挑戰下一層...'
-                    : '所有戰利品已自動收入背包與名冊'}
+                    ? `🤖 自動爬塔啟動中（${battleSpeed}x 速），將於 ${waitSecText} 秒後自動挑戰下一層...`
+                    : isAutoFieldNext
+                      ? `🤖 自動連戰啟動中（${battleSpeed}x 速），將於 ${waitSecText} 秒後自動搜尋下一批怪群...`
+                      : '所有戰利品已自動收入背包與名冊'}
               </p>
             </div>
           </div>
@@ -126,7 +135,7 @@ export default function BattleResultModals({
             </div>
           )}
 
-          {/* 掉落裝備列表（附 Tier 1~5 階級色標） */}
+          {/* 掉落裝備列表 */}
           {victorySummary.droppedEquipments?.length > 0 && (
             <div className="space-y-2">
               <div className="text-xs font-bold text-amber-300">
@@ -165,7 +174,7 @@ export default function BattleResultModals({
             </div>
           )}
 
-          {/* 掉落技能卡（支援單張與掃蕩多張） */}
+          {/* 掉落技能卡 */}
           {skillCardsList.length > 0 && (
             <div className="space-y-2">
               <div className="text-xs font-bold text-purple-300">
@@ -188,7 +197,7 @@ export default function BattleResultModals({
             </div>
           )}
 
-          {/* 招降加入英雄（支援單人與掃蕩多人） */}
+          {/* 招降加入英雄 */}
           {heroesList.length > 0 && (
             <div className="space-y-2">
               <div className="text-xs font-bold text-emerald-300">
@@ -219,18 +228,33 @@ export default function BattleResultModals({
             </div>
           )}
 
-          {/* 底部按鈕 */}
-          <div className="flex gap-2.5 pt-1">
+          {/* 底部操作按鈕（支援結算畫面直接停止自動戰鬥 / 自動爬塔） */}
+          <div className="flex flex-wrap gap-2.5 pt-1">
             {isAutoTowerNext && handleToggleAutoTower && (
               <button
+                type="button"
                 onClick={() => handleToggleAutoTower()}
-                className="flex-1 py-3 bg-rose-800 hover:bg-rose-700 text-rose-100 font-bold rounded-2xl text-xs sm:text-sm shadow-lg transition-all"
+                className="flex-1 py-3 px-4 bg-rose-700 hover:bg-rose-600 text-white font-black rounded-2xl text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg transition-all"
               >
-                ⏹️ 停止自動爬塔
+                <Square className="w-3.5 h-3.5 fill-current" />
+                <span>停止自動爬塔</span>
               </button>
             )}
+
+            {isAutoFieldNext && handleToggleAutoBattle && (
+              <button
+                type="button"
+                onClick={() => handleToggleAutoBattle()}
+                className="flex-1 py-3 px-4 bg-rose-700 hover:bg-rose-600 text-white font-black rounded-2xl text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg transition-all"
+              >
+                <Square className="w-3.5 h-3.5 fill-current" />
+                <span>停止自動戰鬥</span>
+              </button>
+            )}
+
             {isSweepDefeated && handleRestInn && (
               <button
+                type="button"
                 onClick={() => {
                   handleRestInn();
                   setVictorySummary(null);
@@ -241,13 +265,15 @@ export default function BattleResultModals({
                 <span>立即客棧滿血休養</span>
               </button>
             )}
+
             <button
+              type="button"
               onClick={() => setVictorySummary(null)}
               className={`${
-                (isSweepDefeated && handleRestInn) || isAutoTowerNext ? 'px-5' : 'w-full'
+                (isSweepDefeated && handleRestInn) || isAnyAutoActive ? 'px-5' : 'w-full'
               } py-3 bg-amber-600 hover:bg-amber-500 text-slate-950 font-black rounded-2xl text-sm shadow-lg transition-all`}
             >
-              {isAutoTowerNext ? '⏳ 即將自動挑戰下一層...' : '收下戰利品並繼續'}
+              {isAnyAutoActive ? '⏳ 立即進入下一場' : '收下戰利品並繼續'}
             </button>
           </div>
         </div>
@@ -285,6 +311,7 @@ export default function BattleResultModals({
           <div className="flex gap-2.5 pt-1">
             {handleRestInn && (
               <button
+                type="button"
                 onClick={() => {
                   handleRestInn();
                   setDefeatSummary(null);
@@ -296,6 +323,7 @@ export default function BattleResultModals({
               </button>
             )}
             <button
+              type="button"
               onClick={() => setDefeatSummary(null)}
               className="px-5 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-2xl text-xs sm:text-sm"
             >
