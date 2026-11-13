@@ -6,9 +6,6 @@ import {
 } from '../statCalculator';
 import { getMonsterSpeed, getSpeedAdvantage } from './combatFormulas';
 
-/**
- * 兩段式排位目標挑選
- */
 function pickTargetByRowPriority(updatedPlayer, aliveHeroes, playerRowBuff, getHeroRowIdx) {
   const rowsMap = { 0: [], 1: [], 2: [] };
 
@@ -21,7 +18,7 @@ function pickTargetByRowPriority(updatedPlayer, aliveHeroes, playerRowBuff, getH
   if (updatedPlayer.hp > 0) {
     rowsMap[playerRow].push({
       type: 'PLAYER',
-      weight: updatedPlayer.job === '猛將' ? 1.4 : 1.0
+      weight: updatedPlayer.job === '猛將' ? 1.5 : 1.0
     });
   }
 
@@ -40,26 +37,13 @@ function pickTargetByRowPriority(updatedPlayer, aliveHeroes, playerRowBuff, getH
 
   let rowWeights = [];
   if (hasFront && hasMid && hasBack) {
-    rowWeights = [
-      { row: 0, weight: 65 },
-      { row: 1, weight: 25 },
-      { row: 2, weight: 10 }
-    ];
+    rowWeights = [{ row: 0, weight: 65 }, { row: 1, weight: 25 }, { row: 2, weight: 10 }];
   } else if (hasFront && hasMid) {
-    rowWeights = [
-      { row: 0, weight: 72 },
-      { row: 1, weight: 28 }
-    ];
+    rowWeights = [{ row: 0, weight: 72 }, { row: 1, weight: 28 }];
   } else if (hasFront && hasBack) {
-    rowWeights = [
-      { row: 0, weight: 85 },
-      { row: 2, weight: 15 }
-    ];
+    rowWeights = [{ row: 0, weight: 85 }, { row: 2, weight: 15 }];
   } else if (hasMid && hasBack) {
-    rowWeights = [
-      { row: 1, weight: 75 },
-      { row: 2, weight: 25 }
-    ];
+    rowWeights = [{ row: 1, weight: 75 }, { row: 2, weight: 25 }];
   } else if (hasFront) {
     rowWeights = [{ row: 0, weight: 100 }];
   } else if (hasMid) {
@@ -96,9 +80,6 @@ function pickTargetByRowPriority(updatedPlayer, aliveHeroes, playerRowBuff, getH
   return rowCandidates[0];
 }
 
-/**
- * 執行單一怪物行動（支援速度閃避判定與反傷）
- */
 export function executeSingleMonsterTurn({
   m,
   updatedPlayer,
@@ -124,29 +105,34 @@ export function executeSingleMonsterTurn({
   }
 
   if (m.blindTurns > 0 && Math.random() < (m.blindPct || 0)) {
-    logs.push({ text: `🕸️ 【${m.name}】受天羅地網束縛致盲，攻擊揮空失誤！`, type: 'sys' });
+    logs.push({ text: `🌫️ 【${m.name}】受迷霧致盲影響，攻擊揮空失誤！`, type: 'sys' });
     return { updatedRoster, logs };
   }
 
   const mSpeed = getMonsterSpeed(m);
   const poisonAtkMult = m.poisonTurns > 0 ? 0.80 : 1.0;
-  const effectiveMonsterAtk = Math.floor(m.atk * poisonAtkMult);
+  const weakenAtkMult = m.weakenTurns > 0 ? (1 - (m.weakenPct || 0.15)) : 1.0;
+  const effectiveMonsterAtk = Math.floor(m.atk * poisonAtkMult * weakenAtkMult);
   const monsterCritChance = m.isBoss ? 0.25 : m.isElite ? 0.18 : 0.12;
   const isCrit = Math.random() < monsterCritChance;
 
-  const applyDamageToPlayer = (isHitCrit, labelPrefix = '') => {
-    const { evasionRate } = getSpeedAdvantage(playerTotalSpeed, mSpeed);
-    if (evasionRate > 0 && Math.random() < evasionRate) {
-      logs.push({
-        text: `💨 身法如電！少俠憑藉速度優勢（${playerTotalSpeed} vs ${mSpeed}）靈巧閃避了【${m.name}】${labelPrefix}的攻擊！`,
-        type: 'sys'
-      });
-      return;
+  const applyDamageToPlayer = (isHitCrit, labelPrefix = '', overrideRawDmg = null) => {
+    if (overrideRawDmg === null) {
+      const { evasionRate } = getSpeedAdvantage(playerTotalSpeed, mSpeed);
+      if (evasionRate > 0 && Math.random() < evasionRate) {
+        logs.push({
+          text: `💨 身法如電！少俠憑藉速度優勢（${playerTotalSpeed} vs ${mSpeed}）閃避了【${m.name}】${labelPrefix}的攻擊！`,
+          type: 'sys'
+        });
+        return;
+      }
     }
 
     const critMult = isHitCrit ? 1.55 : 1.0;
     const em = getElementMultiplier(m.element, updatedPlayer.element, false);
-    let rawDmg = Math.max(4, Math.floor((effectiveMonsterAtk * critMult - playerTotalDef) * em));
+    let rawDmg = overrideRawDmg !== null
+      ? overrideRawDmg
+      : Math.max(4, Math.floor((effectiveMonsterAtk * critMult - playerTotalDef) * em));
 
     if (playerRowBuff.physReducePct > 0) {
       rawDmg = Math.max(1, Math.floor(rawDmg * (1 - playerRowBuff.physReducePct)));
@@ -154,8 +140,8 @@ export function executeSingleMonsterTurn({
     if (updatedPlayer.job === '猛將') {
       rawDmg = Math.max(1, Math.floor(rawDmg * 0.85));
     }
-    if (updatedBuffs.reflectTurns > 0) {
-      rawDmg = Math.max(1, Math.floor(rawDmg * 0.60));
+    if (updatedBuffs.guardTurns > 0) {
+      rawDmg = Math.max(1, Math.floor(rawDmg * (1 - (updatedBuffs.guardReducePct || 0.25))));
     }
     if (updatedBuffs.baguaTurns > 0) {
       rawDmg = Math.max(1, Math.floor(rawDmg * (1 - (updatedBuffs.baguaReducePct || 0))));
@@ -180,29 +166,24 @@ export function executeSingleMonsterTurn({
     recordAllyHit('PLAYER', hpDmg, isHitCrit);
 
     logs.push({
-      text: `${isHitCrit ? '💢敵方暴擊！' : '👹 '}【${m.name}】${labelPrefix}${m.poisonTurns > 0 ? '(中毒減攻20%)' : ''}襲擊${playerRowBuff.label}少俠，造成 ${hpDmg} 點傷害！`,
+      text: `${isHitCrit ? '💢敵方暴擊！' : '👹 '}【${m.name}】${labelPrefix}襲擊${playerRowBuff.label}少俠，造成 ${hpDmg} 點傷害！`,
       type: 'monster',
       dmgRole: isHitCrit ? 'monster_crit' : 'monster_normal'
     });
 
-    let totalReflectPct = 0;
-    if (updatedBuffs.reflectTurns > 0) totalReflectPct += updatedBuffs.reflectPct || 0;
-    if (updatedBuffs.baguaTurns > 0) totalReflectPct += updatedBuffs.baguaReflectPct || 0;
-
-    if (totalReflectPct > 0 && rawDmg > 0) {
-      const conReflectBonus = updatedPlayer.job === '猛將' ? Math.floor((updatedPlayer.stats?.con || 0) * 1.5) : 0;
-      const reflectDmg = Math.max(1, Math.floor(rawDmg * totalReflectPct) + conReflectBonus);
+    if (updatedBuffs.baguaTurns > 0 && (updatedBuffs.baguaReflectPct || 0) > 0 && rawDmg > 0) {
+      const reflectDmg = Math.max(1, Math.floor(rawDmg * updatedBuffs.baguaReflectPct));
       m.hp = Math.max(0, m.hp - reflectDmg);
       recordMonsterHit(m.id, reflectDmg, false);
       logs.push({
-        text: `🔄 護體反震將 ${reflectDmg} 點傷害反彈給【${m.name}】！`,
+        text: `🔄 八卦結界反震將 ${reflectDmg} 點傷害反彈給【${m.name}】！`,
         type: 'player',
         dmgRole: 'dot_burn'
       });
     }
 
     if (updatedPlayer.job === '猛將') {
-      updatedPlayer.rage = Math.min(100, updatedPlayer.rage + 20);
+      updatedPlayer.rage = Math.min(100, (updatedPlayer.rage || 0) + 18);
     }
   };
 
@@ -221,7 +202,7 @@ export function executeSingleMonsterTurn({
       const { evasionRate } = getSpeedAdvantage(effectiveSpeed, mSpeed);
       if (evasionRate > 0 && Math.random() < evasionRate) {
         logs.push({
-          text: `💨 疾風閃影！英雄【${h.name}】憑藉速度優勢（${effectiveSpeed} vs ${mSpeed}）閃避了【${m.name}】${labelPrefix}的攻擊！`,
+          text: `💨 疾風閃影！英雄【${h.name}】憑藉速度優勢閃避了【${m.name}】${labelPrefix}的攻擊！`,
           type: 'sys'
         });
         return h;
@@ -234,6 +215,19 @@ export function executeSingleMonsterTurn({
       }
       if (updatedBuffs.baguaTurns > 0) {
         hDmg = Math.max(1, Math.floor(hDmg * (1 - (updatedBuffs.baguaReducePct || 0))));
+      }
+
+      // 猛將【鐵壁援護】替英雄分擔傷害
+      if (updatedPlayer.job === '猛將' && updatedBuffs.guardTurns > 0 && updatedPlayer.hp > 0) {
+        const sharePct = updatedBuffs.guardSharePct || 0.50;
+        const sharedDmg = Math.max(1, Math.floor(hDmg * sharePct));
+        hDmg = Math.max(1, hDmg - sharedDmg);
+        logs.push({
+          text: `🛡️ 猛將【鐵壁援護】挺身而出，替英雄【${h.name}】分擔了 ${sharedDmg} 點傷害！`,
+          type: 'sys',
+          dmgRole: 'shield'
+        });
+        applyDamageToPlayer(false, '（援護分擔）', sharedDmg);
       }
 
       const newHp = Math.max(0, h.hp - hDmg);
@@ -288,9 +282,6 @@ export function executeSingleMonsterTurn({
   return { updatedRoster, logs };
 }
 
-/**
- * 結算敵方怪群行動回合（用於撤退失敗遭追擊）
- */
 export function executeMonsterAttacks({
   monsters,
   player,
