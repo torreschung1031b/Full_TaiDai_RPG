@@ -505,8 +505,8 @@ export default function App() {
       addLog(`🔒 戰鬥進行中，無法進行快速掃蕩！`, 'sys');
       return;
     }
-    if (player.hp <= 0) {
-      addLog(`⚠️ 少俠氣血耗盡，請先前往客棧休息恢復再進行掃蕩！`, 'danger');
+    if (player.hp <= 1) {
+      addLog(`⚠️ 少俠重傷瀕死（氣血 ≤ 1），請先前往客棧休養恢復再進行掃蕩！`, 'danger');
       return;
     }
 
@@ -516,6 +516,7 @@ export default function App() {
       return;
     }
 
+    const classSkills = CLASS_CONFIGS[player.job]?.skills || [];
     const res = simulateZoneSweep({
       player,
       currentRoster: heroRoster,
@@ -523,7 +524,16 @@ export default function App() {
       currentZoneIndex,
       sweepCount,
       isFengShui,
-      getHeroRowIdx
+      getHeroRowIdx,
+      classSkills,
+      playerTotalMaxHp,
+      playerTotalMaxMp,
+      playerTotalAtk,
+      playerTotalDef,
+      playerTotalSpeed,
+      playerRowBuff,
+      rawFormBonus,
+      formMultiplier
     });
 
     setPlayer(res.newPlayer);
@@ -535,11 +545,21 @@ export default function App() {
       setSkillCardsInventory(prev => [...prev, ...res.allDroppedSkillCards]);
     }
 
-    setVictorySummary(res.sweepSummary);
-    addLog(
-      `⚡ 快速掃蕩【${ZONES[currentZoneIndex]?.name}】×${sweepCount} 場完成！累計獲得 +${res.sweepSummary.gold} 金幣、+${res.sweepSummary.exp} 經驗${res.sweepSummary.stones > 0 ? `、+${res.sweepSummary.stones} 精鍊石` : ''}！`,
-      'sys'
-    );
+    const { completedBattles = 0, gold = 0, exp = 0, stones = 0 } = res.sweepSummary;
+
+    if (res.isDefeated) {
+      setVictorySummary(res.sweepSummary);
+      addLog(
+        `☠️ 快速掃蕩【${ZONES[currentZoneIndex]?.name}】中途戰敗（僅完成 ${completedBattles}/${sweepCount} 場）！隊伍力竭重傷被迫中止，累計獲得 +${gold} 金幣、+${exp} 經驗${stones > 0 ? `、+${stones} 精鍊石` : ''}。`,
+        'danger'
+      );
+    } else {
+      setVictorySummary(res.sweepSummary);
+      addLog(
+        `⚡ 快速掃蕩【${ZONES[currentZoneIndex]?.name}】完成 ${completedBattles}/${sweepCount} 場！累計獲得 +${gold} 金幣、+${exp} 經驗${stones > 0 ? `、+${stones} 精鍊石` : ''}！`,
+        'sys'
+      );
+    }
   };
 
   const handleStartTowerChallenge = () => {
