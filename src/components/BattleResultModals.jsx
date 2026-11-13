@@ -1,5 +1,5 @@
 import React from 'react';
-import { Trophy, Skull, Sparkles, Coffee } from 'lucide-react';
+import { Trophy, Skull, Sparkles, Coffee, AlertTriangle, Swords } from 'lucide-react';
 import { enrichEquipmentMeta } from '../data/equipment';
 
 export default function BattleResultModals({
@@ -11,16 +11,41 @@ export default function BattleResultModals({
 }) {
   if (!victorySummary && !defeatSummary) return null;
 
+  const isSweep = Boolean(victorySummary?.isSweep);
+  const isSweepDefeated = Boolean(isSweep && victorySummary?.isDefeated);
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-      {/* 勝利結算彈窗 */}
+      {/* 勝利 / 掃蕩結算彈窗 */}
       {victorySummary && (
-        <div className="bg-slate-900 border border-amber-500/60 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4 animate-fade-in">
+        <div
+          className={`bg-slate-900 border rounded-3xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-4 animate-fade-in ${
+            isSweepDefeated ? 'border-rose-500/75' : 'border-amber-500/60'
+          }`}
+        >
           <div className="flex items-center gap-2.5 border-b border-slate-800 pb-3">
-            <Trophy className="w-6 h-6 text-amber-400 shrink-0" />
+            {isSweepDefeated ? (
+              <AlertTriangle className="w-6 h-6 text-rose-400 shrink-0" />
+            ) : (
+              <Trophy className="w-6 h-6 text-amber-400 shrink-0" />
+            )}
             <div>
-              <h3 className="font-extrabold text-amber-400 text-lg">🎉 戰鬥大捷・戰利品結算</h3>
-              <p className="text-xs text-slate-400">所有戰利品已自動收入背包與名冊</p>
+              <h3
+                className={`font-extrabold text-lg ${
+                  isSweepDefeated ? 'text-rose-400' : 'text-amber-400'
+                }`}
+              >
+                {isSweepDefeated
+                  ? `⚠️ 快速掃蕩中途戰敗（完成 ${victorySummary.completedBattles ?? 0}/${victorySummary.requestedBattles ?? 3} 場）`
+                  : isSweep
+                    ? `⚡ 快速掃蕩大捷（完成 ${victorySummary.completedBattles ?? 0}/${victorySummary.requestedBattles ?? 3} 場）`
+                    : '🎉 戰鬥大捷・戰利品結算'}
+              </h3>
+              <p className="text-xs text-slate-400">
+                {isSweepDefeated
+                  ? '隊伍於第 ' + (victorySummary.failedBattleIndex || (victorySummary.completedBattles || 0) + 1) + ' 場力竭重傷中止掃蕩，已結算先前勝場戰利品'
+                  : '所有戰利品已自動收入背包與名冊'}
+              </p>
             </div>
           </div>
 
@@ -39,6 +64,53 @@ export default function BattleResultModals({
               <div className="text-base font-black text-cyan-300 mt-0.5">+{victorySummary.stones}</div>
             </div>
           </div>
+
+          {/* 逐場實戰模擬戰報（僅快速掃蕩顯示） */}
+          {isSweep && victorySummary.battleReports?.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
+                <Swords className="w-3.5 h-3.5" />
+                <span>逐場實戰模擬戰報：</span>
+              </div>
+              <div className="space-y-1.5 max-h-44 overflow-y-auto pr-1">
+                {victorySummary.battleReports.map((rep, idx) => {
+                  const isWin = rep.result === 'VICTORY' || rep.win === true;
+                  return (
+                    <div
+                      key={idx}
+                      className={`p-2.5 rounded-xl border text-xs space-y-1 ${
+                        isWin
+                          ? 'bg-slate-950/90 border-slate-800'
+                          : 'bg-rose-950/40 border-rose-700/80'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2 font-bold">
+                        <span className={isWin ? 'text-emerald-300' : 'text-rose-300'}>
+                          第 {rep.battleIndex || idx + 1} 場・{isWin ? '✅ 勝出' : '☠️ 戰敗中止'}
+                          {rep.rounds ? `（${rep.rounds} 回合）` : ''}
+                        </span>
+                        {typeof rep.playerHpAfter === 'number' && (
+                          <span className="text-[11px] font-mono text-slate-400">
+                            少俠剩餘 HP：{rep.playerHpAfter}
+                          </span>
+                        )}
+                      </div>
+
+                      {rep.summary && (
+                        <div className="text-[11px] text-slate-300 leading-relaxed">{rep.summary}</div>
+                      )}
+
+                      {rep.fallenHeroes?.length > 0 && (
+                        <div className="text-[11px] text-rose-300 font-bold">
+                          💔 陣亡重傷：{rep.fallenHeroes.join('、')}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* 掉落裝備列表（附 Tier 1~5 階級色標） */}
           {victorySummary.droppedEquipments?.length > 0 && (
@@ -111,12 +183,29 @@ export default function BattleResultModals({
             </div>
           )}
 
-          <button
-            onClick={() => setVictorySummary(null)}
-            className="w-full py-3 bg-amber-600 hover:bg-amber-500 text-slate-950 font-black rounded-2xl text-sm shadow-lg transition-all"
-          >
-            收下戰利品並繼續
-          </button>
+          {/* 底部按鈕（掃蕩戰敗時提供一鍵客棧休養） */}
+          <div className="flex gap-2.5 pt-1">
+            {isSweepDefeated && handleRestInn && (
+              <button
+                onClick={() => {
+                  handleRestInn();
+                  setVictorySummary(null);
+                }}
+                className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg transition-all"
+              >
+                <Coffee className="w-4 h-4" />
+                <span>立即客棧滿血休養</span>
+              </button>
+            )}
+            <button
+              onClick={() => setVictorySummary(null)}
+              className={`${
+                isSweepDefeated && handleRestInn ? 'px-5' : 'w-full'
+              } py-3 bg-amber-600 hover:bg-amber-500 text-slate-950 font-black rounded-2xl text-sm shadow-lg transition-all`}
+            >
+              收下戰利品並繼續
+            </button>
+          </div>
         </div>
       )}
 
