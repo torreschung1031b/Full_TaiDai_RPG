@@ -13,6 +13,12 @@ import {
   getZoneSweepReqLevel
 } from '../utils/combatEngine';
 
+const SPEED_CONFIG = {
+  1: { roundMs: 450, summaryMs: 3000, label: '1x 正常' },
+  2: { roundMs: 220, summaryMs: 1600, label: '2x 疾速' },
+  3: { roundMs: 110, summaryMs: 900, label: '3x 極速' }
+};
+
 export function useCombatManager({
   gameStarted,
   player,
@@ -50,6 +56,7 @@ export function useCombatManager({
   const [combatPhase, setCombatPhase] = useState('PLAYER_SELECT');
   const [autoBattle, setAutoBattle] = useState(false);
   const [autoTower, setAutoTower] = useState(false);
+  const [battleSpeed, setBattleSpeed] = useState(1);
   const [victorySummary, setVictorySummary] = useState(null);
   const [defeatSummary, setDefeatSummary] = useState(null);
 
@@ -67,6 +74,11 @@ export function useCombatManager({
   const [battleDownedHeroIds, setBattleDownedHeroIds] = useState([]);
 
   const isInCombat = monsters.some(m => m.hp > 0);
+  const speedMeta = SPEED_CONFIG[battleSpeed] || SPEED_CONFIG[1];
+
+  const handleCycleBattleSpeed = useCallback(() => {
+    setBattleSpeed(prev => (prev === 1 ? 2 : prev === 2 ? 3 : 1));
+  }, []);
 
   const resetCombatStates = useCallback((initialShield = 0) => {
     setCombatBuffs({
@@ -99,22 +111,24 @@ export function useCombatManager({
     return { awakenedList, openingShield };
   }, [isFengShui, getHeroRowIdx]);
 
-  const handleToggleAutoBattle = () => {
+  const handleToggleAutoBattle = useCallback(() => {
     setAutoBattle(prev => {
       const next = !prev;
       if (next) {
         setDefeatSummary(null);
         setCombatPhase('PLAYER_SELECT');
+      } else {
+        setAutoTower(false);
       }
       addLog(
         next
           ? '🤖 已開啟【智能自動戰鬥】：AI 將自動搜敵並釋放冷卻完畢的技能與普攻（隨時可點擊關閉接管）！'
-          : '🖐️ 已關閉【智能自動戰鬥】，切換為手動戰術操作！',
+          : '🖐️ 已停止【智能自動戰鬥】，切換為手動操作！',
         'sys'
       );
       return next;
     });
-  };
+  }, [addLog]);
 
   const handleToggleAutoTower = useCallback(() => {
     setAutoTower(prev => {
@@ -123,11 +137,13 @@ export function useCombatManager({
         setAutoBattle(true);
         setDefeatSummary(null);
         setCombatPhase('PLAYER_SELECT');
+      } else {
+        setAutoBattle(false);
       }
       addLog(
         next
-          ? '🗼 已開啟【自動爬塔】：通關後將自動結算並持續挑戰下一層（戰敗或手動關閉時停止）！'
-          : '🖐️ 已關閉【自動爬塔】，通關本層後將停留在鎮魔塔畫面！',
+          ? '🗼 已開啟【自動爬塔】：通關後結算畫面停留並持續挑戰下一層（戰敗或手動關閉時停止）！'
+          : '🖐️ 已停止【自動爬塔】，已切換為手動操作！',
         'sys'
       );
       return next;
@@ -635,7 +651,6 @@ export function useCombatManager({
     setTurnCount
   ]);
 
-  // 使用 Ref 鎖定最新的戰鬥執行狀態，避免血量/陣容重繪打斷 450ms 計時器
   const autoBattleRef = useRef({
     player,
     combatBuffs,
@@ -662,7 +677,7 @@ export function useCombatManager({
     };
   });
 
-  // 🤖 1. 戰鬥中自動出招排程（僅在回合推進時觸發，絕不被中途重繪取消）
+  // 🤖 1. 戰鬥中自動出招排程（依 battleSpeed 調整行動間隔）
   useEffect(() => {
     if (!gameStarted || !autoBattle || !isInCombat || combatPhase !== 'PLAYER_SELECT') return;
 
@@ -677,12 +692,12 @@ export function useCombatManager({
         latest.heroRoster
       );
       latest.handleExecuteRound(nextAction);
-    }, 450);
+    }, speedMeta.roundMs);
 
     return () => clearTimeout(timer);
-  }, [gameStarted, autoBattle, isInCombat, combatPhase, turnCount]);
+  }, [gameStarted, autoBattle, isInCombat, combatPhase, turnCount, speedMeta.roundMs]);
 
-  // 🤖 2. 野外自動連戰搜敵排程
+  // 🤖 2. 野外自動連戰搜敵排程（結算畫面停留，按下停止自動戰鬥立即清除計時器）
   useEffect(() => {
     if (!gameStarted || !autoBattle || autoTower || activeTowerFloor || isInCombat || combatPhase !== 'PLAYER_SELECT') {
       return;
@@ -699,7 +714,7 @@ export function useCombatManager({
       return;
     }
 
-    const delay = victorySummary ? 3000 : 450;
+    const delay = victorySummary ? speedMeta.summaryMs : speedMeta.roundMs;
     const timer = setTimeout(() => {
       if (victorySummary) setVictorySummary(null);
       autoBattleRef.current.spawnEncounter(autoBattleRef.current.currentZoneIndex);
@@ -716,6 +731,8 @@ export function useCombatManager({
     victorySummary,
     defeatSummary,
     player.hp,
+    speedMeta.summaryMs,
+    speedMeta.roundMs,
     addLog
   ]);
 
@@ -737,7 +754,7 @@ export function useCombatManager({
     const timer = setTimeout(() => {
       setVictorySummary(null);
       autoBattleRef.current.handleStartTowerChallenge();
-    }, 3000);
+    }, speedMeta.summaryMs);
 
     return () => clearTimeout(timer);
   }, [
@@ -748,6 +765,7 @@ export function useCombatManager({
     victorySummary,
     defeatSummary,
     player.hp,
+    speedMeta.summaryMs,
     addLog
   ]);
 
@@ -793,6 +811,8 @@ export function useCombatManager({
     setAutoBattle,
     autoTower,
     setAutoTower,
+    battleSpeed,
+    handleCycleBattleSpeed,
     handleToggleAutoTower,
     victorySummary,
     setVictorySummary,
