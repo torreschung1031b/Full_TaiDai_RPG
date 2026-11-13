@@ -4,6 +4,7 @@ import { HERO_TEMPLATES, instantiateHero } from '../../data/heroes';
 import { rollEquipmentFromTierRange } from '../../data/equipment';
 import {
   getRandomElement,
+  getMaxExpForLevel,
   calculateHeroEffectiveStats,
   normalizeHero
 } from '../statCalculator';
@@ -13,7 +14,7 @@ function pObjExpAfterGain(p, gain) {
 }
 
 /**
- * 計算英雄獲得經驗值與升級屬性成長
+ * 計算英雄獲得經驗值與升級屬性成長（經驗值需求與主角 100% 同步）
  */
 export function processHeroExpGain(hero, expGained, isFengShui, getHeroRowIdx) {
   let currentHero = normalizeHero(hero);
@@ -27,7 +28,7 @@ export function processHeroExpGain(hero, expGained, isFengShui, getHeroRowIdx) {
   while (currentHero.level < MAX_LEVEL && currentHero.exp >= currentHero.maxExp) {
     currentHero.exp -= currentHero.maxExp;
     currentHero.level += 1;
-    currentHero.maxExp = Math.floor(100 * Math.pow(currentHero.level, 1.3));
+    currentHero.maxExp = getMaxExpForLevel(currentHero.level);
 
     const tierPtsMap = { 1: 4, 2: 6, 3: 8, 4: 11, 5: 15 };
     const fusionLevel = Math.min(5, currentHero.fusionLevel || 0);
@@ -173,13 +174,14 @@ export function resolveBattleVictory({
     ...player,
     gold: player.gold + totalGold,
     refineStones: player.refineStones + droppedStones,
-    exp: pObjExpAfterGain(player, totalExp)
+    exp: pObjExpAfterGain(player, totalExp),
+    maxExp: getMaxExpForLevel(player.level)
   };
 
   while (newPlayer.level < MAX_LEVEL && newPlayer.exp >= newPlayer.maxExp) {
     newPlayer.exp -= newPlayer.maxExp;
     newPlayer.level += 1;
-    newPlayer.maxExp = Math.floor(newPlayer.maxExp * 1.45);
+    newPlayer.maxExp = getMaxExpForLevel(newPlayer.level);
     newPlayer.maxHp += 45;
     newPlayer.maxMp += 30;
     newPlayer.hp = Math.min(newPlayer.maxHp, newPlayer.hp + Math.floor(newPlayer.maxHp * 0.45));
@@ -189,9 +191,9 @@ export function resolveBattleVictory({
     newPlayer.sp += spGain;
     newPlayer.tp += 1;
     const unlockNotice = newPlayer.level === 5
-      ? '（解鎖第 2 招職業技能學習權限！）'
+      ? '（解鎖第 3 招職業進階絕學學習權限！）'
       : newPlayer.level === 10
-        ? '（解鎖第 3 招終極職業技能學習權限！）'
+        ? '（解鎖第 4 招職業終極奧義學習權限！）'
         : '';
     msgs.push(
       `🎉 少俠升級至 Level ${newPlayer.level}${newPlayer.level === MAX_LEVEL ? ' (已達滿級上限!)' : ''}！獲得 8 點自由屬性點與 ${spGain} 點 SP${unlockNotice}！`
