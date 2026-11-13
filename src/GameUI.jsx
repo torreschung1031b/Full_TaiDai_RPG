@@ -49,8 +49,8 @@ function buildAdaptedClassSkills(job, fallbackSkills = []) {
   if (fallbackSkills && fallbackSkills.length > 0) return fallbackSkills;
   const rawList = PROTAGONIST_SKILLS_DB?.[job] || [];
   return rawList.map((sk, idx) => {
-    const unlockLevel = sk.unlockLevel ?? (idx === 0 ? 1 : idx * 5);
-    const cd = sk.cd ?? (idx === 0 ? 0 : idx === 1 ? 2 : 4);
+    const unlockLevel = sk.unlockLevel ?? (idx <= 1 ? 1 : idx === 2 ? 5 : 10);
+    const cd = sk.cd ?? (idx === 0 ? 0 : idx === 1 ? 2 : idx === 2 ? 3 : 4);
     const getStatsAtLevel = sk.getStatsAtLevel || ((lvl = 1) => {
       const effectiveLvl = Math.max(1, lvl);
       const mult = Number(getSkillMultiplier(sk, effectiveLvl).toFixed(2));
@@ -72,7 +72,7 @@ function buildAdaptedClassSkills(job, fallbackSkills = []) {
     const getDescAtLevel = sk.getDescAtLevel || ((lvl = 1) => {
       const effectiveLvl = Math.max(1, lvl);
       const mult = Number(getSkillMultiplier(sk, effectiveLvl).toFixed(2));
-      return `技能倍率 ${mult}x（每升 1 級倍率 +0.3x）`;
+      return `技能倍率 ${mult}x（每升 1 級倍率 +0.15x）`;
     });
 
     return {
@@ -183,7 +183,7 @@ export default function GameUI(props) {
   const classInfo = CLASS_CONFIGS[player.job] || CLASS_CONFIGS['猛將'];
   const currentClassSkills = props.classSkills?.length > 0
     ? props.classSkills
-    : buildAdaptedClassSkills(player.job, classInfo.skills);
+    : buildAdaptedClassSkills(player.job);
   const sweepReqLevel = getZoneSweepReqLevel(currentZoneIndex);
   const isSweepLevelUnlocked = (player.level || 1) >= sweepReqLevel;
   const isSweepHpReady = (player.hp || 0) > 1;
@@ -707,6 +707,11 @@ export default function GameUI(props) {
                                 破甲 {m.armorBreakTurns}T
                               </span>
                             )}
+                            {m.weakenTurns > 0 && (
+                              <span className="text-[10px] bg-indigo-950 text-indigo-300 border border-indigo-700 px-1.5 rounded">
+                                虛弱 {m.weakenTurns}T
+                              </span>
+                            )}
                             {m.poisonTurns > 0 && (
                               <span className="text-[10px] bg-emerald-950 text-emerald-300 border border-emerald-700 px-1.5 rounded">
                                 劇毒×{m.poisonStacks || 1} ({m.poisonTurns}T)
@@ -715,6 +720,11 @@ export default function GameUI(props) {
                             {m.burnTurns > 0 && (
                               <span className="text-[10px] bg-orange-950 text-orange-300 border border-orange-700 px-1.5 rounded">
                                 灼燒 {m.burnTurns}T
+                              </span>
+                            )}
+                            {m.bleedTurns > 0 && (
+                              <span className="text-[10px] bg-rose-950 text-rose-300 border border-rose-700 px-1.5 rounded">
+                                流血 {m.bleedTurns}T
                               </span>
                             )}
                             {m.blindTurns > 0 && (
@@ -864,7 +874,7 @@ export default function GameUI(props) {
                 </div>
               </div>
 
-              {/* 戰鬥指令操作欄 */}
+              {/* 戰鬥指令操作欄（僅顯示 4 招職業技能） */}
               {isInCombat && (
                 <div className="bg-slate-900/90 border border-amber-500/40 rounded-3xl p-4 space-y-2.5">
                   <div className="flex justify-between items-center text-xs">
@@ -875,7 +885,6 @@ export default function GameUI(props) {
                       </span>
                     )}
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {currentClassSkills.map((sk, idx) => {
                       const skLvl = player.skillLevels?.[idx] || 0;
@@ -917,41 +926,6 @@ export default function GameUI(props) {
                                     : onCd
                                       ? `⏳ CD ${cdLeft}T`
                                       : costLabel}
-                            </span>
-                          </div>
-                          <div className="text-[11px] text-slate-300 mt-0.5 line-clamp-1">{sk.desc}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-
-                    {currentClassSkills.map((sk, idx) => {
-                      const skLvl = player.skillLevels?.[idx] || 0;
-                      const { unlockLevel } = getSkillMeta(sk, idx);
-                      const cdLeft = combatBuffs.skillCooldowns?.[idx] || 0;
-                      const lockedByLvl = player.level < unlockLevel;
-                      const notLearned = skLvl <= 0;
-                      const onCd = cdLeft > 0;
-                      const costLabel = sk.costType === 'rage' ? `${sk.cost}怒` : sk.costType === 'ammo' ? `${sk.cost}彈` : `${sk.cost}MP`;
-
-                      return (
-                        <button
-                          key={sk.id}
-                          disabled={combatPhase !== 'PLAYER_SELECT' || lockedByLvl || notLearned || onCd}
-                          onClick={() => handleExecuteRound({ type: 'skill', skill: sk, skillIdx: idx })}
-                          className="p-3 rounded-2xl bg-amber-950/40 hover:bg-amber-900/50 border border-amber-600/60 disabled:bg-slate-950 disabled:border-slate-800 disabled:opacity-45 text-left transition-all"
-                        >
-                          <div className="flex justify-between items-center text-xs font-extrabold text-amber-300">
-                            <span>✨ {sk.name} {skLvl > 0 ? `(Lv.${skLvl})` : ''}</span>
-                            <span className="font-mono text-[11px] text-cyan-300">
-                              {lockedByLvl
-                                ? `🔒 Lv.${unlockLevel}解鎖`
-                                : notLearned
-                                  ? '未學習'
-                                  : onCd
-                                    ? `⏳ CD ${cdLeft}T`
-                                    : costLabel}
                             </span>
                           </div>
                           <div className="text-[11px] text-slate-300 mt-0.5 line-clamp-1">{sk.desc}</div>
@@ -1020,7 +994,7 @@ export default function GameUI(props) {
                   }
 
                   if (!badge && log.text?.includes('無雙連攜')) badge = '🔥 無雙連攜';
-                  else if (!badge && log.text?.includes('雙卡共鳴')) badge = '✨ 共鳴';
+                  else if (!badge && log.text?.includes('狀態共鳴')) badge = '✨ 共鳴';
                   else if (!badge && log.text?.includes('五行剋制')) badge = '☯️ 剋制';
 
                   return (
@@ -1073,7 +1047,7 @@ export default function GameUI(props) {
           />
         )}
 
-        {/* ==================== 4. 裝備與背包（高階排序＋勾選清理＋套裝共鳴顯性化） ==================== */}
+        {/* ==================== 4. 裝備與背包 ==================== */}
         {activeTab === 'equip' && (
           <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-6 max-w-5xl mx-auto">
             <div className="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
@@ -1096,7 +1070,6 @@ export default function GameUI(props) {
               </button>
             </div>
 
-            {/* 勾選階級與裝備類型的批量清理面板 */}
             {showBulkCleanPanel && (
               <div className="bg-slate-950/95 border border-rose-500/50 rounded-2xl p-4 space-y-3.5 shadow-xl">
                 <div className="text-xs font-extrabold text-rose-300 flex items-center justify-between flex-wrap gap-2">
@@ -1120,7 +1093,6 @@ export default function GameUI(props) {
                   </div>
                 </div>
 
-                {/* 階級勾選 */}
                 <div className="space-y-1.5">
                   <div className="text-[11px] font-bold text-slate-400">1. 選擇裝備階級：</div>
                   <div className="flex flex-wrap gap-2">
@@ -1144,7 +1116,6 @@ export default function GameUI(props) {
                   </div>
                 </div>
 
-                {/* 裝備類型勾選 */}
                 <div className="space-y-1.5">
                   <div className="text-[11px] font-bold text-slate-400">2. 選擇裝備部位類型：</div>
                   <div className="flex flex-wrap gap-2">
@@ -1168,7 +1139,6 @@ export default function GameUI(props) {
                   </div>
                 </div>
 
-                {/* 安全保護開關 */}
                 <div className="flex flex-wrap items-center gap-4 pt-1 text-xs">
                   <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer select-none">
                     <input
@@ -1191,7 +1161,6 @@ export default function GameUI(props) {
                   </label>
                 </div>
 
-                {/* 預覽件數與確認出售按鈕 */}
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-slate-800">
                   <div className="text-xs font-mono text-slate-300">
                     符合條件：<strong className="text-rose-300">{bulkCleanPreview.count}</strong> 件 • 預計獲得：<strong className="text-amber-300">+{bulkCleanPreview.totalGold} 金幣</strong>
@@ -1215,7 +1184,6 @@ export default function GameUI(props) {
               </div>
             )}
 
-            {/* 套裝共鳴顯性化進度條 */}
             {activeSetBonuses.length > 0 && (
               <div className="bg-amber-950/25 border border-amber-500/45 rounded-2xl p-4 space-y-2">
                 <div className="text-xs font-extrabold text-amber-300">🔮 已穿戴套裝共鳴效果</div>
@@ -1239,7 +1207,6 @@ export default function GameUI(props) {
               </div>
             )}
 
-            {/* 已穿戴裝備欄 */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {EQUIP_SLOTS.map(slot => {
                 const rawItem = player.equipped?.[slot.key];
@@ -1279,7 +1246,6 @@ export default function GameUI(props) {
               })}
             </div>
 
-            {/* 裝備背包清單（高階置頂） */}
             <div className="space-y-2.5">
               <div className="text-xs font-bold text-amber-300">🎒 裝備背包（{sortedEquipmentInventory.length} 件 • 高階優先排序）</div>
               {sortedEquipmentInventory.length === 0 ? (
