@@ -412,8 +412,8 @@ export default function App() {
       handleEquipItem={inventory.handleEquipItem}
       handleUnequipItem={inventory.handleUnequipItem}
       handleSellEquipment={inventory.handleSellEquipment}
-      handleBulkSellFilteredEquipment={invShop.handleBulkSellFilteredEquipment}
-      handleReforgeEquipment={invShop.handleReforgeEquipment}
+      handleBulkSellFilteredEquipment={inventory.handleBulkSellFilteredEquipment}
+      handleReforgeEquipment={inventory.handleReforgeEquipment}
       handleSelectFormation={roster.handleSelectFormation}
       formationSlots={syncedSlots}
       handleSwapFormationSlots={roster.handleSwapFormationSlots}
