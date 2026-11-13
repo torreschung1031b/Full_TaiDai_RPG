@@ -970,7 +970,7 @@ export const HERO_TEMPLATES = [
     },
     stats: { str: 7, con: 14, int: 23, agi: 20 }
   },
-  {
+{
     baseId: 'h_t5_kongming',
     name: '諸葛孔明・臥龍仙師',
     icon: '🪶',
@@ -979,11 +979,11 @@ export const HERO_TEMPLATES = [
     heroClass: '風水師',
     element: '木',
     desc: '功蓋三分國、名成八陣圖！羽扇輕搖借東風、點七星燈逆轉天命。',
-    traitName: '七星續命八卦陣',
-    traitDesc: '速度 +28%、攻擊 +20%、五行增傷 +22%、行動後自動療傷',
-    traitBonus: { speedPct: 0.28, atkPct: 0.20, elemDmgPct: 0.22, skillChance: 0.16, autoHealPct: 0.85 },
+    traitName: '七星奇門八卦陣',
+    traitDesc: '速度 +28%、攻擊 +20%、五行增傷 +22%、施法附全隊巨額護盾',
+    traitBonus: { speedPct: 0.28, atkPct: 0.20, elemDmgPct: 0.22, skillChance: 0.16, shieldOnSkillPct: 1.15 },
     signatureSkill: {
-      name: '七星續命・八陣神雷火',
+      name: '七星奇門・八陣神雷火',
       icon: '🪶',
       target: 'aoe',
       mult: 2.15,
