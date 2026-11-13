@@ -14,6 +14,13 @@ export default function BattleResultModals({
   const isSweep = Boolean(victorySummary?.isSweep);
   const isSweepDefeated = Boolean(isSweep && victorySummary?.isDefeated);
 
+  const skillCardsList = victorySummary
+    ? (victorySummary.droppedSkillCards || (victorySummary.droppedSkillCard ? [victorySummary.droppedSkillCard] : []))
+    : [];
+  const heroesList = victorySummary
+    ? (victorySummary.droppedHeroes || (victorySummary.droppedHero ? [victorySummary.droppedHero] : []))
+    : [];
+
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
       {/* 勝利 / 掃蕩結算彈窗 */}
@@ -43,7 +50,7 @@ export default function BattleResultModals({
               </h3>
               <p className="text-xs text-slate-400">
                 {isSweepDefeated
-                  ? '隊伍於第 ' + (victorySummary.failedBattleIndex || (victorySummary.completedBattles || 0) + 1) + ' 場力竭重傷中止掃蕩，已結算先前勝場戰利品'
+                  ? `隊伍於第 ${victorySummary.failedBattleIndex || (victorySummary.completedBattles || 0) + 1} 場力竭重傷中止掃蕩，已結算先前勝場戰利品`
                   : '所有戰利品已自動收入背包與名冊'}
               </p>
             </div>
@@ -115,7 +122,9 @@ export default function BattleResultModals({
           {/* 掉落裝備列表（附 Tier 1~5 階級色標） */}
           {victorySummary.droppedEquipments?.length > 0 && (
             <div className="space-y-2">
-              <div className="text-xs font-bold text-amber-300">⚔️ 獲得神兵裝備：</div>
+              <div className="text-xs font-bold text-amber-300">
+                ⚔️ 獲得神兵裝備（{victorySummary.droppedEquipments.length} 件）：
+              </div>
               {victorySummary.droppedEquipments.map((rawEq, idx) => {
                 const eq = enrichEquipmentMeta(rawEq);
                 const isHighTier = eq.tier >= 4;
@@ -149,25 +158,45 @@ export default function BattleResultModals({
             </div>
           )}
 
-          {/* 掉落技能卡 */}
-          {victorySummary.droppedSkillCard && (
-            <div className="bg-purple-950/30 border border-purple-500/50 rounded-2xl p-3 text-xs space-y-1">
-              <div className="font-bold text-purple-300 flex items-center justify-between">
-                <span>🃏 獲得技能卡：{victorySummary.droppedSkillCard.icon} {victorySummary.droppedSkillCard.name}</span>
-                <span className="text-[10px] bg-slate-900 px-2 py-0.5 rounded text-slate-300">
-                  {victorySummary.droppedSkillCard.type === 'active' ? '主動卡' : '被動卡'}
-                </span>
+          {/* 掉落技能卡（支援單張與掃蕩多張） */}
+          {skillCardsList.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-xs font-bold text-purple-300">
+                🃏 獲得技能卡（{skillCardsList.length} 張）：
               </div>
-              <div className="text-[11px] text-slate-300">{victorySummary.droppedSkillCard.desc}</div>
+              {skillCardsList.map((card, idx) => (
+                <div
+                  key={card.uid || idx}
+                  className="bg-purple-950/30 border border-purple-500/50 rounded-2xl p-3 text-xs space-y-1"
+                >
+                  <div className="font-bold text-purple-300 flex items-center justify-between gap-2">
+                    <span>{card.icon} {card.name}</span>
+                    <span className="text-[10px] bg-slate-900 px-2 py-0.5 rounded text-slate-300 shrink-0">
+                      {card.type === 'active' ? '主動卡' : '被動卡'}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-300">{card.desc}</div>
+                </div>
+              ))}
             </div>
           )}
 
-          {/* 招降加入英雄 */}
-          {victorySummary.droppedHero && (
-            <div className="bg-emerald-950/35 border border-emerald-500/60 rounded-2xl p-3 text-xs flex items-center justify-between">
-              <span className="font-bold text-emerald-300">
-                👥 江湖豪傑慕名投效：{victorySummary.droppedHero.icon} 【Tier {victorySummary.droppedHero.tier}】{victorySummary.droppedHero.name}（{victorySummary.droppedHero.heroClass}）
-              </span>
+          {/* 招降加入英雄（支援單人與掃蕩多人） */}
+          {heroesList.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-xs font-bold text-emerald-300">
+                👥 江湖豪傑慕名投效（{heroesList.length} 位）：
+              </div>
+              {heroesList.map((hero, idx) => (
+                <div
+                  key={hero.instanceId || idx}
+                  className="bg-emerald-950/35 border border-emerald-500/60 rounded-2xl p-3 text-xs flex items-center justify-between"
+                >
+                  <span className="font-bold text-emerald-300">
+                    {hero.icon} 【Tier {hero.tier}】{hero.name}（{hero.heroClass}）已加入英雄名冊
+                  </span>
+                </div>
+              ))}
             </div>
           )}
 
