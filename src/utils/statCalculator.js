@@ -93,7 +93,7 @@ export function calculateHeroEffectiveStats(hero, isFengShui = false, battleBuff
   let defPct = (rowBuff.defPct || 0) + (teamAuraBonus?.defPct || 0);
   let hpPct = (teamAuraBonus?.hpPct || 0);
   let speedPct = (rowBuff.speedPct || 0) + (teamAuraBonus?.speedPct || 0);
-  let skillChance = 0.32 + ((h.tier || 1) * 0.03) + (teamAuraBonus?.skillChance || 0);
+  let skillChance = 0.26 + ((h.tier || 1) * 0.025) + (teamAuraBonus?.skillChance || 0);
   let elemDmgPct = 0;
 
   // 1. 英雄專屬本命天賦（白值 + 進階實戰特效）
@@ -113,8 +113,8 @@ export function calculateHeroEffectiveStats(hero, isFengShui = false, battleBuff
   let autoHealPct = tb.autoHealPct || 0;
   let shieldOnSkillPct = tb.shieldOnSkillPct || 0;
 
-  // 2. 被動技能卡（全部享受 1.5 倍強化，包含進階戰鬥屬性）
-  const PASSIVE_MULT = 1.5;
+  // 2. 被動技能卡（全部享受 1.2 倍強化，包含進階戰鬥屬性）
+  const PASSIVE_MULT = 1.2;
   (h.passiveSkillSlots || []).forEach(card => {
     const b = card?.bonus || {};
     atkPct += (b.atkPct || 0) * PASSIVE_MULT;
