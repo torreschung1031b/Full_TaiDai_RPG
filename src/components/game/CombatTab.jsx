@@ -72,10 +72,10 @@ export function CombatTab({
     if (logFilter === 'all') return combatLogs;
     if (logFilter === 'combat') {
       return combatLogs.filter(
-        l => l.dmgRole || l.text?.includes('暴擊') || l.text?.includes('連攜') || l.text?.includes('剋制')
+        l => l.type === 'round_divider' || l.dmgRole || l.text?.includes('暴擊') || l.text?.includes('連攜') || l.text?.includes('剋制')
       );
     }
-    return combatLogs.filter(l => l.type === 'sys' || l.type === 'danger');
+    return combatLogs.filter(l => l.type === 'round_divider' || l.type === 'sys' || l.type === 'danger');
   }, [combatLogs, logFilter]);
 
   const handleSlotClick = (slotIdx) => {
@@ -167,7 +167,9 @@ export function CombatTab({
             </div>
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-950/90 border border-slate-800 rounded-2xl px-3.5 py-2.5 text-xs">
-              <span className="text-slate-300">護盾：<strong className="text-cyan-300">{combatBuffs.shield || 0}</strong> • 速度先手制</span>
+              <span className="text-slate-300">
+                第 <strong className="text-amber-300">{(combatBuffs?.roundCount || 0) + 1}</strong> 回合 • 護盾：<strong className="text-cyan-300">{combatBuffs.shield || 0}</strong>
+              </span>
               <div className="flex items-center gap-2 flex-wrap">
                 {handleCycleBattleSpeed && (
                   <button
@@ -466,6 +468,32 @@ export function CombatTab({
 
         <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 text-xs leading-relaxed">
           {filteredCombatLogs.map(log => {
+            // 1. 明確的回合分隔橫幅
+            if (log.type === 'round_divider') {
+              return (
+                <div key={log.id} className="pt-2.5 pb-1">
+                  <div className="flex items-center gap-2 bg-gradient-to-r from-amber-950/90 via-slate-900 to-amber-950/90 border border-amber-500/50 rounded-xl px-3 py-1.5 shadow-sm">
+                    <span className="h-px flex-1 bg-amber-500/40" />
+                    <span className="text-[11px] font-black tracking-wider text-amber-300">
+                      ⚔️ {log.text}
+                    </span>
+                    <span className="h-px flex-1 bg-amber-500/40" />
+                  </div>
+                </div>
+              );
+            }
+
+            // 2. 回合末狀態結算小分隔標記
+            if (log.type === 'phase_divider') {
+              return (
+                <div key={log.id} className="flex items-center gap-2 px-2 pt-1 text-[10px] font-bold text-slate-400">
+                  <span className="h-px flex-1 bg-slate-800" />
+                  <span>⏳ {log.text}</span>
+                  <span className="h-px flex-1 bg-slate-800" />
+                </div>
+              );
+            }
+
             let style = 'text-slate-300 bg-slate-950/60 border-slate-800/70';
             let badge = null;
 
@@ -482,19 +510,25 @@ export function CombatTab({
             } else if (log.dmgRole === 'heal' || log.dmgRole === 'shield') {
               style = 'text-emerald-200 bg-emerald-950/50 border-emerald-700/70';
               badge = '💚 護療';
+            } else if (log.dmgRole === 'dot_poison' || log.dmgRole === 'dot_burn') {
+              style = 'text-purple-200 bg-purple-950/45 border-purple-800/70';
             } else if (log.type === 'danger') {
               style = 'text-rose-300 bg-rose-950/60 border-rose-700 font-bold';
             } else if (log.type === 'sys') {
               style = 'text-amber-300/90 bg-slate-950/90 border-slate-800';
             }
 
-            if (!badge && log.text?.includes('無雙連攜')) badge = '🔥 無雙連攜';
-            else if (!badge && log.text?.includes('狀態共鳴')) badge = '✨ 共鳴';
+            if (!badge && log.text?.includes('無雙連攜')) badge = '🔥 連攜';
+            else if (!badge && log.text?.includes('共鳴')) badge = '✨ 共鳴';
             else if (!badge && log.text?.includes('五行剋制')) badge = '☯️ 剋制';
 
+            const subEventCls = log.isSubEvent
+              ? 'ml-4 pl-2.5 border-l-2 border-l-amber-500/50 text-[11px] opacity-95'
+              : '';
+
             return (
-              <div key={log.id} className={`px-3 py-1.5 rounded-xl border ${style}`}>
-                <span className="text-[10px] font-mono text-slate-500 mr-1.5">[T{log.turn}]</span>
+              <div key={log.id} className={`px-3 py-1.5 rounded-xl border ${style} ${subEventCls}`}>
+                {log.isSubEvent && <span className="text-amber-400/80 font-mono mr-1">↳</span>}
                 {badge && (
                   <span className="inline-block text-[10px] font-black px-1.5 py-0.2 mr-1.5 rounded bg-slate-950/80 border border-current">{badge}</span>
                 )}
