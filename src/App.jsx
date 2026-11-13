@@ -456,6 +456,12 @@ export default function App() {
       setVictorySummary={combat.setVictorySummary}
       defeatSummary={combat.defeatSummary}
       setDefeatSummary={combat.setDefeatSummary}
+      autoBattle={combat.autoBattle}
+      handleToggleAutoBattle={combat.handleToggleAutoBattle}
+      autoTower={combat.autoTower}
+      handleToggleAutoTower={combat.handleToggleAutoTower}
+      battleSpeed={combat.battleSpeed}
+      handleCycleBattleSpeed={combat.handleCycleBattleSpeed}
       chatEndRef={chatEndRef}
     />
   );
