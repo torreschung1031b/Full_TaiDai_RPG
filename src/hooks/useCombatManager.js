@@ -737,7 +737,7 @@ export function useCombatManager({
     const timer = setTimeout(() => {
       setVictorySummary(null);
       autoBattleRef.current.handleStartTowerChallenge();
-    }, 1200);
+    }, 3000);
 
     return () => clearTimeout(timer);
   }, [
