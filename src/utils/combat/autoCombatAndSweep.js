@@ -4,7 +4,7 @@ import { getSkillMeta } from './combatFormulas';
 import { resolveCombatRound } from './combatRoundResolver';
 
 /**
- * 自動戰鬥 AI 決策：優先挑選冷卻完畢、資源足夠且符合戰術條件的技能，否則執行普攻
+ * 自動戰鬥 AI 決策：從第 4 招往第 1 招挑選冷卻完畢且資源足夠的技能，第 1 招即為基礎循環技
  */
 export function pickBestAutoCombatAction(
   player,
@@ -20,39 +20,28 @@ export function pickBestAutoCombatAction(
     if (!sk) continue;
 
     const skLvl = player.skillLevels?.[idx] || 0;
-    const { unlockLevel } = getSkillMeta(sk, idx);
+    const { unlockLevel, reqPrevSkillLevel } = getSkillMeta(sk, idx);
     if ((player.level || 1) < unlockLevel || skLvl <= 0) continue;
+    if (idx > 0 && reqPrevSkillLevel > 0 && (player.skillLevels?.[idx - 1] || 0) < reqPrevSkillLevel) continue;
     if ((cds[idx] || 0) > 0) continue;
 
     if (sk.costType === 'rage' && (player.rage || 0) < sk.cost) continue;
     if (sk.costType === 'mp' && (player.mp || 0) < sk.cost) continue;
     if (sk.costType === 'ammo' && (player.ammo || 0) < sk.cost) continue;
 
-    if (sk.id === 'p_s3') {
-      const hasDeadDeployed = heroRoster.some(
-        h => activeHeroInstanceIds.includes(h.instanceId) && h.hp <= 0
-      );
-      if (!hasDeadDeployed) continue;
-    }
-    if (sk.id === 'f_s1') {
-      const hasAliveDeployed = heroRoster.some(
-        h => activeHeroInstanceIds.includes(h.instanceId) && h.hp > 0
-      );
-      if (!hasAliveDeployed) continue;
-    }
-    if (sk.id === 'w_s1' && (combatBuffs.tauntTurns || 0) > 0) continue;
-    if (sk.id === 'w_s3' && (combatBuffs.reflectTurns || 0) > 0) continue;
-    if (sk.id === 'f_s2' && (combatBuffs.baguaTurns || 0) > 0) continue;
+    if (sk.id === 'w_s2' && (combatBuffs.guardTurns || 0) > 0) continue;
+    if (sk.id === 'f_s2' && (combatBuffs.windBuffTurns || 0) > 0) continue;
+    if (sk.id === 'f_s3' && (combatBuffs.baguaTurns || 0) > 0) continue;
+    if (sk.id === 'f_s4' && (combatBuffs.tianjiTurns || 0) > 0) continue;
 
     return { type: 'skill', skill: sk, skillIdx: idx };
   }
 
-  return { type: 'attack' };
+  return classSkills[0]
+    ? { type: 'skill', skill: classSkills[0], skillIdx: 0 }
+    : { type: 'attack' };
 }
 
-/**
- * 模擬歷練地圖快速掃蕩（背景實際執行完整戰鬥演算：會扣血、耗藍、觸發技能、英雄重傷與戰敗中止）
- */
 export function simulateZoneSweep({
   player,
   currentRoster,
@@ -122,7 +111,7 @@ export function simulateZoneSweep({
       });
     }
 
-    let combatBuffs = { shield: 0, tauntTurns: 0, reflectTurns: 0, baguaTurns: 0, skillCooldowns: { 0: 0, 1: 0, 2: 0 } };
+    let combatBuffs = { shield: 0, tauntTurns: 0, guardTurns: 0, baguaTurns: 0, skillCooldowns: { 0: 0, 1: 0, 2: 0, 3: 0 } };
     let heroBattleBuffs = {};
     let battleDownedHeroIds = [];
     let battleOutcome = 'CONTINUE';
@@ -200,9 +189,12 @@ export function simulateZoneSweep({
       const roundRes = resolveCombatRound(roundArgs);
 
       if (roundRes.outcome === 'ABORTED') {
+        const fallbackAction = classSkills[0]
+          ? { type: 'skill', skill: classSkills[0], skillIdx: 0 }
+          : { type: 'attack' };
         const fallbackRes = resolveCombatRound({
           ...roundArgs,
-          actionInput: { type: 'attack' }
+          actionInput: fallbackAction
         });
         battleOutcome = fallbackRes.outcome;
         handleRoundResult(fallbackRes);
