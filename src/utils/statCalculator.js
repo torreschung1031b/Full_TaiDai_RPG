@@ -14,7 +14,7 @@ export function getMaxExpForLevel(level = 1) {
   let req = 100;
   const safeLvl = Math.max(1, Math.floor(level));
   for (let i = 1; i < safeLvl; i++) {
-    req = Math.floor(req * 1.8);
+    req = Math.floor(req * 1.45);
   }
   return req;
 }
@@ -36,7 +36,7 @@ export function getElementMultiplier(attElem, defElem, isWarlock = false) {
 }
 
 /**
- * 規範化並自動補齊舊存檔英雄欄位（包含最新實裝的本命天賦 traitBonus 與同步經驗曲線）
+ * 規範化並自動補齊舊存檔英雄欄位（同步最新本命天賦與本命絕學 signatureSkill）
  */
 export function normalizeHero(hero) {
   if (!hero) return hero;
@@ -63,9 +63,10 @@ export function normalizeHero(hero) {
     tier,
     heroClass: hero.heroClass || tpl?.heroClass || '猛將',
     desc: hero.desc || tpl?.desc || '',
-    traitName: hero.traitName || tpl?.traitName || '江湖歷練',
-    traitDesc: hero.traitDesc || tpl?.traitDesc || '全屬性穩步成長',
-    traitBonus: hero.traitBonus || tpl?.traitBonus || {},
+    traitName: tpl?.traitName || hero.traitName || '江湖歷練',
+    traitDesc: tpl?.traitDesc || hero.traitDesc || '全屬性穩步成長',
+    traitBonus: tpl?.traitBonus || hero.traitBonus || {},
+    signatureSkill: tpl?.signatureSkill || hero.signatureSkill || null,
     level,
     exp: level >= MAX_LEVEL ? 0 : (hero.exp || 0),
     maxExp: getMaxExpForLevel(level),
@@ -92,10 +93,10 @@ export function calculateHeroEffectiveStats(hero, isFengShui = false, battleBuff
   let defPct = (rowBuff.defPct || 0) + (teamAuraBonus?.defPct || 0);
   let hpPct = (teamAuraBonus?.hpPct || 0);
   let speedPct = (rowBuff.speedPct || 0) + (teamAuraBonus?.speedPct || 0);
-  let skillChance = 0.30 + ((h.tier || 1) * 0.03) + (teamAuraBonus?.skillChance || 0);
+  let skillChance = 0.32 + ((h.tier || 1) * 0.03) + (teamAuraBonus?.skillChance || 0);
   let elemDmgPct = 0;
 
-  // 1. 英雄專屬本命天賦
+  // 1. 英雄專屬本命天賦（白值 + 進階實戰特效）
   const tb = h.traitBonus || {};
   atkPct += tb.atkPct || 0;
   defPct += tb.defPct || 0;
@@ -103,6 +104,14 @@ export function calculateHeroEffectiveStats(hero, isFengShui = false, battleBuff
   speedPct += tb.speedPct || 0;
   skillChance += tb.skillChance || 0;
   elemDmgPct += tb.elemDmgPct || 0;
+
+  const lifestealPct = tb.lifestealPct || 0;
+  const critRateBonus = tb.critRate || 0;
+  const critDmgBonus = tb.critDmg || 0;
+  const ignoreDefPct = tb.ignoreDefPct || 0;
+  const doubleHitPct = tb.doubleHitPct || 0;
+  const autoHealPct = tb.autoHealPct || 0;
+  const shieldOnSkillPct = tb.shieldOnSkillPct || 0;
 
   // 2. 被動技能卡（全部享受 1.5 倍強化）
   const PASSIVE_MULT = 1.5;
@@ -138,7 +147,14 @@ export function calculateHeroEffectiveStats(hero, isFengShui = false, battleBuff
     effectiveDef,
     effectiveSpeed,
     elemDmgPct,
-    skillChance: Math.min(0.85, skillChance)
+    skillChance: Math.min(0.88, skillChance),
+    lifestealPct,
+    critRateBonus,
+    critDmgBonus,
+    ignoreDefPct,
+    doubleHitPct,
+    autoHealPct,
+    shieldOnSkillPct
   };
 }
 
