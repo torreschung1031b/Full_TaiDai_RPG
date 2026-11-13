@@ -49,6 +49,7 @@ export function useCombatManager({
   const [lastRoundHits, setLastRoundHits] = useState({ monsters: {}, allies: {} });
   const [combatPhase, setCombatPhase] = useState('PLAYER_SELECT');
   const [autoBattle, setAutoBattle] = useState(false);
+  const [autoTower, setAutoTower] = useState(false);
   const [victorySummary, setVictorySummary] = useState(null);
   const [defeatSummary, setDefeatSummary] = useState(null);
 
@@ -83,7 +84,7 @@ export function useCombatManager({
     setLastRoundHits({ monsters: {}, allies: {} });
   }, []);
 
-  const computeOpeningAwakeningBonus = (deployedHeroes) => {
+  const computeOpeningAwakeningBonus = useCallback((deployedHeroes) => {
     const awakenedList = deployedHeroes.filter(h => h.hp > 0 && (h.fusionLevel || 0) >= 3);
     let openingShield = 0;
     awakenedList.forEach(h => {
@@ -96,7 +97,7 @@ export function useCombatManager({
       openingShield += Math.floor(effectiveMaxHp * 0.15);
     });
     return { awakenedList, openingShield };
-  };
+  }, [isFengShui, getHeroRowIdx]);
 
   const handleToggleAutoBattle = () => {
     setAutoBattle(prev => {
@@ -110,6 +111,22 @@ export function useCombatManager({
       return next;
     });
   };
+
+  const handleToggleAutoTower = useCallback(() => {
+    setAutoTower(prev => {
+      const next = !prev;
+      if (next) {
+        setAutoBattle(true);
+      }
+      addLog(
+        next
+          ? '🗼 已開啟【自動爬塔】：通關後將自動結算並持續挑戰下一層（戰敗或手動關閉時停止）！'
+          : '🖐️ 已關閉【自動爬塔】，通關本層後將停留在鎮魔塔畫面！',
+        'sys'
+      );
+      return next;
+    });
+  }, [addLog]);
 
   const handleSelectZone = (zoneIdx) => {
     if (isInCombat) {
@@ -273,12 +290,13 @@ export function useCombatManager({
     }
   };
 
-  const handleStartTowerChallenge = () => {
+  const handleStartTowerChallenge = useCallback(() => {
     if (isInCombat) {
       addLog(`⚠️ 當前已在戰鬥中，無法開啟新的鎮魔塔挑戰！`, 'sys');
       return;
     }
     if (player.hp <= 0) {
+      setAutoTower(false);
       addLog(`⚠️ 少俠氣血耗盡，請先前往客棧休息恢復再挑戰鎮魔塔！`, 'danger');
       return;
     }
@@ -403,11 +421,25 @@ export function useCombatManager({
         : `🗼 踏入【鎮魔塔第 ${floor} 層】，迎戰 ${list.length} 名鎮塔守衛！`,
       'sys'
     );
-  };
+  }, [
+    isInCombat,
+    player.hp,
+    towerFloor,
+    computeOpeningAwakeningBonus,
+    activeHeroes,
+    setPlayer,
+    playerTotalMaxMp,
+    addLog,
+    resetCombatStates,
+    setTurnCount,
+    setActiveTab
+  ]);
 
   const handleFleeCombat = () => {
     if (!isInCombat) return;
     setAutoBattle(false);
+    setAutoTower(false);
+    const wasTower = Boolean(activeTowerFloor);
     const res = resolveFleeCombat({
       monsters,
       player,
@@ -432,6 +464,7 @@ export function useCombatManager({
       setActiveTowerFloor(null);
       resetCombatStates();
       setCombatPhase('PLAYER_SELECT');
+      if (wasTower) setActiveTab('tower');
       return;
     }
 
@@ -443,6 +476,7 @@ export function useCombatManager({
       resetCombatStates();
       setCombatPhase('PLAYER_SELECT');
       setDefeatSummary(res.defeatSummary);
+      if (wasTower) setActiveTab('tower');
       return;
     }
 
@@ -511,13 +545,22 @@ export function useCombatManager({
         setTowerFloor(nextFloor);
         setTowerBestFloor(prev => Math.max(prev, nextFloor));
         setActiveTowerFloor(null);
+        setActiveTab('tower');
+        setVictorySummary({
+          ...res.victorySummary,
+          isTowerVictory: true,
+          clearedFloor: res.clearedTowerFloor
+        });
+      } else {
+        setVictorySummary(res.victorySummary);
       }
-      setVictorySummary(res.victorySummary);
       return;
     }
 
     if (res.outcome === 'DEFEAT') {
+      const wasTower = Boolean(activeTowerFloor);
       setAutoBattle(false);
+      setAutoTower(false);
       setPlayer(res.defeatedPlayer);
       setHeroRoster(res.finalRoster);
       setMonsters([]);
@@ -525,6 +568,7 @@ export function useCombatManager({
       resetCombatStates();
       setCombatPhase('PLAYER_SELECT');
       setDefeatSummary(res.defeatSummary);
+      if (wasTower) setActiveTab('tower');
       return;
     }
 
@@ -568,10 +612,11 @@ export function useCombatManager({
     setSkillCardsInventory,
     setTowerFloor,
     setTowerBestFloor,
+    setActiveTab,
     setTurnCount
   ]);
 
-  // 🤖 自動戰鬥排程（已補齊依賴陣列，避免重繪閃幀）
+  // 🤖 自動戰鬥排程
   useEffect(() => {
     if (!gameStarted || !autoBattle || !isInCombat || combatPhase !== 'PLAYER_SELECT') return;
     const timer = setTimeout(() => {
@@ -597,6 +642,39 @@ export function useCombatManager({
     activeHeroInstanceIds,
     heroRoster,
     handleExecuteRound
+  ]);
+
+  // 🗼 自動爬塔排程（通關後短暫顯示結算，隨即自動進入下一層）
+  useEffect(() => {
+    if (!gameStarted || !autoTower || isInCombat || combatPhase !== 'PLAYER_SELECT') return;
+    if (defeatSummary) {
+      setAutoTower(false);
+      return;
+    }
+    if (!victorySummary?.isTowerVictory) return;
+
+    if (player.hp <= 0) {
+      setAutoTower(false);
+      addLog('⚠️ 少俠氣血耗盡，已自動停止爬塔！', 'danger');
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setVictorySummary(null);
+      handleStartTowerChallenge();
+    }, 1200);
+
+    return () => clearTimeout(timer);
+  }, [
+    gameStarted,
+    autoTower,
+    isInCombat,
+    combatPhase,
+    victorySummary,
+    defeatSummary,
+    player.hp,
+    addLog,
+    handleStartTowerChallenge
   ]);
 
   const handleRestInn = () => {
@@ -639,6 +717,9 @@ export function useCombatManager({
     combatPhase,
     autoBattle,
     setAutoBattle,
+    autoTower,
+    setAutoTower,
+    handleToggleAutoTower,
     victorySummary,
     setVictorySummary,
     defeatSummary,
