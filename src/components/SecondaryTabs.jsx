@@ -1,5 +1,5 @@
-import React from 'react';
-import { Sparkles, HelpCircle, Hammer, Gem } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Sparkles, HelpCircle, Hammer, Gem, RotateCcw, Check, Target, Sliders } from 'lucide-react';
 import { MAX_LEVEL, ELEMENTS } from '../data/constants';
 import { FORMATIONS_CONFIG } from '../data/formations';
 import { HERO_TEMPLATES } from '../data/heroes';
@@ -42,6 +42,8 @@ export function calculateCodexBonus(heroRoster = []) {
   };
 }
 
+const BASE_INITIAL_STAT = 10;
+
 export function CharacterTab({
   player,
   setPlayer,
@@ -52,61 +54,249 @@ export function CharacterTab({
   playerTotalDef,
   playerTotalSpeed
 }) {
+  const [draftAlloc, setDraftAlloc] = useState({ str: 0, con: 0, int: 0, agi: 0 });
+  const [allocFeedback, setAllocFeedback] = useState(null);
+
   const statScaling = getPlayerStatScaling(player.job);
   const { critRate } = getPlayerCritProfile(player);
+
   const isWarrior = player.job === '猛將';
   const isArtisan = player.job === '巧匠';
   const isWarlock = player.job === '術士';
   const isMagic = ['術士', '藥師', '風水師'].includes(player.job);
 
+  // 確保不會超出當前實際可用點數
+  const totalDraftUsed = draftAlloc.str + draftAlloc.con + draftAlloc.int + draftAlloc.agi;
+  const safeDraft = totalDraftUsed <= player.statPoints ? draftAlloc : { str: 0, con: 0, int: 0, agi: 0 };
+  const activeDraftSum = safeDraft.str + safeDraft.con + safeDraft.int + safeDraft.agi;
+  const remainingPoints = Math.max(0, player.statPoints - activeDraftSum);
+
+  // 計算預分配後的最終屬性與增幅差值（依據現有屬性反推總倍率係數，確保 100% 吻合）
+  const previewMetrics = useMemo(() => {
+    const previewStats = {
+      str: player.stats.str + safeDraft.str,
+      con: player.stats.con + safeDraft.con,
+      int: player.stats.int + safeDraft.int,
+      agi: player.stats.agi + safeDraft.agi
+    };
+
+    const rawConHpDelta = safeDraft.con * statScaling.conHp;
+    const rawIntMpDelta = safeDraft.int * 10;
+    const rawAtkDelta = statScaling.calcStatAtk(previewStats) - statScaling.calcStatAtk(player.stats);
+    const rawConDefDelta = safeDraft.con * statScaling.conDef;
+    const rawAgiSpdDelta = safeDraft.agi * 1;
+
+    // 推算包含裝備/陣法/圖鑑的總百分比乘數
+    const baseHpBeforeMult = Math.max(1, player.maxHp + player.stats.con * statScaling.conHp);
+    const hpMult = Math.max(1, playerTotalMaxHp / baseHpBeforeMult);
+
+    const baseMpBeforeMult = Math.max(1, player.maxMp + player.stats.int * 10);
+    const mpMult = Math.max(1, playerTotalMaxMp / baseMpBeforeMult);
+
+    const baseAtkBeforeMult = Math.max(1, player.atk + statScaling.calcStatAtk(player.stats));
+    const atkMult = Math.max(1, playerTotalAtk / baseAtkBeforeMult);
+
+    const baseDefBeforeMult = Math.max(1, player.def + player.stats.con * statScaling.conDef);
+    const defMult = Math.max(1, playerTotalDef / baseDefBeforeMult);
+
+    const baseSpdBeforeMult = Math.max(1, player.speed + player.stats.agi);
+    const spdMult = Math.max(1, playerTotalSpeed / baseSpdBeforeMult);
+
+    const nextMaxHp = activeDraftSum > 0 ? Math.max(playerTotalMaxHp, Math.round(playerTotalMaxHp + rawConHpDelta * hpMult)) : playerTotalMaxHp;
+    const nextMaxMp = activeDraftSum > 0 ? Math.max(playerTotalMaxMp, Math.round(playerTotalMaxMp + rawIntMpDelta * mpMult)) : playerTotalMaxMp;
+    const nextAtk = activeDraftSum > 0 ? Math.max(playerTotalAtk, Math.round(playerTotalAtk + rawAtkDelta * atkMult)) : playerTotalAtk;
+    const nextDef = activeDraftSum > 0 ? Math.max(playerTotalDef, Math.round(playerTotalDef + rawConDefDelta * defMult)) : playerTotalDef;
+    const nextSpeed = activeDraftSum > 0 ? Math.max(playerTotalSpeed, Math.round(playerTotalSpeed + rawAgiSpdDelta * spdMult)) : playerTotalSpeed;
+
+    const previewCrit = getPlayerCritProfile({ ...player, stats: previewStats }).critRate;
+
+    return {
+      nextMaxHp,
+      deltaHp: nextMaxHp - playerTotalMaxHp,
+      nextMaxMp,
+      deltaMp: nextMaxMp - playerTotalMaxMp,
+      nextAtk,
+      deltaAtk: nextAtk - playerTotalAtk,
+      nextDef,
+      deltaDef: nextDef - playerTotalDef,
+      nextSpeed,
+      deltaSpeed: nextSpeed - playerTotalSpeed,
+      nextCritPct: Math.round(previewCrit * 100),
+      deltaCritPct: Math.round(previewCrit * 100) - Math.round(critRate * 100)
+    };
+  }, [
+    player,
+    safeDraft,
+    activeDraftSum,
+    statScaling,
+    playerTotalMaxHp,
+    playerTotalMaxMp,
+    playerTotalAtk,
+    playerTotalDef,
+    playerTotalSpeed,
+    critRate
+  ]);
+
+  const adjustDraft = (key, delta) => {
+    setAllocFeedback(null);
+    setDraftAlloc(prev => {
+      const curTotal = prev.str + prev.con + prev.int + prev.agi;
+      const curRem = Math.max(0, player.statPoints - curTotal);
+      if (delta > 0) {
+        const actualAdd = Math.min(delta, curRem);
+        if (actualAdd <= 0) return prev;
+        return { ...prev, [key]: prev[key] + actualAdd };
+      } else {
+        const actualSub = Math.min(Math.abs(delta), prev[key]);
+        if (actualSub <= 0) return prev;
+        return { ...prev, [key]: prev[key] - actualSub };
+      }
+    });
+  };
+
+  const handleApplyRecommended = () => {
+    if (player.statPoints <= 0) return;
+    setAllocFeedback(null);
+    const pts = player.statPoints;
+    let next = { str: 0, con: 0, int: 0, agi: 0 };
+
+    if (isWarrior) {
+      // 猛將：70% 力量 + 30% 體質
+      const strPts = Math.ceil(pts * 0.7);
+      next = { str: strPts, con: pts - strPts, int: 0, agi: 0 };
+    } else if (isArtisan) {
+      // 巧匠：75% 敏捷 + 25% 力量
+      const agiPts = Math.ceil(pts * 0.75);
+      next = { str: pts - agiPts, con: 0, int: 0, agi: agiPts };
+    } else {
+      // 術士 / 藥師 / 風水師：85% 智力 + 15% 敏捷（先手與暴擊）
+      const intPts = Math.ceil(pts * 0.85);
+      next = { str: 0, con: 0, int: intPts, agi: pts - intPts };
+    }
+    setDraftAlloc(next);
+  };
+
+  const handleConfirmAllocation = () => {
+    if (activeDraftSum <= 0 || activeDraftSum > player.statPoints) return;
+    setPlayer(p => ({
+      ...p,
+      statPoints: p.statPoints - activeDraftSum,
+      stats: {
+        str: p.stats.str + safeDraft.str,
+        con: p.stats.con + safeDraft.con,
+        int: p.stats.int + safeDraft.int,
+        agi: p.stats.agi + safeDraft.agi
+      }
+    }));
+    const parts = [];
+    if (safeDraft.str > 0) parts.push(`力量 +${safeDraft.str}`);
+    if (safeDraft.con > 0) parts.push(`體質 +${safeDraft.con}`);
+    if (safeDraft.int > 0) parts.push(`智力 +${safeDraft.int}`);
+    if (safeDraft.agi > 0) parts.push(`敏捷 +${safeDraft.agi}`);
+
+    setDraftAlloc({ str: 0, con: 0, int: 0, agi: 0 });
+    setAllocFeedback({ type: 'success', text: `✨ 屬性配點完成！【${parts.join('、')}】已永久融入奇經八脈！` });
+  };
+
+  // 洗點計算（退還所有超出基礎 10 點的已分配屬性）
+  const investedPoints =
+    Math.max(0, player.stats.str - BASE_INITIAL_STAT) +
+    Math.max(0, player.stats.con - BASE_INITIAL_STAT) +
+    Math.max(0, player.stats.int - BASE_INITIAL_STAT) +
+    Math.max(0, player.stats.agi - BASE_INITIAL_STAT);
+  const respecGoldCost = Math.max(50, (player.level || 1) * 50);
+
+  const handleRespecStats = () => {
+    if (investedPoints <= 0) return;
+    if (player.gold < respecGoldCost) {
+      setAllocFeedback({ type: 'danger', text: `⚠️ 金幣不足！洗點重配需要 ${respecGoldCost} 金幣。` });
+      return;
+    }
+    if (!window.confirm(`確定花費 ${respecGoldCost} 金幣洗髓重配嗎？將退還全部 ${investedPoints} 點已投入的屬性點！`)) {
+      return;
+    }
+    setPlayer(p => ({
+      ...p,
+      gold: p.gold - respecGoldCost,
+      statPoints: p.statPoints + investedPoints,
+      stats: {
+        str: BASE_INITIAL_STAT,
+        con: BASE_INITIAL_STAT,
+        int: BASE_INITIAL_STAT,
+        agi: BASE_INITIAL_STAT
+      }
+    }));
+    setDraftAlloc({ str: 0, con: 0, int: 0, agi: 0 });
+    setAllocFeedback({ type: 'success', text: `🔄 洗髓易筋完成！已退還 ${investedPoints} 點可分配屬性點！` });
+  };
+
+  const totalStatsSum = player.stats.str + player.stats.con + player.stats.int + player.stats.agi + activeDraftSum;
+
   const statCards = [
     {
       key: 'str',
-      label: isWarrior ? '力量 (STR) ★主攻' : isArtisan ? '力量 (STR) ☆副攻' : '力量 (STR)',
+      icon: '💪',
+      title: '力量 (STR)',
+      roleTag: isWarrior ? '★ 核心主攻' : isArtisan ? '☆ 副修物理' : null,
       desc: isWarrior
-        ? '每點 +3.2 攻擊力（主屬性）'
+        ? '每點 +3.2 物理攻擊（重兵主屬性）'
         : isArtisan
-          ? '每點 +1.6 攻擊力（敏力雙修）'
-          : '物理筋骨（法系主看智力）',
-      val: player.stats.str,
+          ? '每點 +1.6 物理攻擊（敏力雙修）'
+          : '提升基礎物理筋骨（法系主看智力）',
+      baseVal: player.stats.str,
+      draftVal: safeDraft.str,
+      barColor: 'bg-rose-500',
       highlight: isWarrior || isArtisan
     },
     {
       key: 'con',
-      label: isWarrior ? '體質 (CON) ★重裝' : '體質 (CON)',
+      icon: '🫀',
+      title: '體質 (CON)',
+      roleTag: isWarrior ? '★ 重裝生存' : '☆ 生存氣血',
       desc: isWarrior
-        ? '每點 +24 HP / +2 防禦（重裝專精）'
-        : '每點 +16 HP / +1 防禦',
-      val: player.stats.con,
+        ? '每點 +24 生命 / +2 防禦（重裝專精）'
+        : '每點 +16 生命 / +1 防禦',
+      baseVal: player.stats.con,
+      draftVal: safeDraft.con,
+      barColor: 'bg-emerald-500',
       highlight: isWarrior
     },
     {
       key: 'int',
-      label: isMagic ? '智力 (INT) ★主攻' : '智力 (INT)',
+      icon: '🧠',
+      title: '智力 (INT)',
+      roleTag: isMagic ? '★ 核心法攻' : null,
       desc: isWarlock
-        ? '每點 +3.5 法攻 / +10 MP（主屬性）'
+        ? '每點 +3.5 法攻 / +10 真元（術法核心）'
         : isMagic
-          ? '每點 +3.2 法攻 / +10 MP（主屬性）'
-          : '每點 +10 最大 MP',
-      val: player.stats.int,
+          ? '每點 +3.2 法攻 / +10 真元（主屬性）'
+          : '每點 +10 最大真元上限',
+      baseVal: player.stats.int,
+      draftVal: safeDraft.int,
+      barColor: 'bg-cyan-500',
       highlight: isMagic
     },
     {
       key: 'agi',
-      label: isArtisan ? '敏捷 (AGI) ★主攻' : '敏捷 (AGI)',
+      icon: '⚡',
+      title: '敏捷 (AGI)',
+      roleTag: isArtisan ? '★ 核心疾速' : '☆ 先手暴擊',
       desc: isArtisan
         ? '每點 +2.2 攻擊 / +1 速度 / +0.4% 暴擊'
-        : '每點 +1 速度 / +0.4% 暴擊率',
-      val: player.stats.agi,
+        : '每點 +1 行動速度 / +0.4% 暴擊率',
+      baseVal: player.stats.agi,
+      draftVal: safeDraft.agi,
+      barColor: 'bg-amber-400',
       highlight: isArtisan
     }
   ];
 
   return (
-    <div className="bg-slate-900/80 border border-slate-800/80 rounded-3xl p-6 shadow-2xl backdrop-blur space-y-6 max-w-4xl mx-auto">
+    <div className="bg-slate-900/80 border border-slate-800/80 rounded-3xl p-6 shadow-2xl backdrop-blur space-y-6 max-w-5xl mx-auto">
+      {/* 頂部角色資訊與資源列 */}
       <div className="flex flex-wrap justify-between items-center gap-3 border-b border-slate-800 pb-4">
         <div>
-          <h2 className="font-extrabold text-amber-400 text-lg">👤 少俠完整屬性與配點</h2>
+          <h2 className="font-extrabold text-amber-400 text-lg">👤 少俠根骨與屬性配點</h2>
           <p className="text-xs text-slate-400 mt-0.5">
             {player.name} • Lv.{player.level} / {MAX_LEVEL} {player.job} • {ELEMENTS[player.element]?.icon} {player.element}本命
           </p>
@@ -118,12 +308,19 @@ export function CharacterTab({
           <span className="text-xs bg-slate-950 text-cyan-300 font-mono font-bold px-3 py-1.5 rounded-full border border-slate-800">
             💎 精鍊石: {player.refineStones}
           </span>
-          <span className="text-xs bg-amber-500/20 text-amber-300 font-mono font-bold px-3.5 py-1.5 rounded-full border border-amber-500/40">
-            可分配屬性點: {player.statPoints} Pts
+          <span
+            className={`text-xs font-mono font-black px-3.5 py-1.5 rounded-full border transition-all ${
+              remainingPoints > 0
+                ? 'bg-amber-500/25 text-amber-300 border-amber-400 shadow-sm shadow-amber-500/20'
+                : 'bg-slate-950 text-slate-400 border-slate-800'
+            }`}
+          >
+            剩餘可配點數: {remainingPoints} Pts
           </span>
         </div>
       </div>
 
+      {/* 職業專屬天賦與係數橫幅 */}
       <div className="bg-emerald-950/30 border border-emerald-700/60 rounded-2xl p-4 space-y-1">
         <div className="text-xs font-extrabold text-emerald-300 flex items-center justify-between flex-wrap gap-1">
           <span className="flex items-center gap-1.5">
@@ -137,72 +334,267 @@ export function CharacterTab({
         <p className="text-xs text-slate-300 leading-relaxed">{classInfo.passiveDesc}</p>
       </div>
 
+      {/* 綜合戰鬥屬性面板（含預分配即時增幅預覽） */}
       <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-5 space-y-4">
         <div className="flex justify-between items-center flex-wrap gap-2">
-          <span className="text-xs font-bold text-amber-300">📊 主角綜合戰鬥屬性（含職業係數、裝備、陣法與圖鑑加成）</span>
+          <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+            <span>📊 主角綜合戰鬥面板</span>
+            {activeDraftSum > 0 && (
+              <span className="text-[11px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 px-2 py-0.5 rounded-full font-bold">
+                正在預覽 +{activeDraftSum} 點配點效果
+              </span>
+            )}
+          </span>
           <span className="text-xs font-mono text-slate-400">
             {player.level >= MAX_LEVEL ? 'EXP: MAX (Lv.30 滿級上限)' : `EXP: ${player.exp} / ${player.maxExp}`}
           </span>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5 font-mono">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 font-mono">
           <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 text-center">
             <div className="text-[11px] text-slate-400">❤️ 最大生命</div>
-            <div className="text-sm sm:text-base font-bold text-rose-400 mt-1">{player.hp} / {playerTotalMaxHp}</div>
+            <div className="text-sm font-bold text-rose-400 mt-1">
+              {player.hp} / {previewMetrics.nextMaxHp}
+            </div>
+            {previewMetrics.deltaHp > 0 && (
+              <div className="text-[11px] font-black text-emerald-400 mt-0.5">
+                (+{previewMetrics.deltaHp})
+              </div>
+            )}
           </div>
+
           <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 text-center">
             <div className="text-[11px] text-slate-400">💧 內力 / 資源</div>
-            <div className="text-sm sm:text-base font-bold text-cyan-400 mt-1">
-              {player.job === '猛將' ? `${player.rage}/100 怒` : player.job === '巧匠' ? `${player.ammo}/${player.maxAmmo} 彈` : `${player.mp}/${playerTotalMaxMp}`}
+            <div className="text-sm font-bold text-cyan-400 mt-1">
+              {player.job === '猛將'
+                ? `${player.rage}/100 怒`
+                : player.job === '巧匠'
+                  ? `${player.ammo}/${player.maxAmmo} 彈`
+                  : `${player.mp}/${previewMetrics.nextMaxMp}`}
             </div>
+            {!['猛將', '巧匠'].includes(player.job) && previewMetrics.deltaMp > 0 && (
+              <div className="text-[11px] font-black text-emerald-400 mt-0.5">
+                (+{previewMetrics.deltaMp})
+              </div>
+            )}
           </div>
+
           <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 text-center">
             <div className="text-[11px] text-slate-400">{isMagic ? '🔮 法術攻擊' : '⚔️ 總攻擊力'}</div>
-            <div className="text-sm sm:text-base font-bold text-amber-300 mt-1">{playerTotalAtk}</div>
+            <div className="text-sm font-bold text-amber-300 mt-1">{previewMetrics.nextAtk}</div>
+            {previewMetrics.deltaAtk > 0 && (
+              <div className="text-[11px] font-black text-emerald-400 mt-0.5">
+                (+{previewMetrics.deltaAtk})
+              </div>
+            )}
           </div>
+
           <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 text-center">
             <div className="text-[11px] text-slate-400">🛡️ 總防禦力</div>
-            <div className="text-sm sm:text-base font-bold text-indigo-300 mt-1">{playerTotalDef}</div>
+            <div className="text-sm font-bold text-indigo-300 mt-1">{previewMetrics.nextDef}</div>
+            {previewMetrics.deltaDef > 0 && (
+              <div className="text-[11px] font-black text-emerald-400 mt-0.5">
+                (+{previewMetrics.deltaDef})
+              </div>
+            )}
           </div>
+
           <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 text-center">
             <div className="text-[11px] text-slate-400">⚡ 行動速度</div>
-            <div className="text-sm sm:text-base font-bold text-emerald-300 mt-1">{playerTotalSpeed}</div>
+            <div className="text-sm font-bold text-emerald-300 mt-1">{previewMetrics.nextSpeed}</div>
+            {previewMetrics.deltaSpeed > 0 && (
+              <div className="text-[11px] font-black text-emerald-400 mt-0.5">
+                (+{previewMetrics.deltaSpeed})
+              </div>
+            )}
           </div>
+
           <div className="bg-slate-900 p-3 rounded-xl border border-slate-800 text-center">
             <div className="text-[11px] text-slate-400">💥 暴擊機率</div>
-            <div className="text-sm sm:text-base font-bold text-orange-300 mt-1">{Math.round(critRate * 100)}%</div>
+            <div className="text-sm font-bold text-orange-300 mt-1">{previewMetrics.nextCritPct}%</div>
+            {previewMetrics.deltaCritPct > 0 && (
+              <div className="text-[11px] font-black text-emerald-400 mt-0.5">
+                (+{previewMetrics.deltaCritPct}%)
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {statCards.map(st => (
-          <div
-            key={st.key}
-            className={`bg-slate-950 p-4 rounded-2xl border space-y-2 text-center ${
-              st.highlight ? 'border-amber-500/60 shadow-md shadow-amber-950/20' : 'border-slate-800'
-            }`}
+      {/* 配點快捷操作列：一鍵推薦、確認分配、取消重設、洗髓重配 */}
+      <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5 mr-1">
+            <Sliders className="w-4 h-4 text-amber-400" />
+            <span>四維根骨配點：</span>
+          </span>
+
+          <button
+            type="button"
+            disabled={player.statPoints <= 0}
+            onClick={handleApplyRecommended}
+            className="px-3.5 py-1.5 rounded-xl font-bold text-xs bg-indigo-950 hover:bg-indigo-900 text-indigo-200 border border-indigo-600/70 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5 transition-all"
           >
-            <div className={`text-xs font-bold ${st.highlight ? 'text-amber-300' : 'text-slate-300'}`}>
-              {st.label}
-            </div>
-            <div className="text-2xl font-black font-mono text-slate-100">{st.val}</div>
-            <div className="text-[10px] text-slate-400 min-h-[28px] flex items-center justify-center">
-              {st.desc}
-            </div>
+            <Target className="w-3.5 h-3.5 text-amber-300" />
+            <span>🎯 {player.job}一鍵推薦配點</span>
+          </button>
+
+          {investedPoints > 0 && (
             <button
-              onClick={() => {
-                if (player.statPoints > 0) {
-                  setPlayer(p => ({ ...p, statPoints: p.statPoints - 1, stats: { ...p.stats, [st.key]: p.stats[st.key] + 1 } }));
-                }
-              }}
-              disabled={player.statPoints <= 0}
-              className="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl text-xs disabled:opacity-40 transition-all"
+              type="button"
+              onClick={handleRespecStats}
+              className="px-3 py-1.5 rounded-xl font-bold text-xs bg-rose-950/60 hover:bg-rose-900/80 text-rose-200 border border-rose-800/70 flex items-center gap-1.5 transition-all"
             >
-              +1 提升屬性
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>洗點重配 ({respecGoldCost} 金)</span>
+            </button>
+          )}
+        </div>
+
+        {activeDraftSum > 0 && (
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              type="button"
+              onClick={() => setDraftAlloc({ str: 0, con: 0, int: 0, agi: 0 })}
+              className="px-3.5 py-2 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition-all"
+            >
+              取消重設
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmAllocation}
+              className="px-5 py-2 rounded-xl font-black text-xs bg-gradient-to-r from-emerald-600 to-amber-600 hover:from-emerald-500 hover:to-amber-500 text-white shadow-lg flex items-center gap-1.5 transition-all"
+            >
+              <Check className="w-4 h-4" />
+              <span>確認分配 ({activeDraftSum} 點)</span>
             </button>
           </div>
-        ))}
+        )}
+      </div>
+
+      {/* 操作提示訊息 */}
+      {allocFeedback && (
+        <div
+          className={`rounded-2xl p-3 border text-xs font-bold flex items-center gap-2 ${
+            allocFeedback.type === 'danger'
+              ? 'bg-rose-950/60 border-rose-500/70 text-rose-200'
+              : 'bg-emerald-950/60 border-emerald-500/70 text-emerald-200'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 shrink-0 text-amber-300" />
+          <span>{allocFeedback.text}</span>
+        </div>
+      )}
+
+      {/* 四維屬性卡片（支援 -1 / +1 / +5 / ALL 批量調配與佔比條） */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {statCards.map(st => {
+          const finalVal = st.baseVal + st.draftVal;
+          const sharePct = Math.min(100, Math.round((finalVal / Math.max(1, totalStatsSum)) * 100));
+
+          return (
+            <div
+              key={st.key}
+              className={`bg-slate-950 p-4 rounded-2xl border flex flex-col justify-between space-y-3 transition-all ${
+                st.draftVal > 0
+                  ? 'border-emerald-400/80 shadow-lg shadow-emerald-950/30'
+                  : st.highlight
+                    ? 'border-amber-500/60 shadow-md shadow-amber-950/20'
+                    : 'border-slate-800'
+              }`}
+            >
+              <div className="space-y-2">
+                {/* 標題與核心標籤 */}
+                <div className="flex items-center justify-between gap-1">
+                  <span className={`text-xs font-extrabold flex items-center gap-1 ${st.highlight ? 'text-amber-300' : 'text-slate-200'}`}>
+                    <span>{st.icon}</span>
+                    <span>{st.title}</span>
+                  </span>
+                  {st.roleTag && (
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${
+                        st.roleTag.startsWith('★')
+                          ? 'bg-amber-950/80 text-amber-300 border-amber-500/70'
+                          : 'bg-slate-900 text-slate-300 border-slate-700'
+                      }`}
+                    >
+                      {st.roleTag}
+                    </span>
+                  )}
+                </div>
+
+                {/* 數值與預分配增幅 */}
+                <div className="bg-slate-900/90 rounded-xl py-2.5 px-3 border border-slate-800/90 text-center">
+                  <div className="flex items-baseline justify-center gap-1.5 font-mono">
+                    <span className="text-2xl font-black text-slate-100">{finalVal}</span>
+                    {st.draftVal > 0 && (
+                      <span className="text-xs font-black text-emerald-400">
+                        (+{st.draftVal})
+                      </span>
+                    )}
+                  </div>
+                  {/* 四維佔比進度條 */}
+                  <div className="mt-2 space-y-1">
+                    <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full ${st.barColor} transition-all duration-200`}
+                        style={{ width: `${sharePct}%` }}
+                      />
+                    </div>
+                    <div className="text-[10px] font-mono text-slate-500">
+                      根骨佔比 {sharePct}%
+                    </div>
+                  </div>
+                </div>
+
+                {/* 屬性效益說明 */}
+                <div className="text-[11px] text-slate-400 text-center leading-snug min-h-[32px] flex items-center justify-center px-1">
+                  {st.desc}
+                </div>
+              </div>
+
+              {/* 批量加減按鈕列 */}
+              <div className="grid grid-cols-4 gap-1.5 pt-1">
+                <button
+                  type="button"
+                  disabled={st.draftVal <= 0}
+                  onClick={() => adjustDraft(st.key, -1)}
+                  className="py-2 rounded-xl font-mono font-black text-xs bg-slate-900 hover:bg-rose-950/80 text-rose-300 border border-slate-800 hover:border-rose-600/70 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                  title="減少 1 點預分配"
+                >
+                  -1
+                </button>
+                <button
+                  type="button"
+                  disabled={remainingPoints <= 0}
+                  onClick={() => adjustDraft(st.key, 1)}
+                  className="py-2 rounded-xl font-mono font-black text-xs bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-35 disabled:cursor-not-allowed transition-all"
+                  title="增加 1 點"
+                >
+                  +1
+                </button>
+                <button
+                  type="button"
+                  disabled={remainingPoints <= 0}
+                  onClick={() => adjustDraft(st.key, 5)}
+                  className="py-2 rounded-xl font-mono font-black text-xs bg-amber-700 hover:bg-amber-600 text-white disabled:opacity-35 disabled:cursor-not-allowed transition-all"
+                  title="一次增加 5 點"
+                >
+                  +5
+                </button>
+                <button
+                  type="button"
+                  disabled={remainingPoints <= 0}
+                  onClick={() => adjustDraft(st.key, remainingPoints)}
+                  className="py-2 rounded-xl font-mono font-black text-[11px] bg-indigo-700 hover:bg-indigo-600 text-white disabled:opacity-35 disabled:cursor-not-allowed transition-all"
+                  title="投入全部剩餘點數"
+                >
+                  ALL
+                </button>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -530,7 +922,6 @@ export function TowerTab({
         </div>
       </div>
 
-      {/* 操作按鈕區：挑戰按鈕 + 自動爬塔開關 */}
       <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
         <button
           disabled={isInCombat}
