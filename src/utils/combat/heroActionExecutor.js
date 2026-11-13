@@ -7,7 +7,6 @@ import {
   calculateDamageToMonster
 } from './combatFormulas';
 
-// 各職業合法負面狀態白名單（確保法術不會導致流血、職責嚴格掛鉤）
 const JOB_ALLOWED_DEBUFFS = {
   '猛將': ['armorBreak', 'weaken', 'bleed'],
   '巧匠': ['bleed', 'poison', 'blind', 'armorBreak'],
@@ -145,7 +144,6 @@ export function executeSingleHeroAction({
 
   const isHealTarget = (t) => t === 'heal' || t === 'heal_single';
 
-  // 組合可用技能池：固有本命絕學 + 已裝備主動技能卡
   const skillPool = [];
   if (h.signatureSkill && (!isHealTarget(h.signatureSkill.target) || isPharmacist)) {
     skillPool.push({ ...h.signatureSkill, isSignature: true });
@@ -155,7 +153,6 @@ export function executeSingleHeroAction({
     skillPool.push({ ...card, isSignature: false });
   });
 
-  // 僅藥師在隊伍有人低於 65% 血線時提升治療技能優先級
   const playerHpRatio = currentPlayer.hp / Math.max(1, playerTotalMaxHp);
   const anyAllyLow = isPharmacist && (playerHpRatio < 0.65 || updatedRoster.some(ally => {
     if (!activeHeroInstanceIds.includes(ally.instanceId) || ally.hp <= 0) return false;
@@ -182,6 +179,7 @@ export function executeSingleHeroAction({
 
   let totalDealtDamageThisTurn = 0;
   let extraSkillLifestealPct = 0;
+  const heroTitle = `${h.icon || '⚔️'} ${h.name}${fusionLevel > 0 ? `★${fusionLevel}` : ''}`;
 
   const healAllAllies = (healVal) => {
     if (healVal <= 0 || !isPharmacist) return;
@@ -239,7 +237,7 @@ export function executeSingleHeroAction({
     }
     if (addedShield > 0) {
       currentBuffs.shield = (currentBuffs.shield || 0) + addedShield;
-      return `並展開 +${addedShield} 點全隊護盾`;
+      return `，展開 +${addedShield} 全隊護盾`;
     }
     return '';
   };
@@ -248,9 +246,8 @@ export function executeSingleHeroAction({
     const fusionScale = 1 + (fusionLevel * 0.12);
     const cardBonusScale = skillToCast.isSignature ? 1.0 : (1.20 + ((h.activeSkillSlots || []).length >= 2 ? 0.12 : 0));
     const mult = (skillToCast.mult || 1.7) * fusionScale * cardBonusScale * echoPowerMult * (1 + extraBonusMult);
-    const starBadge = fusionLevel > 0 ? `★+${fusionLevel}` : '';
-    const prefixTag = isEchoCast ? '【★+5 無雙連攜二連發】' : (tianjiSkillBoost > 0 ? '【🌌天機催靈】' : '');
-    const skillLabel = skillToCast.isSignature ? `本命絕學【${skillToCast.name}】` : `技能卡【${skillToCast.name}】`;
+    const echoPrefix = isEchoCast ? '【★+5 無雙連攜】' : '';
+    const skillLabel = skillToCast.isSignature ? `絕學【${skillToCast.name}】` : `技能卡【${skillToCast.name}】`;
     const combinedIgnoreDef = Math.min(0.85, innateIgnoreDef + (skillToCast.ignoreDefPct || 0));
 
     if (skillToCast.lifestealPct > 0) {
@@ -282,12 +279,13 @@ export function executeSingleHeroAction({
         }
       });
 
-      const effStr = appliedTags.size > 0 ? ` 附加${[...appliedTags].join('')}` : '';
+      const effStr = appliedTags.size > 0 ? ` ${[...appliedTags].join('')}` : '';
       const shieldStr = applySkillShieldIfAny(skillToCast, fusionScale);
       logs.push({
-        text: `${anyAoeCrit ? '💥暴擊！' : (skillToCast.icon || '✨') + ' '}${prefixTag}【T${h.tier}${starBadge}】${h.name}施展${skillLabel}，橫掃全場造成 ${totalAoeDmg} 點傷害${effStr}${shieldStr ? '，' + shieldStr : ''}！`,
+        text: `${echoPrefix}${heroTitle} 施展${skillLabel}，橫掃全場造成 ${totalAoeDmg} 傷害${effStr}${shieldStr}！`,
         type: 'hero',
-        dmgRole: anyAoeCrit ? 'player_crit' : 'player_normal'
+        dmgRole: anyAoeCrit ? 'player_crit' : 'player_normal',
+        isSubEvent: isEchoCast
       });
     } else if (skillToCast.target === 'heal' && isPharmacist) {
       const healVal = Math.floor(finalHeroAtk * mult);
@@ -299,13 +297,14 @@ export function executeSingleHeroAction({
         const regenVal = Math.max(15, Math.floor(finalHeroAtk * 0.45));
         currentBuffs.teamRegenTurns = Math.max(currentBuffs.teamRegenTurns || 0, skillToCast.teamRegenTurns);
         currentBuffs.teamRegenVal = Math.max(currentBuffs.teamRegenVal || 0, regenVal);
-        regenText = `，並賦予 ${skillToCast.teamRegenTurns} 回合生機緩回(+${regenVal}/T)`;
+        regenText = `，附帶 ${skillToCast.teamRegenTurns}T 緩回(+${regenVal}/T)`;
       }
 
       logs.push({
-        text: `${skillToCast.icon || '🌿'} ${prefixTag}【T${h.tier}${starBadge}】${h.name}施展${skillLabel}，全隊恢復 +${healVal} HP${shieldText}${regenText}！`,
+        text: `${echoPrefix}${heroTitle} 施展${skillLabel}，全隊恢復 +${healVal} HP${shieldText}${regenText}！`,
         type: 'hero',
-        dmgRole: 'heal'
+        dmgRole: 'heal',
+        isSubEvent: isEchoCast
       });
     } else if (skillToCast.target === 'heal_single' && isPharmacist) {
       const healVal = Math.floor(finalHeroAtk * mult);
@@ -313,9 +312,10 @@ export function executeSingleHeroAction({
       const shieldText = applySkillShieldIfAny(skillToCast, fusionScale);
 
       logs.push({
-        text: `${skillToCast.icon || '🩺'} ${prefixTag}【T${h.tier}${starBadge}】${h.name}施展${skillLabel}，緊急救治【${healedTargetName}】恢復 +${healVal} HP${shieldText}！`,
+        text: `${echoPrefix}${heroTitle} 施展${skillLabel}，急救【${healedTargetName}】恢復 +${healVal} HP${shieldText}！`,
         type: 'hero',
-        dmgRole: 'heal'
+        dmgRole: 'heal',
+        isSubEvent: isEchoCast
       });
     } else {
       const curAlive = currentMonsters.filter(m => m.hp > 0);
@@ -341,26 +341,28 @@ export function executeSingleHeroAction({
         if (isPharmacist && skillToCast.healTeamRatio > 0) {
           const hVal = Math.floor(finalHeroAtk * skillToCast.healTeamRatio * fusionScale);
           healAllAllies(hVal);
-          hybridHealText = `，同時療癒全隊 +${hVal} HP`;
+          hybridHealText = `，全隊回血 +${hVal}`;
         }
 
+        const bonusNote = [isExecute ? '斬殺' : '', hasDot ? '共鳴' : ''].filter(Boolean).join('/');
         logs.push({
-          text: `${isCrit ? '💥暴擊！' : (skillToCast.icon || '⚡') + ' '}${prefixTag}【T${h.tier}${starBadge}】${h.name}爆發${skillLabel}${isExecute ? '(殘血處決!)' : ''}${hasDot ? '(狀態共鳴+25%)' : ''}，重創【${stTarget.name}】造成 ${dmg} 點傷害${effTag}${hybridHealText}${shieldStr ? '，' + shieldStr : ''}！`,
+          text: `${echoPrefix}${heroTitle} 爆發${skillLabel}${bonusNote ? `(${bonusNote})` : ''}，重創【${stTarget.name}】造成 ${dmg} 傷害${effTag}${hybridHealText}${shieldStr}！`,
           type: 'hero',
-          dmgRole: isCrit ? 'player_crit' : 'player_normal'
+          dmgRole: isCrit ? 'player_crit' : 'player_normal',
+          isSubEvent: isEchoCast
         });
       }
     }
 
-    // 本命天賦或被動心法：施放絕學時附加全隊護盾（僅首發觸發）
     if (!isEchoCast && shieldOnSkillPct > 0 && currentBuffs) {
       const traitShield = Math.floor(finalHeroAtk * shieldOnSkillPct);
       if (traitShield > 0) {
         currentBuffs.shield = (currentBuffs.shield || 0) + traitShield;
         logs.push({
-          text: `🛡️ 【${h.traitName}】護脈真氣激發，全隊獲得 +${traitShield} 點護盾！`,
+          text: `🛡️ 【${h.traitName}】護脈真氣激發，全隊獲得 +${traitShield} 護盾`,
           type: 'sys',
-          dmgRole: 'shield'
+          dmgRole: 'shield',
+          isSubEvent: true
         });
       }
     }
@@ -390,7 +392,7 @@ export function executeSingleHeroAction({
     totalDealtDamageThisTurn += dmg;
 
     logs.push({
-      text: `${isCrit ? '💥暴擊！' : '💥 '}英雄【${h.name}】攻擊【${validTarget.name}】${hasDot ? '(狀態共鳴+25%)' : ''}，造成 ${dmg} 點傷害！`,
+      text: `${heroTitle} 攻擊【${validTarget.name}】${hasDot ? '(共鳴)' : ''}，造成 ${dmg} 傷害！`,
       type: 'hero',
       dmgRole: isCrit ? 'player_crit' : 'player_normal'
     });
@@ -416,14 +418,14 @@ export function executeSingleHeroAction({
       totalDealtDamageThisTurn += followDmg;
 
       logs.push({
-        text: `⚡ 疾速追擊！英雄【${h.name}】連環出招再對【${validTarget.name}】造成 ${followDmg} 點傷害！`,
+        text: `⚡ 疾速追擊！【${h.name}】連環出招再對【${validTarget.name}】造成 ${followDmg} 傷害`,
         type: 'hero',
-        dmgRole: followCrit ? 'player_crit' : 'player_normal'
+        dmgRole: followCrit ? 'player_crit' : 'player_normal',
+        isSubEvent: true
       });
     }
   }
 
-  // 自身吸血回血（本命天賦吸血 + 被動心法吸血 + 主動技能卡吸血，僅限自身）
   const totalLifestealPct = Math.min(0.65, lifestealPct + extraSkillLifestealPct);
   if (totalLifestealPct > 0 && totalDealtDamageThisTurn > 0) {
     const drainHp = Math.max(1, Math.floor(totalDealtDamageThisTurn * totalLifestealPct));
@@ -437,7 +439,6 @@ export function executeSingleHeroAction({
     });
   }
 
-  // 行動後自動療傷（嚴格僅限「藥師」職業觸發，支援天賦與《妙手回春真訣》被動卡疊加）
   if (isPharmacist && autoHealPct > 0) {
     const mendVal = Math.max(8, Math.floor(finalHeroAtk * autoHealPct));
     let lowestTarget = { id: 'PLAYER', ratio: currentPlayer.hp / Math.max(1, playerTotalMaxHp) };
@@ -458,9 +459,10 @@ export function executeSingleHeroAction({
         currentPlayer.hp = Math.min(playerTotalMaxHp, currentPlayer.hp + mendVal);
         recordAllyHeal('PLAYER', mendVal);
         logs.push({
-          text: `💚 【${h.name}】醫道靈氣自動為少俠恢復 +${mendVal} HP！`,
+          text: `💚 醫道餘韻為少俠自動恢復 +${mendVal} HP`,
           type: 'hero',
-          dmgRole: 'heal'
+          dmgRole: 'heal',
+          isSubEvent: true
         });
       } else {
         let healedName = '';
@@ -475,9 +477,10 @@ export function executeSingleHeroAction({
         });
         if (healedName) {
           logs.push({
-            text: `💚 【${h.name}】醫道靈氣自動為【${healedName}】恢復 +${mendVal} HP！`,
+            text: `💚 醫道餘韻為【${healedName}】自動恢復 +${mendVal} HP`,
             type: 'hero',
-            dmgRole: 'heal'
+            dmgRole: 'heal',
+            isSubEvent: true
           });
         }
       }
