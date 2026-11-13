@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { ZONES } from '../data/constants';
 import { CLASS_CONFIGS } from '../data/classes';
 import {
@@ -15,14 +15,14 @@ import {
 
 export function useCombatManager({
   gameStarted,
-  isInCombat,
-  isFengShui,
   player,
   setPlayer,
   heroRoster,
   setHeroRoster,
-  activeHeroes,
   activeHeroInstanceIds,
+  activeHeroes,
+  isFengShui,
+  getHeroRowIdx,
   playerTotalMaxHp,
   playerTotalMaxMp,
   playerTotalAtk,
@@ -31,40 +31,73 @@ export function useCombatManager({
   playerRowBuff,
   rawFormBonus,
   formMultiplier,
-  getHeroRowIdx,
-  currentZoneIndex,
-  setCurrentZoneIndex,
-  monsters,
-  setMonsters,
-  selectedTargetIndex,
-  setSelectedTargetIndex,
-  turnCount,
-  setTurnCount,
-  combatPhase,
-  setCombatPhase,
-  autoBattle,
-  setAutoBattle,
-  combatBuffs,
-  setCombatBuffs,
-  heroBattleBuffs,
-  setHeroBattleBuffs,
-  battleDownedHeroIds,
-  setBattleDownedHeroIds,
-  setLastRoundHits,
-  setVictorySummary,
-  setDefeatSummary,
+  setEquipmentInventory,
+  setSkillCardsInventory,
   towerFloor,
   setTowerFloor,
   setTowerBestFloor,
-  activeTowerFloor,
-  setActiveTowerFloor,
-  setEquipmentInventory,
-  setSkillCardsInventory,
   setActiveTab,
-  resetCombatStates,
+  turnCount,
+  setTurnCount,
   addLog,
   appendBatchLogs
 }) {
+  const [currentZoneIndex, setCurrentZoneIndex] = useState(0);
+  const [activeTowerFloor, setActiveTowerFloor] = useState(null);
+  const [monsters, setMonsters] = useState([]);
+  const [selectedTargetIndex, setSelectedTargetIndex] = useState(0);
+  const [lastRoundHits, setLastRoundHits] = useState({ monsters: {}, allies: {} });
+  const [combatPhase, setCombatPhase] = useState('PLAYER_SELECT');
+  const [autoBattle, setAutoBattle] = useState(false);
+  const [victorySummary, setVictorySummary] = useState(null);
+  const [defeatSummary, setDefeatSummary] = useState(null);
+
+  const [combatBuffs, setCombatBuffs] = useState({
+    shield: 0,
+    tauntTurns: 0,
+    reflectTurns: 0,
+    reflectPct: 0,
+    baguaTurns: 0,
+    baguaReducePct: 0,
+    baguaReflectPct: 0,
+    skillCooldowns: { 0: 0, 1: 0, 2: 0 }
+  });
+  const [heroBattleBuffs, setHeroBattleBuffs] = useState({});
+  const [battleDownedHeroIds, setBattleDownedHeroIds] = useState([]);
+
+  const isInCombat = monsters.some(m => m.hp > 0);
+
+  const resetCombatStates = useCallback((initialShield = 0) => {
+    setCombatBuffs({
+      shield: initialShield,
+      tauntTurns: 0,
+      reflectTurns: 0,
+      reflectPct: 0,
+      baguaTurns: 0,
+      baguaReducePct: 0,
+      baguaReflectPct: 0,
+      skillCooldowns: { 0: 0, 1: 0, 2: 0 }
+    });
+    setHeroBattleBuffs({});
+    setBattleDownedHeroIds([]);
+    setLastRoundHits({ monsters: {}, allies: {} });
+  }, []);
+
+  const computeOpeningAwakeningBonus = (deployedHeroes) => {
+    const awakenedList = deployedHeroes.filter(h => h.hp > 0 && (h.fusionLevel || 0) >= 3);
+    let openingShield = 0;
+    awakenedList.forEach(h => {
+      const { effectiveMaxHp } = calculateHeroEffectiveStats(
+        h,
+        isFengShui,
+        null,
+        getHeroRowIdx(h.instanceId)
+      );
+      openingShield += Math.floor(effectiveMaxHp * 0.15);
+    });
+    return { awakenedList, openingShield };
+  };
+
   const handleToggleAutoBattle = () => {
     setAutoBattle(prev => {
       const next = !prev;
@@ -88,21 +121,6 @@ export function useCombatManager({
     setMonsters([]);
     setLastRoundHits({ monsters: {}, allies: {} });
     addLog(`🗺️ 已前往【${ZONES[zoneIdx].name}】安全營地，請點擊「🔍 尋找怪群」或「⚡ 快速掃蕩」！`, 'sys');
-  };
-
-  const computeOpeningAwakeningBonus = (deployedHeroes) => {
-    const awakenedList = deployedHeroes.filter(h => h.hp > 0 && (h.fusionLevel || 0) >= 3);
-    let openingShield = 0;
-    awakenedList.forEach(h => {
-      const { effectiveMaxHp } = calculateHeroEffectiveStats(
-        h,
-        isFengShui,
-        null,
-        getHeroRowIdx(h.instanceId)
-      );
-      openingShield += Math.floor(effectiveMaxHp * 0.15);
-    });
-    return { awakenedList, openingShield };
   };
 
   const spawnEncounter = (zoneIdx, customActiveHeroes = null) => {
@@ -249,4 +267,392 @@ export function useCombatManager({
     } else {
       setVictorySummary(res.sweepSummary);
       addLog(
-        `⚡ 快速掃蕩【${ZONES[currentZoneIndex]?.name}】完成 ${completedBattles}/${sweepCount} 場！累計獲得 +${gold} 金幣、+${exp} 經驗${stones > 0 ? `、+${stones} 
+        `⚡ 快速掃蕩【${ZONES[currentZoneIndex]?.name}】完成 ${completedBattles}/${sweepCount} 場！累計獲得 +${gold} 金幣、+${exp} 經驗${stones > 0 ? `、+${stones} 精鍊石` : ''}！`,
+        'sys'
+      );
+    }
+  };
+
+  const handleStartTowerChallenge = () => {
+    if (isInCombat) {
+      addLog(`⚠️ 當前已在戰鬥中，無法開啟新的鎮魔塔挑戰！`, 'sys');
+      return;
+    }
+    if (player.hp <= 0) {
+      addLog(`⚠️ 少俠氣血耗盡，請先前往客棧休息恢復再挑戰鎮魔塔！`, 'danger');
+      return;
+    }
+
+    const floor = towerFloor;
+    const isBossFloor = floor % 5 === 0;
+    const hpScale = 1.25 * (1 + (floor - 1) * 0.28);
+    const atkScale = 1.20 * (1 + (floor - 1) * 0.22);
+    const defScale = 1.20 * (1 + (floor - 1) * 0.18);
+    const rewardScale = 1 + (floor - 1) * 0.22;
+
+    const baseZone = ZONES[Math.min(ZONES.length - 1, Math.floor((floor - 1) / 5))];
+    const basePool = baseZone.monsters;
+    const list = [];
+
+    if (isBossFloor) {
+      const bossTemplate = basePool[basePool.length - 1];
+      const bossElem = getRandomElement();
+      list.push({
+        id: `tower_boss_${Date.now()}`,
+        isBoss: true,
+        name: `第${floor}層鎮守妖王・${bossTemplate.name}`,
+        element: bossElem,
+        originalElement: bossElem,
+        maxHp: Math.floor(bossTemplate.hp * hpScale * 2.6),
+        hp: Math.floor(bossTemplate.hp * hpScale * 2.6),
+        atk: Math.floor(bossTemplate.atk * atkScale * 1.55),
+        def: Math.floor(bossTemplate.def * defScale * 1.4),
+        speed: Math.floor(14 + (floor * 1.3)),
+        exp: Math.floor(bossTemplate.exp * rewardScale * 2.5),
+        gold: Math.floor(bossTemplate.gold * rewardScale * 2.5),
+        armorBreakTurns: 0, armorBreakPct: 0,
+        blindTurns: 0, blindPct: 0,
+        elemShiftTurns: 0,
+        burnTurns: 0, burnDmg: 0,
+        poisonTurns: 0, poisonPct: 0, poisonStacks: 0,
+        vulnTurns: 0, vulnPct: 0
+      });
+
+      for (let i = 0; i < 2; i++) {
+        const guardTpl = basePool[i % basePool.length];
+        const guardElem = getRandomElement();
+        list.push({
+          id: `tower_guard_${Date.now()}_${i}`,
+          isElite: true,
+          name: `妖王護法 ${i === 0 ? '左使' : '右使'}`,
+          element: guardElem,
+          originalElement: guardElem,
+          maxHp: Math.floor(guardTpl.hp * hpScale * 1.25),
+          hp: Math.floor(guardTpl.hp * hpScale * 1.25),
+          atk: Math.floor(guardTpl.atk * atkScale * 1.15),
+          def: Math.floor(guardTpl.def * defScale * 1.1),
+          speed: Math.floor(12 + (floor * 1.15)),
+          exp: Math.floor(guardTpl.exp * rewardScale),
+          gold: Math.floor(guardTpl.gold * rewardScale),
+          armorBreakTurns: 0, armorBreakPct: 0,
+          blindTurns: 0, blindPct: 0,
+          elemShiftTurns: 0,
+          burnTurns: 0, burnDmg: 0,
+          poisonTurns: 0, poisonPct: 0, poisonStacks: 0,
+          vulnTurns: 0, vulnPct: 0
+        });
+      }
+    } else {
+      const guardCount = Math.min(6, 3 + Math.floor(floor / 5));
+      const alphabet = '甲乙丙丁戊己';
+      for (let i = 0; i < guardCount; i++) {
+        const tpl = basePool[i % basePool.length];
+        const elem = getRandomElement();
+        list.push({
+          id: `tower_m_${Date.now()}_${i}`,
+          name: `${floor}層守衛・${tpl.name}${alphabet[i] || ''}`,
+          element: elem,
+          originalElement: elem,
+          maxHp: Math.floor(tpl.hp * hpScale),
+          hp: Math.floor(tpl.hp * hpScale),
+          atk: Math.floor(tpl.atk * atkScale),
+          def: Math.floor(tpl.def * defScale),
+          speed: Math.floor(10 + (floor * 1.1) + i),
+          exp: Math.floor(tpl.exp * rewardScale),
+          gold: Math.floor(tpl.gold * rewardScale),
+          armorBreakTurns: 0, armorBreakPct: 0,
+          blindTurns: 0, blindPct: 0,
+          elemShiftTurns: 0,
+          burnTurns: 0, burnDmg: 0,
+          poisonTurns: 0, poisonPct: 0, poisonStacks: 0,
+          vulnTurns: 0, vulnPct: 0
+        });
+      }
+    }
+
+    const { awakenedList, openingShield } = computeOpeningAwakeningBonus(activeHeroes);
+    const awakenCount = awakenedList.length;
+
+    setPlayer(prev => ({
+      ...prev,
+      ammo: prev.job === '巧匠' ? 12 : prev.ammo,
+      maxAmmo: prev.job === '巧匠' ? 12 : prev.maxAmmo,
+      rage: prev.job === '猛將' ? Math.min(100, awakenCount * 15) : prev.rage,
+      mp: ['術士', '藥師', '風水師'].includes(prev.job)
+        ? Math.min(playerTotalMaxMp, prev.mp + (awakenCount * 20))
+        : prev.mp
+    }));
+
+    if (awakenCount > 0) {
+      addLog(
+        `🌟 【★+3 護主靈罡覺醒】${awakenedList.map(h => h.name).join('、')} 激發護體真氣，開戰提供 +${openingShield} 點護盾！`,
+        'sys'
+      );
+    }
+
+    resetCombatStates(openingShield);
+    setActiveTowerFloor(floor);
+    setMonsters(list);
+    setSelectedTargetIndex(0);
+    setTurnCount(1);
+    setCombatPhase('PLAYER_SELECT');
+    setActiveTab('combat');
+    addLog(
+      isBossFloor
+        ? `🔥 踏入【鎮魔塔第 ${floor} 層】，鎮守妖王首領現身！擊敗首領必得高階神裝！`
+        : `🗼 踏入【鎮魔塔第 ${floor} 層】，迎戰 ${list.length} 名鎮塔守衛！`,
+      'sys'
+    );
+  };
+
+  const handleFleeCombat = () => {
+    if (!isInCombat) return;
+    setAutoBattle(false);
+    const res = resolveFleeCombat({
+      monsters,
+      player,
+      heroRoster,
+      activeHeroInstanceIds,
+      battleDownedHeroIds,
+      combatBuffs,
+      heroBattleBuffs,
+      playerTotalDef,
+      playerTotalSpeed,
+      playerRowBuff,
+      rawFormBonus,
+      formMultiplier,
+      isFengShui,
+      getHeroRowIdx
+    });
+
+    appendBatchLogs(res.logs);
+
+    if (res.outcome === 'ESCAPED') {
+      setMonsters([]);
+      setActiveTowerFloor(null);
+      resetCombatStates();
+      setCombatPhase('PLAYER_SELECT');
+      return;
+    }
+
+    if (res.outcome === 'DEFEAT') {
+      setPlayer(res.defeatedPlayer);
+      setHeroRoster(res.finalRoster);
+      setMonsters([]);
+      setActiveTowerFloor(null);
+      resetCombatStates();
+      setCombatPhase('PLAYER_SELECT');
+      setDefeatSummary(res.defeatSummary);
+      return;
+    }
+
+    setPlayer(res.updatedPlayer);
+    setMonsters(res.updatedMonsters);
+    setHeroRoster(res.updatedRoster);
+    setBattleDownedHeroIds(res.updatedDownedIds);
+    setCombatBuffs(res.updatedBuffs);
+    setLastRoundHits(res.lastRoundHits || { monsters: {}, allies: {} });
+    setTurnCount(prev => prev + 1);
+    setCombatPhase('PLAYER_SELECT');
+  };
+
+  const handleExecuteRound = useCallback((actionInput = { type: 'attack' }) => {
+    if (!isInCombat) {
+      addLog(`⚠️ 當前沒有敵人，請先點擊「🔍 尋找怪群」主動搜敵！`, 'sys');
+      return;
+    }
+
+    setCombatPhase('EXECUTING');
+    const res = resolveCombatRound({
+      actionInput,
+      monsters,
+      player,
+      heroRoster,
+      activeHeroInstanceIds,
+      selectedTargetIndex,
+      combatBuffs,
+      heroBattleBuffs,
+      battleDownedHeroIds,
+      playerTotalMaxHp,
+      playerTotalMaxMp,
+      playerTotalAtk,
+      playerTotalDef,
+      playerTotalSpeed,
+      playerRowBuff,
+      rawFormBonus,
+      formMultiplier,
+      currentZoneIndex,
+      activeTowerFloor,
+      isFengShui,
+      getHeroRowIdx
+    });
+
+    appendBatchLogs(res.logs);
+
+    if (res.outcome === 'ABORTED') {
+      setCombatPhase('PLAYER_SELECT');
+      return;
+    }
+
+    if (res.outcome === 'VICTORY') {
+      setPlayer(res.newPlayer);
+      setHeroRoster(res.finalRoster);
+      setMonsters([]);
+      resetCombatStates();
+      setCombatPhase('PLAYER_SELECT');
+      if (res.droppedEquipments?.length > 0) {
+        setEquipmentInventory(prev => [...prev, ...res.droppedEquipments]);
+      }
+      if (res.droppedSkillCard) {
+        setSkillCardsInventory(prev => [...prev, res.droppedSkillCard]);
+      }
+      if (res.clearedTowerFloor) {
+        const nextFloor = res.clearedTowerFloor + 1;
+        setTowerFloor(nextFloor);
+        setTowerBestFloor(prev => Math.max(prev, nextFloor));
+        setActiveTowerFloor(null);
+      }
+      setVictorySummary(res.victorySummary);
+      return;
+    }
+
+    if (res.outcome === 'DEFEAT') {
+      setAutoBattle(false);
+      setPlayer(res.defeatedPlayer);
+      setHeroRoster(res.finalRoster);
+      setMonsters([]);
+      setActiveTowerFloor(null);
+      resetCombatStates();
+      setCombatPhase('PLAYER_SELECT');
+      setDefeatSummary(res.defeatSummary);
+      return;
+    }
+
+    setMonsters(res.tickedMonsters);
+    setPlayer(res.updatedPlayer);
+    setHeroRoster(res.updatedRoster);
+    setBattleDownedHeroIds(res.updatedDownedIds);
+    setCombatBuffs(res.tickedBuffs);
+    setHeroBattleBuffs(res.tickedHeroBuffs);
+    setLastRoundHits(res.lastRoundHits || { monsters: {}, allies: {} });
+    setTurnCount(prev => prev + 1);
+    setCombatPhase('PLAYER_SELECT');
+  }, [
+    isInCombat,
+    addLog,
+    monsters,
+    player,
+    heroRoster,
+    activeHeroInstanceIds,
+    selectedTargetIndex,
+    combatBuffs,
+    heroBattleBuffs,
+    battleDownedHeroIds,
+    playerTotalMaxHp,
+    playerTotalMaxMp,
+    playerTotalAtk,
+    playerTotalDef,
+    playerTotalSpeed,
+    playerRowBuff,
+    rawFormBonus,
+    formMultiplier,
+    currentZoneIndex,
+    activeTowerFloor,
+    isFengShui,
+    getHeroRowIdx,
+    appendBatchLogs,
+    setPlayer,
+    setHeroRoster,
+    resetCombatStates,
+    setEquipmentInventory,
+    setSkillCardsInventory,
+    setTowerFloor,
+    setTowerBestFloor,
+    setTurnCount
+  ]);
+
+  // 🤖 自動戰鬥排程（已補齊依賴陣列，避免重繪閃幀）
+  useEffect(() => {
+    if (!gameStarted || !autoBattle || !isInCombat || combatPhase !== 'PLAYER_SELECT') return;
+    const timer = setTimeout(() => {
+      const classSkills = CLASS_CONFIGS[player.job]?.skills || [];
+      const nextAction = pickBestAutoCombatAction(
+        player,
+        classSkills,
+        combatBuffs,
+        activeHeroInstanceIds,
+        heroRoster
+      );
+      handleExecuteRound(nextAction);
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [
+    gameStarted,
+    autoBattle,
+    isInCombat,
+    combatPhase,
+    player,
+    combatBuffs,
+    activeHeroInstanceIds,
+    heroRoster,
+    handleExecuteRound
+  ]);
+
+  const handleRestInn = () => {
+    if (isInCombat) {
+      addLog(`🔒 戰鬥進行中，無法返回客棧休息！`, 'sys');
+      return;
+    }
+    setPlayer(prev => ({
+      ...prev,
+      hp: playerTotalMaxHp,
+      mp: playerTotalMaxMp,
+      rage: 0,
+      ammo: prev.maxAmmo
+    }));
+    setHeroRoster(prev => prev.map(h => {
+      const { effectiveMaxHp } = calculateHeroEffectiveStats(h, isFengShui, null, getHeroRowIdx(h.instanceId));
+      return {
+        ...h,
+        hp: effectiveMaxHp,
+        fatigue: 0,
+        rage: 0,
+        ammo: h.maxAmmo || 6,
+        mp: h.maxMp || 100
+      };
+    }));
+    addLog(`🏨 客棧休養完成，全隊生命、資源恢復滿值！`, 'sys');
+  };
+
+  return {
+    isInCombat,
+    currentZoneIndex,
+    activeTowerFloor,
+    setActiveTowerFloor,
+    monsters,
+    setMonsters,
+    selectedTargetIndex,
+    setSelectedTargetIndex,
+    lastRoundHits,
+    setLastRoundHits,
+    combatPhase,
+    autoBattle,
+    setAutoBattle,
+    victorySummary,
+    setVictorySummary,
+    defeatSummary,
+    setDefeatSummary,
+    combatBuffs,
+    heroBattleBuffs,
+    resetCombatStates,
+    handleToggleAutoBattle,
+    handleSelectZone,
+    spawnEncounter,
+    handleSweepZone,
+    handleStartTowerChallenge,
+    handleFleeCombat,
+    handleExecuteRound,
+    handleRestInn
+  };
+}
