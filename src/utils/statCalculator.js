@@ -105,15 +105,15 @@ export function calculateHeroEffectiveStats(hero, isFengShui = false, battleBuff
   skillChance += tb.skillChance || 0;
   elemDmgPct += tb.elemDmgPct || 0;
 
-  const lifestealPct = tb.lifestealPct || 0;
-  const critRateBonus = tb.critRate || 0;
-  const critDmgBonus = tb.critDmg || 0;
-  const ignoreDefPct = tb.ignoreDefPct || 0;
-  const doubleHitPct = tb.doubleHitPct || 0;
-  const autoHealPct = tb.autoHealPct || 0;
-  const shieldOnSkillPct = tb.shieldOnSkillPct || 0;
+  let lifestealPct = tb.lifestealPct || 0;
+  let critRateBonus = tb.critRate || 0;
+  let critDmgBonus = tb.critDmg || 0;
+  let ignoreDefPct = tb.ignoreDefPct || 0;
+  let doubleHitPct = tb.doubleHitPct || 0;
+  let autoHealPct = tb.autoHealPct || 0;
+  let shieldOnSkillPct = tb.shieldOnSkillPct || 0;
 
-  // 2. 被動技能卡（全部享受 1.5 倍強化）
+  // 2. 被動技能卡（全部享受 1.5 倍強化，包含進階戰鬥屬性）
   const PASSIVE_MULT = 1.5;
   (h.passiveSkillSlots || []).forEach(card => {
     const b = card?.bonus || {};
@@ -123,6 +123,14 @@ export function calculateHeroEffectiveStats(hero, isFengShui = false, battleBuff
     speedPct += (b.speedPct || 0) * PASSIVE_MULT;
     skillChance += (b.skillChance || 0) * PASSIVE_MULT;
     elemDmgPct += (b.elemDmgPct || 0) * PASSIVE_MULT;
+
+    lifestealPct += (b.lifestealPct || 0) * PASSIVE_MULT;
+    critRateBonus += (b.critRate || 0) * PASSIVE_MULT;
+    critDmgBonus += (b.critDmg || 0) * PASSIVE_MULT;
+    ignoreDefPct += (b.ignoreDefPct || 0) * PASSIVE_MULT;
+    doubleHitPct += (b.doubleHitPct || 0) * PASSIVE_MULT;
+    autoHealPct += (b.autoHealPct || 0) * PASSIVE_MULT;
+    shieldOnSkillPct += (b.shieldOnSkillPct || 0) * PASSIVE_MULT;
   });
 
   // 3. 戰鬥臨時激發增益（如九轉還魂丹）
@@ -148,11 +156,11 @@ export function calculateHeroEffectiveStats(hero, isFengShui = false, battleBuff
     effectiveSpeed,
     elemDmgPct,
     skillChance: Math.min(0.88, skillChance),
-    lifestealPct,
+    lifestealPct: Math.min(0.50, lifestealPct),
     critRateBonus,
     critDmgBonus,
-    ignoreDefPct,
-    doubleHitPct,
+    ignoreDefPct: Math.min(0.75, ignoreDefPct),
+    doubleHitPct: Math.min(0.65, doubleHitPct),
     autoHealPct,
     shieldOnSkillPct
   };
