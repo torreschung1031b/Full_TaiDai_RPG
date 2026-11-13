@@ -1,8 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Sparkles, HelpCircle, Users, Layers } from 'lucide-react';
 import { ELEMENTS, MAX_LEVEL } from '../data/constants';
 import { calculateHeroEffectiveStats } from '../utils/statCalculator';
 import { getRowPositionBuffs } from '../utils/formationHelper';
+
+const TIER_BADGE_STYLES = {
+  5: 'bg-gradient-to-r from-rose-950 to-amber-950 text-amber-200 border-amber-400 shadow-sm shadow-amber-500/20',
+  4: 'bg-purple-950/80 text-purple-200 border-purple-400/80',
+  3: 'bg-indigo-950/80 text-indigo-200 border-indigo-500/80',
+  2: 'bg-emerald-950/80 text-emerald-200 border-emerald-600/80',
+  1: 'bg-slate-900 text-slate-300 border-slate-700'
+};
 
 export default function HeroRosterTab({
   isInCombat,
@@ -22,13 +30,31 @@ export default function HeroRosterTab({
   getHeroRowIdx,
   setHelpModalTab
 }) {
+  // 依 Tier 高 → 低、突破星級 ★+ 高 → 低、等級高 → 低、已出戰優先排序
+  const sortedHeroRoster = useMemo(() => {
+    return [...heroRoster].sort((a, b) => {
+      const tierDiff = (b.tier || 1) - (a.tier || 1);
+      if (tierDiff !== 0) return tierDiff;
+
+      const fusionDiff = (b.fusionLevel || 0) - (a.fusionLevel || 0);
+      if (fusionDiff !== 0) return fusionDiff;
+
+      const levelDiff = (b.level || 1) - (a.level || 1);
+      if (levelDiff !== 0) return levelDiff;
+
+      const aDep = activeHeroInstanceIds.includes(a.instanceId) ? 1 : 0;
+      const bDep = activeHeroInstanceIds.includes(b.instanceId) ? 1 : 0;
+      return bDep - aDep;
+    });
+  }, [heroRoster, activeHeroInstanceIds]);
+
   const [selectedHeroForCard, setSelectedHeroForCard] = useState(
-    heroRoster[0]?.instanceId || ''
+    sortedHeroRoster[0]?.instanceId || ''
   );
 
-  const effectiveTargetHeroId = heroRoster.some(h => h.instanceId === selectedHeroForCard)
+  const effectiveTargetHeroId = sortedHeroRoster.some(h => h.instanceId === selectedHeroForCard)
     ? selectedHeroForCard
-    : (heroRoster[0]?.instanceId || '');
+    : (sortedHeroRoster[0]?.instanceId || '');
 
   const totalFusibleOps = (() => {
     const groups = {};
@@ -53,9 +79,9 @@ export default function HeroRosterTab({
         <div className="flex items-center gap-2">
           <Users className="w-5 h-5 text-amber-400" />
           <div>
-            <h2 className="font-extrabold text-amber-400 text-lg">👥 英雄名冊、同名合成與強化技能卡</h2>
+            <h2 className="font-extrabold text-amber-400 text-lg">👥 英雄名冊、自動同名突破與強化技能卡</h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              出戰陣容：{activeHeroInstanceIds.length} / 4 位 • 名冊總數：{heroRoster.length} 位
+              出戰陣容：{activeHeroInstanceIds.length} / 4 位 • 名冊總數：{heroRoster.length} 位（依 Tier 品階由高至低排列）
             </p>
           </div>
           {setHelpModalTab && (
@@ -70,15 +96,15 @@ export default function HeroRosterTab({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            disabled={isInCombat || totalFusibleOps === 0}
-            onClick={handleFuseAllHeroes}
-            className="px-4 py-2 bg-gradient-to-r from-purple-700 to-amber-600 hover:from-purple-600 hover:to-amber-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-black rounded-xl text-xs shadow transition-all"
-          >
-            {totalFusibleOps > 0
-              ? `✨ 一鍵同名合成 (${totalFusibleOps}次可突破)`
-              : '✨ 一鍵同名合成 (無可突破)'}
-          </button>
+          {totalFusibleOps > 0 && (
+            <button
+              disabled={isInCombat}
+              onClick={handleFuseAllHeroes}
+              className="px-4 py-2 bg-gradient-to-r from-purple-700 to-amber-600 hover:from-purple-600 hover:to-amber-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-black rounded-xl text-xs shadow transition-all"
+            >
+              ✨ 合成餘下分身 ({totalFusibleOps}次可突破)
+            </button>
+          )}
 
           <button
             disabled={isInCombat}
@@ -90,11 +116,11 @@ export default function HeroRosterTab({
         </div>
       </div>
 
-      {/* 同名合成與覺醒里程碑說明橫幅 */}
+      {/* 自動同名突破與覺醒里程碑說明橫幅 */}
       <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-3.5 text-xs text-slate-300 grid grid-cols-1 md:grid-cols-2 gap-2.5">
         <div>
-          <span className="text-amber-300 font-bold">🌟 同名英雄合成（最高 ★+{MAX_HERO_FUSION}）：</span>
-          每星<strong>全基礎屬性 +15%、主屬性 +3、技能卡威力 +12%</strong>。
+          <span className="text-amber-300 font-bold">🌟 自動同名突破（最高 ★+{MAX_HERO_FUSION}）：</span>
+          招募或獲得重複英雄時將<strong>自動合併升星</strong>，每星<strong>全基礎屬性 +15%、主屬性 +3、技能卡威力 +12%</strong>。
           <div className="text-[11px] text-purple-300 mt-1">
             • <strong>★+3 覺醒【護主靈罡】</strong>：開戰提供自身 15% HP 護盾並補充少俠真元<br />
             • <strong>★+5 覺醒【無雙連攜】</strong>：主動技能卡 25% 機率觸發 65% 威力二連發
@@ -120,12 +146,12 @@ export default function HeroRosterTab({
         </div>
       )}
 
-      {/* 英雄卡片列表 */}
-      {heroRoster.length === 0 ? (
+      {/* 英雄卡片列表（依 Tier 越高排越前） */}
+      {sortedHeroRoster.length === 0 ? (
         <div className="text-xs text-slate-500 py-8 text-center">目前名冊尚無英雄，可前往「🏮 江湖市集」招募！</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {heroRoster.map(hero => {
+          {sortedHeroRoster.map(hero => {
             const isDeployed = activeHeroInstanceIds.includes(hero.instanceId);
             const hRow = getHeroRowIdx(hero.instanceId);
             const rowLabel = isDeployed ? getRowPositionBuffs(hRow * 3).label : '待命中';
@@ -143,6 +169,7 @@ export default function HeroRosterTab({
             ).length;
             const canFuse = !isInCombat && duplicateCount > 0 && fusionLvl < MAX_HERO_FUSION;
             const hasDualActive = (hero.activeSkillSlots || []).length >= 2;
+            const tierBadgeClass = TIER_BADGE_STYLES[hero.tier] || TIER_BADGE_STYLES[1];
 
             return (
               <div
@@ -150,12 +177,17 @@ export default function HeroRosterTab({
                 className={`bg-slate-950 p-4 rounded-2xl border space-y-3 flex flex-col justify-between transition-all ${
                   isDeployed
                     ? 'border-amber-500/70 shadow-lg shadow-amber-950/20'
-                    : 'border-slate-800'
+                    : (hero.tier || 1) >= 4
+                      ? 'border-purple-800/60'
+                      : 'border-slate-800'
                 }`}
               >
                 <div className="space-y-2.5">
                   <div className="flex items-start justify-between gap-2 flex-wrap">
                     <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className={`text-[10px] px-2 py-0.5 rounded border font-mono font-black ${tierBadgeClass}`}>
+                        Tier {hero.tier}
+                      </span>
                       <span className="text-lg">{hero.icon || '🧑'}</span>
                       <span className="font-extrabold text-amber-300 text-sm">{hero.name}</span>
                       {fusionLvl > 0 && (
@@ -164,7 +196,7 @@ export default function HeroRosterTab({
                         </span>
                       )}
                       <span className="text-[10px] bg-slate-900 text-slate-300 border border-slate-700 px-2 py-0.5 rounded font-mono">
-                        Tier {hero.tier} • {hero.heroClass}
+                        {hero.heroClass}
                       </span>
                       <span className="text-[10px] bg-slate-900 text-cyan-300 border border-slate-700 px-2 py-0.5 rounded">
                         {ELEMENTS[hero.element]?.icon} {hero.element}
@@ -356,7 +388,7 @@ export default function HeroRosterTab({
             </span>
           </div>
 
-          {heroRoster.length > 0 && (
+          {sortedHeroRoster.length > 0 && (
             <div className="flex items-center gap-2 text-xs">
               <span className="text-slate-400">目標英雄：</span>
               <select
@@ -364,9 +396,9 @@ export default function HeroRosterTab({
                 onChange={(e) => setSelectedHeroForCard(e.target.value)}
                 className="bg-slate-900 border border-slate-700 text-amber-300 font-bold rounded-xl px-3 py-1.5 focus:outline-none focus:border-amber-500"
               >
-                {heroRoster.map(h => (
+                {sortedHeroRoster.map(h => (
                   <option key={h.instanceId} value={h.instanceId}>
-                    {h.name} {h.fusionLevel > 0 ? `(★+${h.fusionLevel})` : ''} — {h.heroClass}
+                    [T{h.tier}] {h.name} {h.fusionLevel > 0 ? `(★+${h.fusionLevel})` : ''} — {h.heroClass}
                   </option>
                 ))}
               </select>
@@ -381,7 +413,7 @@ export default function HeroRosterTab({
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
             {skillCardsInventory.map(card => {
-              const targetHero = heroRoster.find(h => h.instanceId === effectiveTargetHeroId);
+              const targetHero = sortedHeroRoster.find(h => h.instanceId === effectiveTargetHeroId);
               const isJobOk = targetHero && card.allowedJobs?.includes(targetHero.heroClass);
               const isActive = card.type === 'active';
 
