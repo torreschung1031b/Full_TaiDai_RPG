@@ -22,7 +22,7 @@ export const SKILL_CARD_RARITIES = {
 };
 
 export const SKILL_CARDS_DB = [
-  // ==================== 主動技能卡（20 張，嚴格按職業職責與異常狀態綁定） ====================
+  // ==================== 主動技能卡（20 張，收斂係數 + 限制群攻目標上限） ====================
   // --- 良品 (Rarity 1) ---
   {
     id: 'sc_act_slash',
@@ -30,10 +30,10 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 1,
     target: 'single',
-    mult: 1.65,
+    mult: 1.25,
     debuff: 'armorBreak',
     allowedJobs: ['猛將'],
-    desc: '【猛將專屬】單體 1.65x 猛擊並破甲降防（2回合）。'
+    desc: '【猛將專屬】單體 1.25x 猛擊並破甲降防（2回合）。'
   },
   {
     id: 'sc_act_arrow',
@@ -41,11 +41,11 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 1,
     target: 'single',
-    mult: 1.70,
-    ignoreDefPct: 0.30,
+    mult: 1.28,
+    ignoreDefPct: 0.20,
     debuff: 'bleed',
     allowedJobs: ['巧匠'],
-    desc: '【巧匠專屬】單體 1.70x 穿甲射擊（無視 30% 防禦）並造成流血。'
+    desc: '【巧匠專屬】單體 1.28x 穿甲射擊（無視 20% 防禦）並造成流血。'
   },
   {
     id: 'sc_act_ice_bolt',
@@ -53,10 +53,10 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 1,
     target: 'single',
-    mult: 1.75,
+    mult: 1.32,
     debuff: 'vuln',
     allowedJobs: ['術士'],
-    desc: '【術士專屬】凝聚寒冰法球轟擊單體 1.75x 法傷並附加易傷。'
+    desc: '【術士專屬】凝聚寒冰法球轟擊單體 1.32x 法傷並附加易傷。'
   },
   {
     id: 'sc_act_fireball',
@@ -64,10 +64,11 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 1,
     target: 'aoe',
-    mult: 1.15,
+    maxTargets: 2,
+    mult: 0.85,
     debuff: 'burn',
     allowedJobs: ['術士', '風水師'],
-    desc: '【法陣專屬】全體 1.15x 五行法術轟炸並附加烈焰灼燒。'
+    desc: '【法陣專屬】轟擊最多 2 名敵軍造成 0.85x 法傷並附加灼燒。'
   },
   {
     id: 'sc_act_mend',
@@ -75,9 +76,9 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 1,
     target: 'heal',
-    mult: 1.45,
+    mult: 0.95,
     allowedJobs: ['藥師'],
-    desc: '【藥師專屬】全隊恢復 1.45x 氣血，濟世懸壺。'
+    desc: '【藥師專屬】全隊恢復 0.95x 氣血，濟世懸壺。'
   },
 
   // --- 上品 (Rarity 2) ---
@@ -87,10 +88,11 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 2,
     target: 'aoe',
-    mult: 1.30,
+    maxTargets: 2,
+    mult: 0.96,
     debuff: 'armorBreak',
     allowedJobs: ['猛將'],
-    desc: '【猛將專屬】橫掃全場敵軍造成 1.30x 傷害並破甲降防。'
+    desc: '【猛將專屬】橫掃最多 2 名敵軍造成 0.96x 傷害並破甲降防。'
   },
   {
     id: 'sc_act_rain_needle',
@@ -98,10 +100,11 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 2,
     target: 'aoe',
-    mult: 1.25,
+    maxTargets: 2,
+    mult: 0.92,
     debuff: 'blind',
     allowedJobs: ['巧匠'],
-    desc: '【巧匠專屬】全體 1.25x 暗器齊發並使敵軍致盲（30% 揮空）。'
+    desc: '【巧匠專屬】暗器齊發最多 2 名敵軍造成 0.92x 傷害並致盲。'
   },
   {
     id: 'sc_act_poison_mist',
@@ -109,10 +112,11 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 2,
     target: 'aoe',
-    mult: 1.20,
+    maxTargets: 2,
+    mult: 0.88,
     debuff: 'poison',
     allowedJobs: ['藥師', '巧匠'],
-    desc: '【毒醫／暗器】全體 1.20x 毒傷並疊加劇毒（每回合無視防禦真傷）。'
+    desc: '【毒醫／暗器】侵襲最多 2 名敵軍造成 0.88x 毒傷並疊加劇毒。'
   },
   {
     id: 'sc_act_silver_needle',
@@ -120,10 +124,10 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 2,
     target: 'heal_single',
-    mult: 2.40,
-    shieldPct: 0.15,
+    mult: 1.65,
+    shieldPct: 0.10,
     allowedJobs: ['藥師'],
-    desc: '【藥師專屬】精準急救血量最低的隊友恢復 2.40x 氣血並附加護盾！'
+    desc: '【藥師專屬】精準急救血量最低隊友恢復 1.65x 氣血並附帶護盾。'
   },
   {
     id: 'sc_act_bagua_light',
@@ -131,11 +135,12 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 2,
     target: 'aoe',
-    mult: 1.15,
+    maxTargets: 2,
+    mult: 0.85,
     debuff: 'weaken',
-    shieldPct: 0.24,
+    shieldPct: 0.15,
     allowedJobs: ['風水師'],
-    desc: '【風水師專屬】全體 1.15x 陣法壓制並虛弱敵軍，同時展開 24% 生命全隊護盾！'
+    desc: '【風水師專屬】壓制最多 2 名敵軍造成 0.85x 傷害與虛弱，並展開 15% 全隊護盾。'
   },
 
   // --- 絕品 (Rarity 3) ---
@@ -145,11 +150,12 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 3,
     target: 'aoe',
-    mult: 1.55,
+    maxTargets: 3,
+    mult: 1.08,
     debuff: 'weaken',
-    shieldPct: 0.16,
+    shieldPct: 0.12,
     allowedJobs: ['猛將'],
-    desc: '【猛將絕學】怒吼震懾全場 1.55x 傷害、虛弱敵軍並凝聚自身護體戰氣！'
+    desc: '【猛將絕學】震懾最多 3 名敵軍造成 1.08x 傷害、虛弱敵軍並凝聚護盾。'
   },
   {
     id: 'sc_act_blood_blade',
@@ -157,11 +163,11 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 3,
     target: 'single',
-    mult: 2.15,
+    mult: 1.62,
     debuff: 'bleed',
-    lifestealPct: 0.35,
+    lifestealPct: 0.25,
     allowedJobs: ['猛將', '巧匠'],
-    desc: '【物理專屬】單體 2.15x 狂暴重創、撕裂流血，並將 35% 傷害轉化為自身生命！'
+    desc: '【物理專屬】單體 1.62x 狂暴重創、撕裂流血，並將 25% 傷害轉為自身生命。'
   },
   {
     id: 'sc_act_thousand_blades',
@@ -169,11 +175,12 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 3,
     target: 'aoe',
-    mult: 1.50,
-    ignoreDefPct: 0.30,
+    maxTargets: 3,
+    mult: 1.05,
+    ignoreDefPct: 0.22,
     debuff: 'bleed',
     allowedJobs: ['巧匠'],
-    desc: '【巧匠絕學】觸發漫天機關利刃橫掃全場 1.50x 穿甲傷害並附加流血！'
+    desc: '【巧匠絕學】機關利刃襲擊最多 3 名敵軍造成 1.05x 穿甲傷害並附加流血。'
   },
   {
     id: 'sc_act_ice_spear',
@@ -181,11 +188,11 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 3,
     target: 'single',
-    mult: 2.25,
-    ignoreDefPct: 0.45,
+    mult: 1.68,
+    ignoreDefPct: 0.30,
     debuff: 'vuln',
     allowedJobs: ['術士'],
-    desc: '【術士專屬】單體 2.25x 極寒法刺（無視 45% 防禦）並附加易傷 +25%。'
+    desc: '【術士專屬】單體 1.68x 極寒法刺（無視 30% 防禦）並附加易傷 +25%。'
   },
   {
     id: 'sc_act_lotus_regen',
@@ -193,10 +200,10 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 3,
     target: 'heal',
-    mult: 1.65,
-    teamRegenTurns: 3,
+    mult: 1.15,
+    teamRegenTurns: 2,
     allowedJobs: ['藥師'],
-    desc: '【藥師絕學】全隊恢復 1.65x 氣血，並賦予全隊 3 回合持續生機緩回！'
+    desc: '【藥師絕學】全隊恢復 1.15x 氣血，並賦予全隊 2 回合持續生機緩回。'
   },
   {
     id: 'sc_act_qimen_star',
@@ -204,11 +211,12 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 3,
     target: 'aoe',
-    mult: 1.50,
+    maxTargets: 3,
+    mult: 1.06,
     debuff: 'vuln',
-    shieldPct: 0.18,
+    shieldPct: 0.12,
     allowedJobs: ['風水師', '術士'],
-    desc: '【法陣專屬】引動星辰轟擊全場 1.50x 法傷，令敵全體陷入易傷 +25%！'
+    desc: '【法陣專屬】引星辰轟擊最多 3 名敵軍造成 1.06x 法傷，並附加易傷。'
   },
 
   // --- 仙品 (Rarity 4) ---
@@ -218,11 +226,11 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 4,
     target: 'single',
-    mult: 2.65,
-    ignoreDefPct: 0.55,
+    mult: 1.95,
+    ignoreDefPct: 0.38,
     debuff: 'bleed',
     allowedJobs: ['猛將', '巧匠'],
-    desc: '【物理仙品】單體 2.65x 毀滅劍氣，無視 55% 防禦並造成重創流血！'
+    desc: '【物理仙品】單體 1.95x 毀滅劍氣，無視 38% 防禦並造成重創流血！'
   },
   {
     id: 'sc_act_execute_arrow',
@@ -230,11 +238,11 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 4,
     target: 'single',
-    mult: 2.45,
-    ignoreDefPct: 0.45,
-    executeBonusPct: 0.45,
+    mult: 1.82,
+    ignoreDefPct: 0.32,
+    executeBonusPct: 0.30,
     allowedJobs: ['巧匠'],
-    desc: '【巧匠仙品】連射十三箭造成 2.45x 穿甲重創，對血量低於 45% 目標額外增傷 45%！'
+    desc: '【巧匠仙品】連射十三箭造成 1.82x 穿甲重創，對血量低於 45% 目標額外增傷 30%！'
   },
   {
     id: 'sc_act_five_thunder',
@@ -242,10 +250,11 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 4,
     target: 'aoe',
-    mult: 1.75,
+    maxTargets: 3,
+    mult: 1.22,
     debuff: 'burn',
     allowedJobs: ['術士', '風水師'],
-    desc: '【法陣仙品】天雷轟頂全體 1.75x 法傷，附加高額烈焰灼燒！'
+    desc: '【法陣仙品】天雷轟頂最多 3 名敵軍造成 1.22x 法傷，附加烈焰灼燒！'
   },
   {
     id: 'sc_act_immortal_dew',
@@ -253,13 +262,13 @@ export const SKILL_CARDS_DB = [
     type: 'active',
     rarity: 4,
     target: 'heal',
-    mult: 2.10,
-    shieldPct: 0.25,
+    mult: 1.42,
+    shieldPct: 0.18,
     allowedJobs: ['藥師'],
-    desc: '【藥師仙品】全隊大幅回血 2.10x 並展開 25% 生命金剛護盾！'
+    desc: '【藥師仙品】全隊大幅回血 1.42x 並展開 18% 生命金剛護盾！'
   },
 
-  // ==================== 被動心法卡（16 張，全部享受 1.5x 強化） ====================
+  // ==================== 被動心法卡（16 張，數值收斂並統一套用 1.2x 強化） ====================
   // --- 良品 (Rarity 1) ---
   {
     id: 'sc_pas_iron_skin',
@@ -267,8 +276,8 @@ export const SKILL_CARDS_DB = [
     type: 'passive',
     rarity: 1,
     allowedJobs: ['猛將', '藥師', '風水師'],
-    bonus: { defPct: 0.14, hpPct: 0.08 },
-    desc: '基礎防禦 +14%、生命 +8%'
+    bonus: { defPct: 0.10, hpPct: 0.06 },
+    desc: '基礎防禦 +10%、生命 +6%'
   },
   {
     id: 'sc_pas_swift_step',
@@ -276,8 +285,8 @@ export const SKILL_CARDS_DB = [
     type: 'passive',
     rarity: 1,
     allowedJobs: ['巧匠', '風水師', '術士'],
-    bonus: { speedPct: 0.14, atkPct: 0.06 },
-    desc: '基礎速度 +14%、攻擊 +6%'
+    bonus: { speedPct: 0.10, atkPct: 0.05 },
+    desc: '基礎速度 +10%、攻擊 +5%'
   },
   {
     id: 'sc_pas_keen_focus',
@@ -285,8 +294,8 @@ export const SKILL_CARDS_DB = [
     type: 'passive',
     rarity: 1,
     allowedJobs: ['猛將', '巧匠', '術士'],
-    bonus: { critRate: 0.08, atkPct: 0.06 },
-    desc: '暴擊率 +8%、基礎攻擊 +6%'
+    bonus: { critRate: 0.06, atkPct: 0.05 },
+    desc: '暴擊率 +6%、基礎攻擊 +5%'
   },
 
   // --- 上品 (Rarity 2) ---
@@ -296,8 +305,8 @@ export const SKILL_CARDS_DB = [
     type: 'passive',
     rarity: 2,
     allowedJobs: ['猛將', '巧匠'],
-    bonus: { atkPct: 0.16, hpPct: 0.08 },
-    desc: '基礎攻擊 +16%、生命 +8%'
+    bonus: { atkPct: 0.11, hpPct: 0.06 },
+    desc: '基礎攻擊 +11%、生命 +6%'
   },
   {
     id: 'sc_pas_spirit_eye',
@@ -305,8 +314,8 @@ export const SKILL_CARDS_DB = [
     type: 'passive',
     rarity: 2,
     allowedJobs: ['術士', '藥師', '風水師'],
-    bonus: { skillChance: 0.10, atkPct: 0.10 },
-    desc: '主動技能發動率 +10%、攻擊 +10%'
+    bonus: { skillChance: 0.07, atkPct: 0.07 },
+    desc: '主動技能發動率 +7%、攻擊 +7%'
   },
   {
     id: 'sc_pas_herb_sutra',
@@ -314,8 +323,8 @@ export const SKILL_CARDS_DB = [
     type: 'passive',
     rarity: 2,
     allowedJobs: ['藥師', '猛將'],
-    bonus: { hpPct: 0.18, defPct: 0.10 },
-    desc: '基礎最大生命 +18%、防禦 +10%'
+    bonus: { hpPct: 0.13, defPct: 0.08 },
+    desc: '基礎最大生命 +13%、防禦 +8%'
   },
   {
     id: 'sc_pas_armor_pierce',
@@ -323,8 +332,8 @@ export const SKILL_CARDS_DB = [
     type: 'passive',
     rarity: 2,
     allowedJobs: ['巧匠', '猛將'],
-    bonus: { ignoreDefPct: 0.14, critDmg: 0.20 },
-    desc: '無視敵方防禦 +14%、暴擊傷害 +20%'
+    bonus: { ignoreDefPct: 0.10, critDmg: 0.15 },
+    desc: '無視敵方防禦 +10%、暴擊傷害 +15%'
   },
 
   // --- 絕品 (Rarity 3) ---
@@ -334,8 +343,8 @@ export const SKILL_CARDS_DB = [
     type: 'passive',
     rarity: 3,
     allowedJobs: ['術士', '風水師'],
-    bonus: { elemDmgPct: 0.18, atkPct: 0.14, skillChance: 0.06 },
-    desc: '五行剋制增傷 +18%、攻擊 +14%、技發率 +6%'
+    bonus: { elemDmgPct: 0.12, atkPct: 0.10, skillChance: 0.05 },
+    desc: '五行剋制增傷 +12%、攻擊 +10%、技發率 +5%'
   },
   {
     id: 'sc_pas_shadow_step',
@@ -343,8 +352,8 @@ export const SKILL_CARDS_DB = [
     type: 'passive',
     rarity: 3,
     allowedJobs: ['巧匠', '風水師'],
-    bonus: { speedPct: 0.22, doubleHitPct: 0.16 },
-    desc: '基礎速度 +22%、額外追擊連擊率 +16%'
+    bonus: { speedPct: 0.15, doubleHitPct: 0.11 },
+    desc: '基礎速度 +15%、額外追擊連擊率 +11%'
   },
   {
     id: 'sc_pas_vajra_body',
@@ -352,8 +361,8 @@ export const SKILL_CARDS_DB = [
     type: 'passive',
     rarity: 3,
     allowedJobs: ['猛將'],
-    bonus: { defPct: 0.22, hpPct: 0.20 },
-    desc: '基礎防禦 +22%、最大生命 +20%'
+    bonus: { defPct: 0.16, hpPct: 0.14 },
+    desc: '基礎防禦 +16%、最大生命 +14%'
   },
   {
     id: 'sc_pas_blood_sutra',
@@ -361,8 +370,8 @@ export const SKILL_CARDS_DB = [
     type: 'passive',
     rarity: 3,
     allowedJobs: ['猛將', '巧匠'],
-    bonus: { atkPct: 0.16, lifestealPct: 0.12 },
-    desc: '基礎攻擊 +16%、全攻擊吸血 +12%'
+    bonus: { atkPct: 0.11, lifestealPct: 0.08 },
+    desc: '基礎攻擊 +11%、全攻擊吸血 +8%'
   },
   {
     id: 'sc_pas_mercy_lotus',
@@ -370,8 +379,8 @@ export const SKILL_CARDS_DB = [
     type: 'passive',
     rarity: 3,
     allowedJobs: ['藥師'],
-    bonus: { hpPct: 0.20, skillChance: 0.12, autoHealPct: 0.35 },
-    desc: '【藥師專屬】生命 +20%、技發率 +12%、行動後自動治療傷員'
+    bonus: { hpPct: 0.14, skillChance: 0.08, autoHealPct: 0.24 },
+    desc: '【藥師專屬】生命 +14%、技發率 +8%、行動後自動治療傷員'
   },
 
   // --- 仙品 (Rarity 4) ---
@@ -381,8 +390,8 @@ export const SKILL_CARDS_DB = [
     type: 'passive',
     rarity: 4,
     allowedJobs: ['猛將', '巧匠', '術士', '藥師', '風水師'],
-    bonus: { atkPct: 0.18, defPct: 0.18, hpPct: 0.18, speedPct: 0.14 },
-    desc: '【全職仙品】攻、防、血各 +18%、速度 +14%'
+    bonus: { atkPct: 0.12, defPct: 0.12, hpPct: 0.12, speedPct: 0.10 },
+    desc: '【全職仙品】攻、防、血各 +12%、速度 +10%'
   },
   {
     id: 'sc_pas_hetu_luoshu',
@@ -390,8 +399,8 @@ export const SKILL_CARDS_DB = [
     type: 'passive',
     rarity: 4,
     allowedJobs: ['術士', '藥師', '風水師'],
-    bonus: { atkPct: 0.22, skillChance: 0.14, elemDmgPct: 0.16 },
-    desc: '【仙品心法】攻擊 +22%、技發率 +14%、五行增傷 +16%'
+    bonus: { atkPct: 0.15, skillChance: 0.10, elemDmgPct: 0.12 },
+    desc: '【仙品心法】攻擊 +15%、技發率 +10%、五行增傷 +12%'
   },
   {
     id: 'sc_pas_killing_intent',
@@ -399,8 +408,8 @@ export const SKILL_CARDS_DB = [
     type: 'passive',
     rarity: 4,
     allowedJobs: ['猛將', '巧匠'],
-    bonus: { critRate: 0.16, critDmg: 0.40, ignoreDefPct: 0.18 },
-    desc: '【物理仙品】暴擊率 +16%、暴擊傷害 +40%、無視防禦 +18%'
+    bonus: { critRate: 0.11, critDmg: 0.28, ignoreDefPct: 0.12 },
+    desc: '【物理仙品】暴擊率 +11%、暴擊傷害 +28%、無視防禦 +12%'
   },
   {
     id: 'sc_pas_qimen_bagua',
@@ -408,8 +417,8 @@ export const SKILL_CARDS_DB = [
     type: 'passive',
     rarity: 4,
     allowedJobs: ['風水師'],
-    bonus: { speedPct: 0.22, defPct: 0.18, shieldOnSkillPct: 0.55 },
-    desc: '【風水仙品】速度 +22%、防禦 +18%、施放絕學時附加全隊護盾'
+    bonus: { speedPct: 0.15, defPct: 0.13, shieldOnSkillPct: 0.35 },
+    desc: '【風水仙品】速度 +15%、防禦 +13%、施放絕學時附加全隊護盾'
   }
 ];
 
