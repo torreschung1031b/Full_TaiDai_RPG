@@ -7,12 +7,15 @@ export default function BattleResultModals({
   setVictorySummary,
   defeatSummary,
   setDefeatSummary,
-  handleRestInn
+  handleRestInn,
+  autoTower,
+  handleToggleAutoTower
 }) {
   if (!victorySummary && !defeatSummary) return null;
 
   const isSweep = Boolean(victorySummary?.isSweep);
   const isSweepDefeated = Boolean(isSweep && victorySummary?.isDefeated);
+  const isAutoTowerNext = Boolean(victorySummary?.isTowerVictory && autoTower);
 
   const skillCardsList = victorySummary
     ? (victorySummary.droppedSkillCards || (victorySummary.droppedSkillCard ? [victorySummary.droppedSkillCard] : []))
@@ -46,12 +49,16 @@ export default function BattleResultModals({
                   ? `⚠️ 快速掃蕩中途戰敗（完成 ${victorySummary.completedBattles ?? 0}/${victorySummary.requestedBattles ?? 3} 場）`
                   : isSweep
                     ? `⚡ 快速掃蕩大捷（完成 ${victorySummary.completedBattles ?? 0}/${victorySummary.requestedBattles ?? 3} 場）`
-                    : '🎉 戰鬥大捷・戰利品結算'}
+                    : victorySummary.isTowerVictory
+                      ? `🗼 鎮魔塔第 ${victorySummary.clearedFloor} 層通關大捷`
+                      : '🎉 戰鬥大捷・戰利品結算'}
               </h3>
               <p className="text-xs text-slate-400">
                 {isSweepDefeated
                   ? `隊伍於第 ${victorySummary.failedBattleIndex || (victorySummary.completedBattles || 0) + 1} 場力竭重傷中止掃蕩，已結算先前勝場戰利品`
-                  : '所有戰利品已自動收入背包與名冊'}
+                  : isAutoTowerNext
+                    ? '自動爬塔啟動中，將於 1.2 秒後自動挑戰下一層...'
+                    : '所有戰利品已自動收入背包與名冊'}
               </p>
             </div>
           </div>
@@ -212,8 +219,16 @@ export default function BattleResultModals({
             </div>
           )}
 
-          {/* 底部按鈕（掃蕩戰敗時提供一鍵客棧休養） */}
+          {/* 底部按鈕 */}
           <div className="flex gap-2.5 pt-1">
+            {isAutoTowerNext && handleToggleAutoTower && (
+              <button
+                onClick={() => handleToggleAutoTower()}
+                className="flex-1 py-3 bg-rose-800 hover:bg-rose-700 text-rose-100 font-bold rounded-2xl text-xs sm:text-sm shadow-lg transition-all"
+              >
+                ⏹️ 停止自動爬塔
+              </button>
+            )}
             {isSweepDefeated && handleRestInn && (
               <button
                 onClick={() => {
@@ -229,10 +244,10 @@ export default function BattleResultModals({
             <button
               onClick={() => setVictorySummary(null)}
               className={`${
-                isSweepDefeated && handleRestInn ? 'px-5' : 'w-full'
+                (isSweepDefeated && handleRestInn) || isAutoTowerNext ? 'px-5' : 'w-full'
               } py-3 bg-amber-600 hover:bg-amber-500 text-slate-950 font-black rounded-2xl text-sm shadow-lg transition-all`}
             >
-              收下戰利品並繼續
+              {isAutoTowerNext ? '⏳ 即將自動挑戰下一層...' : '收下戰利品並繼續'}
             </button>
           </div>
         </div>
