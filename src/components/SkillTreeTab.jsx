@@ -11,9 +11,11 @@ export default function SkillTreeTab({
 }) {
   const statScaling = getPlayerStatScaling(player.job);
 
-  const handleLearnOrUpgradeSkill = (sIdx, unlockLevel) => {
+  const handleLearnOrUpgradeSkill = (sIdx, unlockLevel, reqPrevSkillLevel) => {
     const currentLvl = player.skillLevels?.[sIdx] || 0;
+    const prevLvl = sIdx > 0 ? (player.skillLevels?.[sIdx - 1] || 0) : 99;
     if ((player.level || 1) < unlockLevel) return;
+    if (sIdx > 0 && prevLvl < reqPrevSkillLevel) return;
     if ((player.sp || 0) <= 0 || currentLvl >= MAX_SKILL_LEVEL) return;
 
     setPlayer(p => ({
@@ -31,16 +33,26 @@ export default function SkillTreeTab({
     const st = sk.getStatsAtLevel(lvl);
     const parts = [];
     if (st.mult) parts.push(`技能倍率 ${(st.mult * 100).toFixed(0)}%`);
+    if (st.rageGain) parts.push(`回復 +${st.rageGain} 怒氣`);
+    if (st.ammoGain) parts.push(`回復 +${st.ammoGain} 彈藥`);
+    if (st.mpGain) parts.push(`回復 +${st.mpGain} MP`);
     if (st.shieldPct) parts.push(`最大生命 ${Math.round(st.shieldPct * 100)}% 護盾`);
-    if (st.breakPct) parts.push(`破甲降防 ${Math.round(st.breakPct * 100)}%`);
-    if (st.reflectPct) parts.push(`反彈傷害 ${Math.round(st.reflectPct * 100)}%`);
-    if (st.blindPct) parts.push(`致盲降命中 ${Math.round(st.blindPct * 100)}%`);
-    if (st.poisonPct) parts.push(`每回合劇毒 ${Math.round(st.poisonPct * 100)}% 最大血量`);
-    if (st.reviveHpPct) parts.push(`復活恢復 ${Math.round(st.reviveHpPct * 100)}% 血量`);
-    if (st.atkBuffPct) parts.push(`激發攻擊 +${Math.round(st.atkBuffPct * 100)}%`);
-    if (st.bonusDmgPct) parts.push(`連動增傷 +${Math.round(st.bonusDmgPct * 100)}%`);
-    if (st.reducePct) parts.push(`全隊減傷 ${Math.round(st.reducePct * 100)}%`);
+    if (st.guardSharePct) parts.push(`分擔隊友 ${Math.round(st.guardSharePct * 100)}% 傷害`);
+    if (st.lifestealPct) parts.push(`傷害 ${Math.round(st.lifestealPct * 100)}% 吸血`);
+    if (st.bleedMult) parts.push(`每回合流血 ${(st.bleedMult * 100).toFixed(0)}% 攻`);
+    if (st.burnMult) parts.push(`每回合灼燒 ${(st.burnMult * 100).toFixed(0)}% 攻`);
     if (st.vulnPct) parts.push(`全場易傷 +${Math.round(st.vulnPct * 100)}%`);
+    if (st.blindPct) parts.push(`致盲降命中 ${Math.round(st.blindPct * 100)}%`);
+    if (st.breakPct) parts.push(`破甲降防 ${Math.round(st.breakPct * 100)}%`);
+    if (st.poisonPct) parts.push(`每回合劇毒 ${Math.round(st.poisonPct * 100)}% 血`);
+    if (st.regenMult) parts.push(`每回合生機回血 ${(st.regenMult * 100).toFixed(0)}% 攻`);
+    if (st.atkBuffPct) parts.push(`全隊攻擊 +${Math.round(st.atkBuffPct * 100)}%`);
+    if (st.speedBonus) parts.push(`全隊速度 +${st.speedBonus}`);
+    if (st.critBonusPct) parts.push(`全隊暴擊 +${Math.round(st.critBonusPct * 100)}%`);
+    if (st.reducePct) parts.push(`全隊減傷 ${Math.round(st.reducePct * 100)}%`);
+    if (st.reflectPct) parts.push(`反彈傷害 ${Math.round(st.reflectPct * 100)}%`);
+    if (st.heroSkillBoostPct) parts.push(`英雄技能發動率 +${Math.round(st.heroSkillBoostPct * 100)}%`);
+    if (st.heroDmgBoostPct) parts.push(`英雄全傷害 +${Math.round(st.heroDmgBoostPct * 100)}%`);
     return parts.join(' • ');
   };
 
@@ -51,10 +63,10 @@ export default function SkillTreeTab({
           <div>
             <h2 className="font-extrabold text-amber-400 text-lg flex items-center gap-1.5">
               <Sparkles className="w-5 h-5" />
-              <span>✨ 【{player.job}】職業武學技能樹</span>
+              <span>✨ 【{player.job}】職業四招武學技能樹</span>
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              攻擊加成公式：<span className="text-amber-300 font-bold">{statScaling.primaryLabel}</span> • 每升 5 級解鎖新技能槽位
+              主屬性係數：<span className="text-amber-300 font-bold">{statScaling.primaryLabel}</span> • 創角自動習得前 2 招
             </p>
           </div>
           {setHelpModalTab && (
@@ -78,33 +90,40 @@ export default function SkillTreeTab({
         </div>
       </div>
 
-      {/* 解鎖與冷卻階梯說明橫幅 */}
-      <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-3.5 text-xs text-slate-300 flex flex-wrap justify-between gap-2">
+      {/* 雙重解鎖條件說明 */}
+      <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-3.5 text-xs text-slate-300 space-y-1">
         <div>
-          <span className="text-amber-300 font-bold">📜 進階學習門檻：</span>
-          第 1 招 <span className="text-emerald-300 font-bold">Lv.1 解鎖</span>（無冷卻循環技）、
-          第 2 招 <span className="text-cyan-300 font-bold">Lv.5 解鎖</span>（CD 2 回合）、
-          第 3 招 <span className="text-purple-300 font-bold">Lv.10 解鎖</span>（CD 4 回合）。
+          <span className="text-amber-300 font-bold">📜 雙重進階修煉門檻：</span>
+          第 1、2 招 <span className="text-emerald-300 font-bold">1 級自動習得</span>；
+          第 3 招需 <span className="text-cyan-300 font-bold">Lv.5 且第 2 招達 Lv.5</span>；
+          第 4 招需 <span className="text-purple-300 font-bold">Lv.10 且第 3 招達 Lv.5</span>。
         </div>
         <div className="text-slate-400">
-          未達新招等級前，可先將 SP 投資強化已解鎖技能（最高 Lv.{MAX_SKILL_LEVEL}）。
+          第 1 招取代無係數普攻（CD 0 基礎循環技），升級將同步提升攻擊倍率與職業資源回復量！
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {classSkills.map((sk, sIdx) => {
           const skLvl = player.skillLevels?.[sIdx] || 0;
-          const { unlockLevel, cooldown } = getSkillMeta(sk, sIdx);
+          const prevSkill = sIdx > 0 ? classSkills[sIdx - 1] : null;
+          const prevSkillLvl = sIdx > 0 ? (player.skillLevels?.[sIdx - 1] || 0) : 99;
+          const { unlockLevel, reqPrevSkillLevel, cooldown } = getSkillMeta(sk, sIdx);
+
           const isLevelLocked = (player.level || 1) < unlockLevel;
+          const isPrevSkillLocked = sIdx > 0 && reqPrevSkillLevel > 0 && prevSkillLvl < reqPrevSkillLevel;
+          const isLocked = isLevelLocked || isPrevSkillLocked;
           const isMaxed = skLvl >= MAX_SKILL_LEVEL;
-          const canUpgrade = !isLevelLocked && !isMaxed && (player.sp || 0) > 0;
+          const canUpgrade = !isLocked && !isMaxed && (player.sp || 0) > 0;
 
           const costLabel =
-            sk.costType === 'rage'
-              ? `${sk.cost} 怒氣`
-              : sk.costType === 'ammo'
-                ? `${sk.cost} 彈藥`
-                : `${sk.cost} 內力 (MP)`;
+            sk.cost === 0
+              ? '無消耗（回復資源）'
+              : sk.costType === 'rage'
+                ? `${sk.cost} 怒氣`
+                : sk.costType === 'ammo'
+                  ? `${sk.cost} 彈藥`
+                  : `${sk.cost} 內力 (MP)`;
 
           const currentSummary = formatSkillStatsSummary(sk, skLvl);
           const nextSummary = !isMaxed ? formatSkillStatsSummary(sk, skLvl + 1) : null;
@@ -113,25 +132,40 @@ export default function SkillTreeTab({
             <div
               key={sk.id}
               className={`rounded-2xl p-5 border flex flex-col justify-between space-y-4 transition-all ${
-                isLevelLocked
-                  ? 'bg-slate-950/50 border-slate-800/80 opacity-75'
+                isLocked
+                  ? 'bg-slate-950/50 border-slate-800/80 opacity-80'
                   : skLvl > 0
                     ? 'bg-slate-950 border-amber-500/50 shadow-lg'
                     : 'bg-slate-950/90 border-slate-700'
               }`}
             >
               <div className="space-y-2.5">
-                {/* 頂部解鎖等級與冷卻徽章 */}
-                <div className="flex items-center justify-between gap-1.5 text-[11px] font-mono font-bold">
-                  <span
-                    className={`px-2 py-0.5 rounded border ${
-                      isLevelLocked
-                        ? 'bg-rose-950/70 text-rose-300 border-rose-700/70'
-                        : 'bg-emerald-950/70 text-emerald-300 border-emerald-700/70'
-                    }`}
-                  >
-                    {isLevelLocked ? `🔒 Lv.${unlockLevel} 解鎖` : `✅ Lv.${unlockLevel} 門檻達成`}
-                  </span>
+                <div className="flex items-center justify-between gap-1.5 text-[11px] font-mono font-bold flex-wrap">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span
+                      className={`px-2 py-0.5 rounded border ${
+                        isLevelLocked
+                          ? 'bg-rose-950/70 text-rose-300 border-rose-700/70'
+                          : 'bg-emerald-950/70 text-emerald-300 border-emerald-700/70'
+                      }`}
+                    >
+                      {isLevelLocked ? `🔒 Lv.${unlockLevel}` : `✅ Lv.${unlockLevel}`}
+                    </span>
+
+                    {sIdx > 0 && reqPrevSkillLevel > 0 && (
+                      <span
+                        className={`px-2 py-0.5 rounded border ${
+                          isPrevSkillLocked
+                            ? 'bg-rose-950/70 text-rose-300 border-rose-700/70'
+                            : 'bg-emerald-950/70 text-emerald-300 border-emerald-700/70'
+                        }`}
+                      >
+                        {isPrevSkillLocked
+                          ? `🔒 需【${prevSkill?.name}】Lv.${reqPrevSkillLevel} (${prevSkillLvl}/${reqPrevSkillLevel})`
+                          : `✅ 前置 Lv.${reqPrevSkillLevel} 達成`}
+                      </span>
+                    )}
+                  </div>
 
                   <span
                     className={`px-2 py-0.5 rounded border flex items-center gap-1 ${
@@ -145,27 +179,23 @@ export default function SkillTreeTab({
                   </span>
                 </div>
 
-                {/* 技能名稱與等級 */}
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="font-extrabold text-amber-300 text-base">
-                    {sk.icon || '✨'} {sk.name}
+                    第 {sIdx + 1} 招・{sk.icon || '✨'} {sk.name}
                   </h3>
                   <span className="text-xs font-mono font-black bg-slate-900 text-amber-200 px-2.5 py-0.5 rounded-full border border-slate-700">
                     Lv.{skLvl} / {MAX_SKILL_LEVEL}
                   </span>
                 </div>
 
-                {/* 資源消耗 */}
                 <div className="text-xs font-mono text-cyan-300">
                   施放消耗：<span className="font-bold">{costLabel}</span>
                 </div>
 
-                {/* 技能敘述 */}
                 <p className="text-xs text-slate-300 leading-relaxed">
                   {sk.desc}
                 </p>
 
-                {/* 當前與下一級數值預覽 */}
                 <div className="space-y-1.5 pt-1">
                   {skLvl > 0 && currentSummary && (
                     <div className="bg-emerald-950/35 border border-emerald-700/50 rounded-xl p-2.5 text-[11px] text-emerald-200">
@@ -176,7 +206,7 @@ export default function SkillTreeTab({
                   {!isMaxed && nextSummary && (
                     <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2.5 text-[11px] text-slate-300">
                       <span className="text-amber-300 font-bold">
-                        {skLvl === 0 ? '學習後 (Lv.1)：' : `下一級 (Lv.${skLvl + 1})：`}
+                        {skLvl === 0 ? '領悟後 (Lv.1)：' : `下一級 (Lv.${skLvl + 1})：`}
                       </span>
                       {nextSummary}
                     </div>
@@ -184,12 +214,11 @@ export default function SkillTreeTab({
                 </div>
               </div>
 
-              {/* 學習 / 升級按鈕 */}
               <button
                 disabled={!canUpgrade}
-                onClick={() => handleLearnOrUpgradeSkill(sIdx, unlockLevel)}
+                onClick={() => handleLearnOrUpgradeSkill(sIdx, unlockLevel, reqPrevSkillLevel)}
                 className={`w-full py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 shadow ${
-                  isLevelLocked
+                  isLocked
                     ? 'bg-slate-900 text-rose-300/80 border border-rose-900/60 cursor-not-allowed'
                     : isMaxed
                       ? 'bg-emerald-950/60 text-emerald-300 border border-emerald-700/60 cursor-not-allowed'
@@ -202,6 +231,11 @@ export default function SkillTreeTab({
                   <>
                     <Lock className="w-3.5 h-3.5" />
                     <span>需主角達 Lv.{unlockLevel} 解鎖</span>
+                  </>
+                ) : isPrevSkillLocked ? (
+                  <>
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>需先將【{prevSkill?.name}】升至 Lv.{reqPrevSkillLevel}</span>
                   </>
                 ) : isMaxed ? (
                   <span>⭐ 已修煉至最高境界</span>
