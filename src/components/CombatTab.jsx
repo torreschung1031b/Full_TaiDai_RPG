@@ -1,8 +1,8 @@
 import React from 'react';
-import { ScrollText, Compass, HelpCircle } from 'lucide-react';
+import { ScrollText, Compass, HelpCircle, Zap } from 'lucide-react';
 import { ELEMENTS, ZONES } from '../data/constants';
 import { calculateHeroEffectiveStats, getElementMultiplier } from '../utils/statCalculator';
-import { getPlayerCritProfile, getSkillMeta } from '../utils/combatEngine';
+import { getPlayerCritProfile, getSkillMeta, getZoneSweepReqLevel } from '../utils/combatEngine';
 
 const ROW_LABELS = ['🛡️前排', '⚡中排', '✨後排'];
 
@@ -12,6 +12,7 @@ export default function CombatTab({
   currentZoneIndex,
   handleSelectZone,
   spawnEncounter,
+  handleSweepZone,
   setHelpModalTab,
   combatBuffs,
   classInfo,
@@ -39,6 +40,10 @@ export default function CombatTab({
   const playerHpPct = Math.max(0, Math.min(100, (player.hp / (playerTotalMaxHp || 1)) * 100));
   const playerElem = ELEMENTS[player.element];
   const { critRate: playerCritRate } = getPlayerCritProfile(player);
+
+  const sweepReqLevel = getZoneSweepReqLevel(currentZoneIndex);
+  const isSweepLevelUnlocked = (player.level || 1) >= sweepReqLevel;
+  const isSweepHpReady = (player.hp || 0) > 1;
 
   const getLogBaseStyle = (log) => {
     const txt = log.text || '';
@@ -285,19 +290,42 @@ export default function CombatTab({
                   💡 提示：你目前擁有 {player.sp} 點 SP，可先點擊上方「✨ 技能樹」學習首招職業技能！
                 </div>
               )}
-              <div className="pt-2 flex justify-center gap-3">
+              <div className="pt-2 flex flex-wrap justify-center gap-3">
                 <button
                   onClick={handleRestInn}
-                  className="px-4 py-2.5 bg-indigo-700 hover:bg-indigo-600 text-white rounded-xl font-bold text-xs shadow"
+                  className="px-4 py-2.5 bg-indigo-700 hover:bg-indigo-600 text-white rounded-xl font-bold text-xs shadow transition-all"
                 >
                   ☕ 客棧休息恢復滿血
                 </button>
                 <button
                   onClick={() => spawnEncounter(currentZoneIndex)}
-                  className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-slate-950 rounded-xl font-black text-xs shadow-lg"
+                  className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-slate-950 rounded-xl font-black text-xs shadow-lg transition-all"
                 >
                   🔍 立即主動搜敵
                 </button>
+                {handleSweepZone && (
+                  <button
+                    disabled={!isSweepLevelUnlocked || !isSweepHpReady}
+                    onClick={() => handleSweepZone(3)}
+                    title={
+                      !isSweepLevelUnlocked
+                        ? `需少俠達到 Lv.${sweepReqLevel} 解鎖此區域快速掃蕩`
+                        : !isSweepHpReady
+                          ? '少俠重傷瀕死，請先休養再掃蕩'
+                          : '連續自動掃蕩 3 場並承受真實戰損（戰敗即中止）'
+                    }
+                    className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-500 disabled:border disabled:border-slate-700 disabled:cursor-not-allowed text-white rounded-xl font-bold text-xs shadow transition-all flex items-center gap-1.5"
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>
+                      {!isSweepLevelUnlocked
+                        ? `🔒 掃蕩需 Lv.${sweepReqLevel}`
+                        : !isSweepHpReady
+                          ? '⚠️ 氣血過低無法掃蕩'
+                          : '⚡ 快速掃蕩 ×3'}
+                    </span>
+                  </button>
+                )}
               </div>
             </div>
           ) : (
