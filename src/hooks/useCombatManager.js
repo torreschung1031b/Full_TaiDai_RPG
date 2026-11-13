@@ -699,7 +699,7 @@ export function useCombatManager({
       return;
     }
 
-    const delay = victorySummary ? 1200 : 450;
+    const delay = victorySummary ? 3000 : 450;
     const timer = setTimeout(() => {
       if (victorySummary) setVictorySummary(null);
       autoBattleRef.current.spawnEncounter(autoBattleRef.current.currentZoneIndex);
