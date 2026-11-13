@@ -5,7 +5,8 @@ import {
   enrichEquipmentMeta,
   rollEquipmentFromTierRange,
   getRefineSuccessRate,
-  getCumulativeRefineBonusPct
+  getCumulativeRefineBonusPct,
+  rollRandomReforgeAffix
 } from '../data/equipment';
 import {
   getRandomElement,
@@ -13,9 +14,6 @@ import {
   normalizeHero
 } from '../utils/statCalculator';
 
-/**
- * 依權重表抽取指定 Tier
- */
 function rollWeightedTier(weights) {
   const total = weights.reduce((sum, w) => sum + w.weight, 0);
   let r = Math.random() * total;
@@ -87,7 +85,15 @@ export function useInventoryAndShop({
     addLog(`💰 已賣出【${meta.tierTag}・${item.name}】，獲得 +${meta.sellPrice} 金幣！`, 'sys');
   };
 
-  const handleBulkSellUnusableEquipment = () => {
+  /**
+   * 依勾選階級與裝備類型執行自訂批量出售
+   */
+  const handleBulkSellFilteredEquipment = ({
+    tiers = [1, 2],
+    types = ['weapon', 'offhand', 'helmet', 'armor', 'shoes', 'accessory'],
+    onlyUnusable = false,
+    protectModified = true
+  } = {}) => {
     if (isInCombat) {
       addLog(`🔒 戰鬥進行中，無法賣出裝備！`, 'sys');
       return;
@@ -98,9 +104,16 @@ export function useInventoryAndShop({
 
     equipmentInventory.forEach(item => {
       const meta = enrichEquipmentMeta(item);
-      const isUnusable = !meta.allowedJobs.includes(player.job);
-      const isClean = (item.refineLevel || 0) === 0 && !(item.sockets || []).some(Boolean);
-      if (isUnusable && isClean) {
+      const matchTier = tiers.includes(meta.tier);
+      const matchType = types.includes(meta.type);
+      const matchJob = !onlyUnusable || !meta.allowedJobs.includes(player.job);
+      const isModified =
+        (item.refineLevel || 0) > 0 ||
+        (item.sockets || []).some(Boolean) ||
+        Boolean(item.reforgeAffix);
+      const matchClean = !protectModified || !isModified;
+
+      if (matchTier && matchType && matchJob && matchClean) {
         totalGold += meta.sellPrice;
         soldCount += 1;
       } else {
@@ -109,22 +122,25 @@ export function useInventoryAndShop({
     });
 
     if (soldCount === 0) {
-      addLog(`ℹ️ 背包中沒有可一鍵清理的非本職白板裝備。`, 'sys');
+      addLog(`ℹ️ 背包中沒有符合勾選條件的可出售裝備。`, 'sys');
       return;
     }
 
     setEquipmentInventory(kept);
     setPlayer(p => ({ ...p, gold: p.gold + totalGold }));
-    addLog(`🧹 一鍵清理完成！共賣出 ${soldCount} 件非本職裝備，獲得 +${totalGold} 金幣！`, 'sys');
+    addLog(`🧹 批量清理完成！共出售 ${soldCount} 件指定裝備，獲得 +${totalGold} 金幣！`, 'sys');
   };
 
-  const handleRefineEquipment = (item) => {
+  const handleRefineEquipment = (item, useProtectScroll = false) => {
     if (isInCombat) {
       addLog(`🔒 戰鬥進行中，無法進行鐵匠精鍊！`, 'sys');
       return;
     }
     const level = item.refineLevel || 0;
     const goldCost = (level + 1) * 120;
+    const availableScrolls = player.protectScrolls || 0;
+    const willConsumeScroll = Boolean(useProtectScroll && level >= 4 && availableScrolls > 0);
+
     if (player.gold < goldCost || player.refineStones < 1) {
       setForgeFeedback({ type: 'danger', text: `⚠️ 金幣或精鍊石不足，無法強化【${item.name}】！` });
       return;
@@ -132,8 +148,20 @@ export function useInventoryAndShop({
 
     const successRate = getRefineSuccessRate(level);
     const isSuccess = Math.random() < successRate;
-    setPlayer(p => ({ ...p, gold: p.gold - goldCost, refineStones: p.refineStones - 1 }));
-    const nextLevel = isSuccess ? level + 1 : Math.max(0, level - 1);
+
+    setPlayer(p => ({
+      ...p,
+      gold: p.gold - goldCost,
+      refineStones: p.refineStones - 1,
+      protectScrolls: willConsumeScroll ? Math.max(0, (p.protectScrolls || 0) - 1) : (p.protectScrolls || 0)
+    }));
+
+    const nextLevel = isSuccess
+      ? level + 1
+      : willConsumeScroll
+        ? level
+        : Math.max(0, level - 1);
+
     const updated = { ...item, refineLevel: nextLevel };
 
     setEquipmentInventory(prev => prev.map(i => i.uid === item.uid ? updated : i));
@@ -144,9 +172,45 @@ export function useInventoryAndShop({
     const nextBonusPct = Math.round(getCumulativeRefineBonusPct(nextLevel) * 100);
     const msg = isSuccess
       ? `🔨 精鍊成功！【${item.name}】強化至 +${nextLevel}（基礎屬性累計額外 +${nextBonusPct}%）！`
-      : `💥 精鍊失敗（成功率 ${Math.round(successRate * 100)}%）！【${item.name}】靈氣震盪，精鍊等級為 +${nextLevel}（基礎屬性累計 +${nextBonusPct}%）！`;
-    setForgeFeedback({ type: isSuccess ? 'success' : 'danger', text: msg });
+      : willConsumeScroll
+        ? `🛡️ 精鍊失敗，但【天工保底符】生效護持！【${item.name}】維持 +${nextLevel} 未降級！`
+        : `💥 精鍊失敗（成功率 ${Math.round(successRate * 100)}%）！【${item.name}】靈氣震盪，精鍊等級降為 +${nextLevel}！`;
+
+    setForgeFeedback({ type: isSuccess ? 'success' : willConsumeScroll ? 'info' : 'danger', text: msg });
     addLog(msg, isSuccess ? 'sys' : 'danger');
+  };
+
+  /**
+   * 神兵副詞條洗鍊（消耗 250 金幣 + 1 精鍊石）
+   */
+  const handleReforgeEquipment = (item) => {
+    if (isInCombat) {
+      addLog(`🔒 戰鬥進行中，無法洗鍊神兵！`, 'sys');
+      return;
+    }
+    const reforgeGold = 250;
+    if (player.gold < reforgeGold || player.refineStones < 1) {
+      setForgeFeedback({ type: 'danger', text: `⚠️ 金幣（需 ${reforgeGold}）或精鍊石（需 1 顆）不足，無法洗鍊【${item.name}】！` });
+      return;
+    }
+
+    const newAffix = rollRandomReforgeAffix(item.reforgeAffix?.id);
+    const updated = { ...item, reforgeAffix: newAffix };
+
+    setPlayer(p => ({
+      ...p,
+      gold: p.gold - reforgeGold,
+      refineStones: p.refineStones - 1
+    }));
+
+    setEquipmentInventory(prev => prev.map(i => i.uid === item.uid ? updated : i));
+    if (player.equipped[item.type]?.uid === item.uid) {
+      setPlayer(p => ({ ...p, equipped: { ...p.equipped, [item.type]: updated } }));
+    }
+
+    const msg = `✨ 神兵洗鍊成功！【${item.name}】獲得新詞條【${newAffix.name}：${newAffix.desc}】！`;
+    setForgeFeedback({ type: 'success', text: msg });
+    addLog(msg, 'sys');
   };
 
   const handleSocketGem = (item, gem, socketIdx) => {
@@ -208,6 +272,14 @@ export function useInventoryAndShop({
         refineStones: p.refineStones + gained
       }));
       rewardMsg = `💠 成功購入【精鍊石袋 ×${gained}】，目前持有 ${player.refineStones + gained} 顆！`;
+    } else if (shopItem.id === 'protect_scroll') {
+      const nextScrolls = (player.protectScrolls || 0) + count;
+      setPlayer(p => ({
+        ...p,
+        gold: p.gold - totalPrice,
+        protectScrolls: nextScrolls
+      }));
+      rewardMsg = `🛡️ 成功購入【天工保底符 ×${count}】，目前持有 ${nextScrolls} 張（強化 +4 以上失敗時可防降級）！`;
     } else if (shopItem.id === 'ration_full') {
       setPlayer(p => ({
         ...p,
@@ -301,8 +373,9 @@ export function useInventoryAndShop({
     handleEquipItem,
     handleUnequipItem,
     handleSellEquipment,
-    handleBulkSellUnusableEquipment,
+    handleBulkSellFilteredEquipment,
     handleRefineEquipment,
+    handleReforgeEquipment,
     handleSocketGem,
     handleShopPurchase
   };
