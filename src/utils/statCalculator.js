@@ -8,6 +8,18 @@ export function getRandomElement() {
 }
 
 /**
+ * 統一經驗值曲線（主角與所有英雄共用，起始 100，每級 ×1.45）
+ */
+export function getMaxExpForLevel(level = 1) {
+  let req = 100;
+  const safeLvl = Math.max(1, Math.floor(level));
+  for (let i = 1; i < safeLvl; i++) {
+    req = Math.floor(req * 1.8);
+  }
+  return req;
+}
+
+/**
  * 計算五行生剋傷害倍率
  * - 剋制：一般 1.30x / 術士 1.45x
  * - 被剋：0.75x
@@ -24,7 +36,7 @@ export function getElementMultiplier(attElem, defElem, isWarlock = false) {
 }
 
 /**
- * 規範化並自動補齊舊存檔英雄欄位（包含最新實裝的本命天賦 traitBonus）
+ * 規範化並自動補齊舊存檔英雄欄位（包含最新實裝的本命天賦 traitBonus 與同步經驗曲線）
  */
 export function normalizeHero(hero) {
   if (!hero) return hero;
@@ -56,7 +68,7 @@ export function normalizeHero(hero) {
     traitBonus: hero.traitBonus || tpl?.traitBonus || {},
     level,
     exp: level >= MAX_LEVEL ? 0 : (hero.exp || 0),
-    maxExp: hero.maxExp || Math.floor(100 * Math.pow(level, 1.3)),
+    maxExp: getMaxExpForLevel(level),
     fusionLevel,
     stats,
     maxHp: hero.maxHp || fallbackMaxHp,
