@@ -35,6 +35,22 @@ function selectSmartTarget(aliveTargets, heroElement) {
   return scored[0].monster;
 }
 
+// 選取有限數量的群攻目標（優先包含智能鎖定的主目標，不再打全場）
+function selectAoeTargets(aliveTargets, primaryTarget, maxCount = 2) {
+  if (aliveTargets.length <= maxCount) return aliveTargets;
+  const picked = [];
+  if (primaryTarget && primaryTarget.hp > 0) {
+    picked.push(primaryTarget);
+  }
+  const rest = aliveTargets.filter(m => m.id !== primaryTarget?.id);
+  while (picked.length < maxCount && rest.length > 0) {
+    const rIdx = Math.floor(Math.random() * rest.length);
+    picked.push(rest[rIdx]);
+    rest.splice(rIdx, 1);
+  }
+  return picked;
+}
+
 function applyHeroSkillDebuff(monster, skill, heroAtk, heroClass) {
   const rawEffect = skill?.effect || skill?.debuff;
   if (!rawEffect || !monster || monster.hp <= 0) return '';
@@ -47,31 +63,31 @@ function applyHeroSkillDebuff(monster, skill, heroAtk, heroClass) {
   switch (rawEffect) {
     case 'armorBreak':
       monster.armorBreakTurns = Math.max(monster.armorBreakTurns || 0, turns);
-      monster.armorBreakPct = Math.max(monster.armorBreakPct || 0, 0.25);
+      monster.armorBreakPct = Math.max(monster.armorBreakPct || 0, 0.20);
       return `【破甲${turns}T】`;
     case 'weaken':
       monster.weakenTurns = Math.max(monster.weakenTurns || 0, turns);
-      monster.weakenPct = Math.max(monster.weakenPct || 0, 0.25);
+      monster.weakenPct = Math.max(monster.weakenPct || 0, 0.20);
       return `【虛弱${turns}T】`;
     case 'vuln':
       monster.vulnTurns = Math.max(monster.vulnTurns || 0, turns);
-      monster.vulnPct = Math.max(monster.vulnPct || 0, 0.25);
+      monster.vulnPct = Math.max(monster.vulnPct || 0, 0.20);
       return `【易傷${turns}T】`;
     case 'blind':
       monster.blindTurns = Math.max(monster.blindTurns || 0, turns);
       return `【致盲${turns}T】`;
     case 'burn':
       monster.burnTurns = Math.max(monster.burnTurns || 0, turns);
-      monster.burnDmg = Math.max(monster.burnDmg || 0, Math.floor(heroAtk * 0.35));
+      monster.burnDmg = Math.max(monster.burnDmg || 0, Math.floor(heroAtk * 0.25));
       return `【灼燒${turns}T】`;
     case 'bleed':
       monster.bleedTurns = Math.max(monster.bleedTurns || 0, turns);
-      monster.bleedDmg = Math.max(monster.bleedDmg || 0, Math.floor(heroAtk * 0.35));
+      monster.bleedDmg = Math.max(monster.bleedDmg || 0, Math.floor(heroAtk * 0.25));
       return `【流血${turns}T】`;
     case 'poison':
       monster.poisonTurns = Math.max(monster.poisonTurns || 0, turns);
-      monster.poisonStacks = Math.min(5, (monster.poisonStacks || 0) + 1);
-      monster.poisonPct = Math.max(monster.poisonPct || 0, 0.08);
+      monster.poisonStacks = Math.min(4, (monster.poisonStacks || 0) + 1);
+      monster.poisonPct = Math.max(monster.poisonPct || 0, 0.06);
       return `【劇毒×${monster.poisonStacks}】`;
     default:
       return '';
@@ -132,14 +148,14 @@ export function executeSingleHeroAction({
   const windAtkMult = currentBuffs?.windBuffTurns > 0 ? (1 + (currentBuffs.windAtkPct || 0)) : 1.0;
   const windSpeedAdd = currentBuffs?.windBuffTurns > 0 ? (currentBuffs.windSpeedBonus || 0) : 0;
   const windCritAdd = currentBuffs?.windBuffTurns > 0 ? (currentBuffs.windCritPct || 0) : 0;
-  const tianjiSkillBoost = currentBuffs?.tianjiTurns > 0 ? (currentBuffs.tianjiSkillBoostPct || 0.35) : 0;
-  const tianjiDmgMult = currentBuffs?.tianjiTurns > 0 ? (1 + (currentBuffs.tianjiDmgBoostPct || 0.20)) : 1.0;
+  const tianjiSkillBoost = currentBuffs?.tianjiTurns > 0 ? (currentBuffs.tianjiSkillBoostPct || 0.25) : 0;
+  const tianjiDmgMult = currentBuffs?.tianjiTurns > 0 ? (1 + (currentBuffs.tianjiDmgBoostPct || 0.15)) : 1.0;
 
   const finalHeroAtk = Math.floor(effectiveAtk * windAtkMult * tianjiDmgMult);
   const finalHeroSpeed = effectiveSpeed + windSpeedAdd;
 
   const { critRate: baseHCritRate, critDamage: baseHCritDmg } = getHeroCritProfile(h);
-  const hCritRate = Math.min(0.90, baseHCritRate + windCritAdd + critRateBonus);
+  const hCritRate = Math.min(0.85, baseHCritRate + windCritAdd + critRateBonus);
   const hCritDmg = baseHCritDmg + critDmgBonus;
 
   const isHealTarget = (t) => t === 'heal' || t === 'heal_single';
@@ -161,20 +177,21 @@ export function executeSingleHeroAction({
   }));
 
   const fusionLevel = Math.min(5, h.fusionLevel || 0);
-  const dualCardBonusChance = (h.activeSkillSlots || []).length >= 2 ? 0.10 : 0;
-  const emergencyHealBoost = (anyAllyLow && skillPool.some(s => isHealTarget(s.target))) ? 0.24 : 0;
+  const dualCardBonusChance = (h.activeSkillSlots || []).length >= 2 ? 0.06 : 0;
+  const emergencyHealBoost = (anyAllyLow && skillPool.some(s => isHealTarget(s.target))) ? 0.20 : 0;
   const boostedSkillChance = Math.min(
-    0.95,
-    Math.max(skillChance, 0.48) + dualCardBonusChance + (fusionLevel * 0.04) + tianjiSkillBoost + emergencyHealBoost
+    0.88,
+    Math.max(skillChance, 0.42) + dualCardBonusChance + (fusionLevel * 0.03) + tianjiSkillBoost + emergencyHealBoost
   );
 
   const shouldCastSkill = skillPool.length > 0 && (forceSkill || Math.random() < boostedSkillChance);
 
+  // 收斂異常狀態共鳴加成：由 +25% 降至 +15%
   const checkStatusSynergy = (targetM) => {
     const hasDot = (targetM.burnTurns > 0) || (targetM.bleedTurns > 0) || (targetM.poisonTurns > 0);
     const isPhysHero = ['猛將', '巧匠'].includes(h.heroClass);
-    const vulnCritBonus = (isPhysHero && targetM.vulnTurns > 0) ? 0.15 : 0;
-    return { synergyMult: hasDot ? 1.25 : 1.0, hasDot, vulnCritBonus };
+    const vulnCritBonus = (isPhysHero && targetM.vulnTurns > 0) ? 0.10 : 0;
+    return { synergyMult: hasDot ? 1.15 : 1.0, hasDot, vulnCritBonus };
   };
 
   let totalDealtDamageThisTurn = 0;
@@ -230,7 +247,7 @@ export function executeSingleHeroAction({
     if (!currentBuffs) return '';
     let addedShield = 0;
     if (skillToCast.shieldRatio > 0) {
-      addedShield += Math.floor(finalHeroAtk * skillToCast.shieldRatio * fusionScale);
+      addedShield += Math.floor(finalHeroAtk * skillToCast.shieldRatio * 0.75 * fusionScale);
     }
     if (skillToCast.shieldPct > 0) {
       addedShield += Math.floor(selfMaxHp * skillToCast.shieldPct);
@@ -243,29 +260,35 @@ export function executeSingleHeroAction({
   };
 
   const castHeroSkill = (skillToCast, echoPowerMult = 1.0, isEchoCast = false) => {
-    const fusionScale = 1 + (fusionLevel * 0.12);
-    const cardBonusScale = skillToCast.isSignature ? 1.0 : (1.20 + ((h.activeSkillSlots || []).length >= 2 ? 0.12 : 0));
-    const mult = (skillToCast.mult || 1.7) * fusionScale * cardBonusScale * echoPowerMult * (1 + extraBonusMult);
+    // 收斂星級技能成長：每星 +6%（原本 +12%），並移除技能卡額外 1.2x 膨脹倍率
+    const fusionScale = 1 + (fusionLevel * 0.06);
+    const sigBalanceScale = skillToCast.isSignature ? 0.78 : 1.0;
+    const mult = (skillToCast.mult || 1.25) * sigBalanceScale * fusionScale * echoPowerMult * (1 + extraBonusMult);
     const echoPrefix = isEchoCast ? '【★+5 無雙連攜】' : '';
     const skillLabel = skillToCast.isSignature ? `絕學【${skillToCast.name}】` : `技能卡【${skillToCast.name}】`;
-    const combinedIgnoreDef = Math.min(0.85, innateIgnoreDef + (skillToCast.ignoreDefPct || 0));
+    const combinedIgnoreDef = Math.min(0.70, innateIgnoreDef + (skillToCast.ignoreDefPct || 0));
 
     if (skillToCast.lifestealPct > 0) {
       extraSkillLifestealPct = Math.max(extraSkillLifestealPct, skillToCast.lifestealPct);
     }
 
     if (skillToCast.target === 'aoe') {
+      // 群攻數量上限控制：預設最多 2～3 名敵軍，不再打全場
+      const maxAoeCount = skillToCast.maxTargets || (skillToCast.isSignature ? 3 : 2);
+      const curAlive = currentMonsters.filter(m => m.hp > 0);
+      const aoeTargets = selectAoeTargets(curAlive, validTarget, maxAoeCount);
+
       let totalAoeDmg = 0;
       let anyAoeCrit = false;
       const appliedTags = new Set();
 
-      currentMonsters.forEach(m => {
+      aoeTargets.forEach(m => {
         if (m.hp > 0) {
           const { synergyMult, vulnCritBonus } = checkStatusSynergy(m);
           const { dmg, isCrit } = calculateDamageToMonster(finalHeroAtk * mult * synergyMult, m, h.element, {
             ignoreDefPct: combinedIgnoreDef,
             extraElemPct: elemDmgPct,
-            critRate: Math.min(0.95, hCritRate + vulnCritBonus),
+            critRate: Math.min(0.88, hCritRate + vulnCritBonus),
             critDamage: hCritDmg
           });
           m.hp = Math.max(0, m.hp - dmg);
@@ -281,8 +304,9 @@ export function executeSingleHeroAction({
 
       const effStr = appliedTags.size > 0 ? ` ${[...appliedTags].join('')}` : '';
       const shieldStr = applySkillShieldIfAny(skillToCast, fusionScale);
+      const hitCountNote = curAlive.length > aoeTargets.length ? `（波及 ${aoeTargets.length}/${curAlive.length} 敵）` : `（命中 ${aoeTargets.length} 敵）`;
       logs.push({
-        text: `${echoPrefix}${heroTitle} 施展${skillLabel}，橫掃全場造成 ${totalAoeDmg} 傷害${effStr}${shieldStr}！`,
+        text: `${echoPrefix}${heroTitle} 施展${skillLabel}${hitCountNote}，造成 ${totalAoeDmg} 總傷害${effStr}${shieldStr}！`,
         type: 'hero',
         dmgRole: anyAoeCrit ? 'player_crit' : 'player_normal',
         isSubEvent: isEchoCast
@@ -294,7 +318,7 @@ export function executeSingleHeroAction({
 
       let regenText = '';
       if (skillToCast.teamRegenTurns > 0 && currentBuffs) {
-        const regenVal = Math.max(15, Math.floor(finalHeroAtk * 0.45));
+        const regenVal = Math.max(12, Math.floor(finalHeroAtk * 0.30));
         currentBuffs.teamRegenTurns = Math.max(currentBuffs.teamRegenTurns || 0, skillToCast.teamRegenTurns);
         currentBuffs.teamRegenVal = Math.max(currentBuffs.teamRegenVal || 0, regenVal);
         regenText = `，附帶 ${skillToCast.teamRegenTurns}T 緩回(+${regenVal}/T)`;
@@ -326,9 +350,9 @@ export function executeSingleHeroAction({
         const execMult = isExecute ? (1 + skillToCast.executeBonusPct) : 1.0;
 
         const { dmg, isCrit } = calculateDamageToMonster(finalHeroAtk * mult * synergyMult * execMult, stTarget, h.element, {
-          ignoreDefPct: Math.min(0.85, combinedIgnoreDef + 0.15),
+          ignoreDefPct: Math.min(0.75, combinedIgnoreDef + 0.08),
           extraElemPct: elemDmgPct,
-          critRate: Math.min(0.95, hCritRate + 0.12 + vulnCritBonus),
+          critRate: Math.min(0.88, hCritRate + 0.08 + vulnCritBonus),
           critDamage: hCritDmg
         });
         stTarget.hp = Math.max(0, stTarget.hp - dmg);
@@ -339,7 +363,7 @@ export function executeSingleHeroAction({
         const shieldStr = applySkillShieldIfAny(skillToCast, fusionScale);
         let hybridHealText = '';
         if (isPharmacist && skillToCast.healTeamRatio > 0) {
-          const hVal = Math.floor(finalHeroAtk * skillToCast.healTeamRatio * fusionScale);
+          const hVal = Math.floor(finalHeroAtk * skillToCast.healTeamRatio * 0.75 * fusionScale);
           healAllAllies(hVal);
           hybridHealText = `，全隊回血 +${hVal}`;
         }
@@ -355,7 +379,7 @@ export function executeSingleHeroAction({
     }
 
     if (!isEchoCast && shieldOnSkillPct > 0 && currentBuffs) {
-      const traitShield = Math.floor(finalHeroAtk * shieldOnSkillPct);
+      const traitShield = Math.floor(finalHeroAtk * shieldOnSkillPct * 0.75);
       if (traitShield > 0) {
         currentBuffs.shield = (currentBuffs.shield || 0) + traitShield;
         logs.push({
@@ -376,15 +400,15 @@ export function executeSingleHeroAction({
 
     castHeroSkill(chosenSkill, 1.0, false);
 
-    if (fusionLevel >= 5 && currentMonsters.some(m => m.hp > 0) && Math.random() < 0.25) {
-      castHeroSkill(chosenSkill, 0.65, true);
+    if (fusionLevel >= 5 && currentMonsters.some(m => m.hp > 0) && Math.random() < 0.20) {
+      castHeroSkill(chosenSkill, 0.50, true);
     }
   } else {
     const { synergyMult, hasDot, vulnCritBonus } = checkStatusSynergy(validTarget);
     const { dmg, isCrit } = calculateDamageToMonster(finalHeroAtk * synergyMult, validTarget, h.element, {
       ignoreDefPct: innateIgnoreDef,
       extraElemPct: elemDmgPct,
-      critRate: Math.min(0.92, hCritRate + vulnCritBonus),
+      critRate: Math.min(0.85, hCritRate + vulnCritBonus),
       critDamage: hCritDmg
     });
     validTarget.hp = Math.max(0, validTarget.hp - dmg);
@@ -399,11 +423,11 @@ export function executeSingleHeroAction({
 
     const targetSpeed = getMonsterSpeed(validTarget);
     const { doubleStrikeRate } = getSpeedAdvantage(finalHeroSpeed, targetSpeed);
-    const totalFollowChance = Math.min(0.85, doubleStrikeRate + doubleHitPct);
+    const totalFollowChance = Math.min(0.75, doubleStrikeRate + doubleHitPct);
 
     if (validTarget.hp > 0 && totalFollowChance > 0 && Math.random() < totalFollowChance) {
       const { dmg: followDmg, isCrit: followCrit } = calculateDamageToMonster(
-        finalHeroAtk * 0.58,
+        finalHeroAtk * 0.50,
         validTarget,
         h.element,
         {
@@ -426,7 +450,7 @@ export function executeSingleHeroAction({
     }
   }
 
-  const totalLifestealPct = Math.min(0.65, lifestealPct + extraSkillLifestealPct);
+  const totalLifestealPct = Math.min(0.45, lifestealPct + extraSkillLifestealPct);
   if (totalLifestealPct > 0 && totalDealtDamageThisTurn > 0) {
     const drainHp = Math.max(1, Math.floor(totalDealtDamageThisTurn * totalLifestealPct));
     updatedRoster = updatedRoster.map(ally => {
@@ -440,7 +464,7 @@ export function executeSingleHeroAction({
   }
 
   if (isPharmacist && autoHealPct > 0) {
-    const mendVal = Math.max(8, Math.floor(finalHeroAtk * autoHealPct));
+    const mendVal = Math.max(6, Math.floor(finalHeroAtk * autoHealPct * 0.75));
     let lowestTarget = { id: 'PLAYER', ratio: currentPlayer.hp / Math.max(1, playerTotalMaxHp) };
 
     updatedRoster.forEach(ally => {
