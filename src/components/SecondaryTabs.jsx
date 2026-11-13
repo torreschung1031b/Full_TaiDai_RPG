@@ -1,9 +1,15 @@
 import React, { useState, useMemo } from 'react';
-import { Sparkles, HelpCircle, Hammer, Gem, RotateCcw, Check, Target, Sliders } from 'lucide-react';
+import { Sparkles, HelpCircle, Hammer, Gem, RotateCcw, Check, Target, Sliders, ShieldCheck, Wand2 } from 'lucide-react';
 import { MAX_LEVEL, ELEMENTS } from '../data/constants';
 import { FORMATIONS_CONFIG } from '../data/formations';
 import { HERO_TEMPLATES } from '../data/heroes';
-import { GEMS_DB, enrichEquipmentMeta } from '../data/equipment';
+import {
+  GEMS_DB,
+  enrichEquipmentMeta,
+  getRefineSuccessRate,
+  getNextRefineIncrementPct,
+  getActiveSetBonuses
+} from '../data/equipment';
 import { getPlayerStatScaling, getPlayerCritProfile } from '../utils/combatEngine';
 
 export const CODEX_MILESTONES = [
@@ -59,19 +65,18 @@ export function CharacterTab({
 
   const statScaling = getPlayerStatScaling(player.job);
   const { critRate } = getPlayerCritProfile(player);
+  const activeSets = useMemo(() => getActiveSetBonuses(player.equipped), [player.equipped]);
 
   const isWarrior = player.job === '猛將';
   const isArtisan = player.job === '巧匠';
   const isWarlock = player.job === '術士';
   const isMagic = ['術士', '藥師', '風水師'].includes(player.job);
 
-  // 確保不會超出當前實際可用點數
   const totalDraftUsed = draftAlloc.str + draftAlloc.con + draftAlloc.int + draftAlloc.agi;
   const safeDraft = totalDraftUsed <= player.statPoints ? draftAlloc : { str: 0, con: 0, int: 0, agi: 0 };
   const activeDraftSum = safeDraft.str + safeDraft.con + safeDraft.int + safeDraft.agi;
   const remainingPoints = Math.max(0, player.statPoints - activeDraftSum);
 
-  // 計算預分配後的最終屬性與增幅差值（依據現有屬性反推總倍率係數，確保 100% 吻合）
   const previewMetrics = useMemo(() => {
     const previewStats = {
       str: player.stats.str + safeDraft.str,
@@ -86,7 +91,6 @@ export function CharacterTab({
     const rawConDefDelta = safeDraft.con * statScaling.conDef;
     const rawAgiSpdDelta = safeDraft.agi * 1;
 
-    // 推算包含裝備/陣法/圖鑑的總百分比乘數
     const baseHpBeforeMult = Math.max(1, player.maxHp + player.stats.con * statScaling.conHp);
     const hpMult = Math.max(1, playerTotalMaxHp / baseHpBeforeMult);
 
@@ -161,15 +165,12 @@ export function CharacterTab({
     let next = { str: 0, con: 0, int: 0, agi: 0 };
 
     if (isWarrior) {
-      // 猛將：70% 力量 + 30% 體質
       const strPts = Math.ceil(pts * 0.7);
       next = { str: strPts, con: pts - strPts, int: 0, agi: 0 };
     } else if (isArtisan) {
-      // 巧匠：75% 敏捷 + 25% 力量
       const agiPts = Math.ceil(pts * 0.75);
       next = { str: pts - agiPts, con: 0, int: 0, agi: agiPts };
     } else {
-      // 術士 / 藥師 / 風水師：85% 智力 + 15% 敏捷（先手與暴擊）
       const intPts = Math.ceil(pts * 0.85);
       next = { str: 0, con: 0, int: intPts, agi: pts - intPts };
     }
@@ -198,7 +199,6 @@ export function CharacterTab({
     setAllocFeedback({ type: 'success', text: `✨ 屬性配點完成！【${parts.join('、')}】已永久融入奇經八脈！` });
   };
 
-  // 洗點計算（退還所有超出基礎 10 點的已分配屬性）
   const investedPoints =
     Math.max(0, player.stats.str - BASE_INITIAL_STAT) +
     Math.max(0, player.stats.con - BASE_INITIAL_STAT) +
@@ -293,7 +293,6 @@ export function CharacterTab({
 
   return (
     <div className="bg-slate-900/80 border border-slate-800/80 rounded-3xl p-6 shadow-2xl backdrop-blur space-y-6 max-w-5xl mx-auto">
-      {/* 頂部角色資訊與資源列 */}
       <div className="flex flex-wrap justify-between items-center gap-3 border-b border-slate-800 pb-4">
         <div>
           <h2 className="font-extrabold text-amber-400 text-lg">👤 少俠根骨與屬性配點</h2>
@@ -334,7 +333,35 @@ export function CharacterTab({
         <p className="text-xs text-slate-300 leading-relaxed">{classInfo.passiveDesc}</p>
       </div>
 
-      {/* 綜合戰鬥屬性面板（含預分配即時增幅預覽） */}
+      {/* 套裝共鳴顯性化狀態列 */}
+      {activeSets.length > 0 && (
+        <div className="bg-amber-950/25 border border-amber-500/45 rounded-2xl p-4 space-y-2.5">
+          <div className="text-xs font-extrabold text-amber-300 flex items-center gap-1.5">
+            <span>🔮 目前神兵套裝共鳴</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {activeSets.map(s => (
+              <div key={s.setId} className="bg-slate-950/90 border border-slate-800 rounded-xl p-3 space-y-1.5">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className="text-amber-300">【{s.name}】</span>
+                  <span className={`font-mono px-2 py-0.5 rounded ${s.hasAnyUnlocked ? 'bg-emerald-950 text-emerald-300 border border-emerald-700' : 'bg-slate-900 text-slate-400'}`}>
+                    已穿戴 {s.count} / {s.maxPieces} 件
+                  </span>
+                </div>
+                <div className="space-y-1 text-[11px]">
+                  {s.tiers.map(t => (
+                    <div key={t.pieces} className={t.unlocked ? 'text-emerald-300 font-bold' : 'text-slate-500'}>
+                      {t.unlocked ? '✅' : '⬜'} ({t.pieces}件套) {t.desc}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 綜合戰鬥屬性面板 */}
       <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-5 space-y-4">
         <div className="flex justify-between items-center flex-wrap gap-2">
           <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
@@ -357,9 +384,7 @@ export function CharacterTab({
               {player.hp} / {previewMetrics.nextMaxHp}
             </div>
             {previewMetrics.deltaHp > 0 && (
-              <div className="text-[11px] font-black text-emerald-400 mt-0.5">
-                (+{previewMetrics.deltaHp})
-              </div>
+              <div className="text-[11px] font-black text-emerald-400 mt-0.5">(+{previewMetrics.deltaHp})</div>
             )}
           </div>
 
@@ -373,9 +398,7 @@ export function CharacterTab({
                   : `${player.mp}/${previewMetrics.nextMaxMp}`}
             </div>
             {!['猛將', '巧匠'].includes(player.job) && previewMetrics.deltaMp > 0 && (
-              <div className="text-[11px] font-black text-emerald-400 mt-0.5">
-                (+{previewMetrics.deltaMp})
-              </div>
+              <div className="text-[11px] font-black text-emerald-400 mt-0.5">(+{previewMetrics.deltaMp})</div>
             )}
           </div>
 
@@ -383,9 +406,7 @@ export function CharacterTab({
             <div className="text-[11px] text-slate-400">{isMagic ? '🔮 法術攻擊' : '⚔️ 總攻擊力'}</div>
             <div className="text-sm font-bold text-amber-300 mt-1">{previewMetrics.nextAtk}</div>
             {previewMetrics.deltaAtk > 0 && (
-              <div className="text-[11px] font-black text-emerald-400 mt-0.5">
-                (+{previewMetrics.deltaAtk})
-              </div>
+              <div className="text-[11px] font-black text-emerald-400 mt-0.5">(+{previewMetrics.deltaAtk})</div>
             )}
           </div>
 
@@ -393,9 +414,7 @@ export function CharacterTab({
             <div className="text-[11px] text-slate-400">🛡️ 總防禦力</div>
             <div className="text-sm font-bold text-indigo-300 mt-1">{previewMetrics.nextDef}</div>
             {previewMetrics.deltaDef > 0 && (
-              <div className="text-[11px] font-black text-emerald-400 mt-0.5">
-                (+{previewMetrics.deltaDef})
-              </div>
+              <div className="text-[11px] font-black text-emerald-400 mt-0.5">(+{previewMetrics.deltaDef})</div>
             )}
           </div>
 
@@ -403,9 +422,7 @@ export function CharacterTab({
             <div className="text-[11px] text-slate-400">⚡ 行動速度</div>
             <div className="text-sm font-bold text-emerald-300 mt-1">{previewMetrics.nextSpeed}</div>
             {previewMetrics.deltaSpeed > 0 && (
-              <div className="text-[11px] font-black text-emerald-400 mt-0.5">
-                (+{previewMetrics.deltaSpeed})
-              </div>
+              <div className="text-[11px] font-black text-emerald-400 mt-0.5">(+{previewMetrics.deltaSpeed})</div>
             )}
           </div>
 
@@ -413,15 +430,13 @@ export function CharacterTab({
             <div className="text-[11px] text-slate-400">💥 暴擊機率</div>
             <div className="text-sm font-bold text-orange-300 mt-1">{previewMetrics.nextCritPct}%</div>
             {previewMetrics.deltaCritPct > 0 && (
-              <div className="text-[11px] font-black text-emerald-400 mt-0.5">
-                (+{previewMetrics.deltaCritPct}%)
-              </div>
+              <div className="text-[11px] font-black text-emerald-400 mt-0.5">(+{previewMetrics.deltaCritPct}%)</div>
             )}
           </div>
         </div>
       </div>
 
-      {/* 配點快捷操作列：一鍵推薦、確認分配、取消重設、洗髓重配 */}
+      {/* 配點快捷操作列 */}
       <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5 mr-1">
@@ -472,7 +487,6 @@ export function CharacterTab({
         )}
       </div>
 
-      {/* 操作提示訊息 */}
       {allocFeedback && (
         <div
           className={`rounded-2xl p-3 border text-xs font-bold flex items-center gap-2 ${
@@ -486,7 +500,7 @@ export function CharacterTab({
         </div>
       )}
 
-      {/* 四維屬性卡片（支援 -1 / +1 / +5 / ALL 批量調配與佔比條） */}
+      {/* 四維屬性卡片 */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map(st => {
           const finalVal = st.baseVal + st.draftVal;
@@ -504,7 +518,6 @@ export function CharacterTab({
               }`}
             >
               <div className="space-y-2">
-                {/* 標題與核心標籤 */}
                 <div className="flex items-center justify-between gap-1">
                   <span className={`text-xs font-extrabold flex items-center gap-1 ${st.highlight ? 'text-amber-300' : 'text-slate-200'}`}>
                     <span>{st.icon}</span>
@@ -523,44 +536,32 @@ export function CharacterTab({
                   )}
                 </div>
 
-                {/* 數值與預分配增幅 */}
                 <div className="bg-slate-900/90 rounded-xl py-2.5 px-3 border border-slate-800/90 text-center">
                   <div className="flex items-baseline justify-center gap-1.5 font-mono">
                     <span className="text-2xl font-black text-slate-100">{finalVal}</span>
                     {st.draftVal > 0 && (
-                      <span className="text-xs font-black text-emerald-400">
-                        (+{st.draftVal})
-                      </span>
+                      <span className="text-xs font-black text-emerald-400">(+{st.draftVal})</span>
                     )}
                   </div>
-                  {/* 四維佔比進度條 */}
                   <div className="mt-2 space-y-1">
                     <div className="w-full h-1.5 bg-slate-950 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full ${st.barColor} transition-all duration-200`}
-                        style={{ width: `${sharePct}%` }}
-                      />
+                      <div className={`h-full ${st.barColor} transition-all duration-200`} style={{ width: `${sharePct}%` }} />
                     </div>
-                    <div className="text-[10px] font-mono text-slate-500">
-                      根骨佔比 {sharePct}%
-                    </div>
+                    <div className="text-[10px] font-mono text-slate-500">根骨佔比 {sharePct}%</div>
                   </div>
                 </div>
 
-                {/* 屬性效益說明 */}
                 <div className="text-[11px] text-slate-400 text-center leading-snug min-h-[32px] flex items-center justify-center px-1">
                   {st.desc}
                 </div>
               </div>
 
-              {/* 批量加減按鈕列 */}
               <div className="grid grid-cols-4 gap-1.5 pt-1">
                 <button
                   type="button"
                   disabled={st.draftVal <= 0}
                   onClick={() => adjustDraft(st.key, -1)}
                   className="py-2 rounded-xl font-mono font-black text-xs bg-slate-900 hover:bg-rose-950/80 text-rose-300 border border-slate-800 hover:border-rose-600/70 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                  title="減少 1 點預分配"
                 >
                   -1
                 </button>
@@ -569,7 +570,6 @@ export function CharacterTab({
                   disabled={remainingPoints <= 0}
                   onClick={() => adjustDraft(st.key, 1)}
                   className="py-2 rounded-xl font-mono font-black text-xs bg-amber-600 hover:bg-amber-500 text-white disabled:opacity-35 disabled:cursor-not-allowed transition-all"
-                  title="增加 1 點"
                 >
                   +1
                 </button>
@@ -578,7 +578,6 @@ export function CharacterTab({
                   disabled={remainingPoints <= 0}
                   onClick={() => adjustDraft(st.key, 5)}
                   className="py-2 rounded-xl font-mono font-black text-xs bg-amber-700 hover:bg-amber-600 text-white disabled:opacity-35 disabled:cursor-not-allowed transition-all"
-                  title="一次增加 5 點"
                 >
                   +5
                 </button>
@@ -587,7 +586,6 @@ export function CharacterTab({
                   disabled={remainingPoints <= 0}
                   onClick={() => adjustDraft(st.key, remainingPoints)}
                   className="py-2 rounded-xl font-mono font-black text-[11px] bg-indigo-700 hover:bg-indigo-600 text-white disabled:opacity-35 disabled:cursor-not-allowed transition-all"
-                  title="投入全部剩餘點數"
                 >
                   ALL
                 </button>
@@ -613,20 +611,33 @@ export function ForgeTab({
   equipmentInventory,
   forgeFeedback,
   handleRefineEquipment,
+  handleReforgeEquipment,
   handleSocketGem,
   setHelpModalTab
 }) {
-  const allForgeable = [
-    ...Object.values(player.equipped).filter(Boolean).map(i => ({ ...i, _isEquipped: true })),
-    ...equipmentInventory.map(i => ({ ...i, _isEquipped: false }))
-  ];
+  const [useProtectScroll, setUseProtectScroll] = useState(true);
+  const protectScrolls = player.protectScrolls || 0;
+
+  // 高階裝備排在前面（已穿戴優先，其次依 Tier 降冪與精鍊等級降冪）
+  const allForgeable = useMemo(() => {
+    const equippedList = Object.values(player.equipped || {})
+      .filter(Boolean)
+      .map(i => ({ ...i, _isEquipped: true }))
+      .sort((a, b) => (b.tier || 1) - (a.tier || 1) || (b.refineLevel || 0) - (a.refineLevel || 0));
+
+    const bagList = [...(equipmentInventory || [])]
+      .map(i => ({ ...i, _isEquipped: false }))
+      .sort((a, b) => (b.tier || 1) - (a.tier || 1) || (b.refineLevel || 0) - (a.refineLevel || 0));
+
+    return [...equippedList, ...bagList];
+  }, [player.equipped, equipmentInventory]);
 
   return (
     <div className="bg-slate-900/80 border border-slate-800/80 rounded-3xl p-6 shadow-2xl backdrop-blur space-y-5 max-w-5xl mx-auto">
       <div className="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
         <div className="flex items-center gap-2">
           <Hammer className="w-5 h-5 text-amber-400" />
-          <h2 className="font-extrabold text-amber-400 text-lg">🔨 鐵匠精鍊與四象寶石鑲嵌</h2>
+          <h2 className="font-extrabold text-amber-400 text-lg">🔨 鐵匠精鍊・詞條洗鍊・寶石鑲嵌</h2>
           {setHelpModalTab && (
             <button
               onClick={() => setHelpModalTab('equip')}
@@ -637,23 +648,39 @@ export function ForgeTab({
             </button>
           )}
         </div>
-        <div className="flex gap-2 text-xs font-mono font-bold">
+        <div className="flex flex-wrap gap-2 text-xs font-mono font-bold">
           <span className="bg-slate-950 text-amber-300 px-3 py-1 rounded-full border border-slate-800">💰 金幣: {player.gold}</span>
           <span className="bg-slate-950 text-cyan-300 px-3 py-1 rounded-full border border-slate-800">💎 精鍊石: {player.refineStones}</span>
+          <span className="bg-slate-950 text-indigo-300 px-3 py-1 rounded-full border border-indigo-700/70">🛡️ 保底符: {protectScrolls}</span>
         </div>
       </div>
 
-      <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-3.5 text-xs text-slate-300 flex flex-wrap justify-between gap-2">
-        <div>
-          <span className="text-amber-300 font-bold">⚒️ 精鍊規則：</span>
-          每級提升基礎屬性 <span className="text-emerald-300 font-bold">+15%</span>；
-          <span className="text-emerald-300 font-bold">+0～+3 成功率 100%</span>，
-          <span className="text-rose-300 font-bold">+4 起成功率 65%（失敗精鍊等級 -1 級）</span>。
+      {/* 天工保底符啟用開關與鍛造說明 */}
+      <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-3.5 text-xs text-slate-300 flex flex-wrap items-center justify-between gap-3">
+        <div className="space-y-1">
+          <div>
+            <span className="text-amber-300 font-bold">⚒️ 遞增精鍊：</span>
+            越高級成長幅度越大（+1 增 10%、+5 累計 +80%、+10 累計 +256%）；<span className="text-rose-300 font-bold">+4 以上失敗將降 1 級</span>。
+          </div>
+          <div>
+            <span className="text-purple-300 font-bold">✨ 神兵洗鍊：</span>
+            花費 <span className="text-amber-300 font-mono">250 金幣 + 1 精鍊石</span> 可為任意神兵重鑄額外神兵副詞條。
+          </div>
         </div>
-        <div>
-          <span className="text-cyan-300 font-bold">💎 鑲嵌規則：</span>
-          每孔花費 <span className="text-amber-300 font-mono font-bold">100 金幣</span>，可自由鑲嵌或替換四種寶石。
-        </div>
+
+        <label className="flex items-center gap-2 bg-indigo-950/50 border border-indigo-600/60 px-3.5 py-2 rounded-xl cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={useProtectScroll && protectScrolls > 0}
+            disabled={protectScrolls <= 0}
+            onChange={(e) => setUseProtectScroll(e.target.checked)}
+            className="accent-indigo-400 w-4 h-4"
+          />
+          <ShieldCheck className="w-4 h-4 text-indigo-300" />
+          <span className="font-bold text-indigo-200">
+            +4 以上自動使用【天工保底符】({protectScrolls} 張)
+          </span>
+        </label>
       </div>
 
       {forgeFeedback && (
@@ -661,7 +688,9 @@ export function ForgeTab({
           className={`rounded-2xl p-3.5 border text-xs sm:text-sm font-bold flex items-center gap-2 shadow-md ${
             forgeFeedback.type === 'danger'
               ? 'bg-rose-950/60 border-rose-500/70 text-rose-200'
-              : 'bg-emerald-950/60 border-emerald-500/70 text-emerald-200'
+              : forgeFeedback.type === 'info'
+                ? 'bg-indigo-950/60 border-indigo-500/70 text-indigo-200'
+                : 'bg-emerald-950/60 border-emerald-500/70 text-emerald-200'
           }`}
         >
           <Sparkles className="w-4 h-4 shrink-0 text-amber-300" />
@@ -677,8 +706,12 @@ export function ForgeTab({
             const item = enrichEquipmentMeta(rawItem);
             const lvl = item.refineLevel || 0;
             const goldCost = (lvl + 1) * 120;
+            const ratePct = Math.round(getRefineSuccessRate(lvl) * 100);
+            const nextIncPct = Math.round(getNextRefineIncrementPct(lvl) * 100);
             const isRisky = lvl >= 4;
+            const scrollProtected = isRisky && useProtectScroll && protectScrolls > 0;
             const canRefine = !isInCombat && player.gold >= goldCost && player.refineStones >= 1;
+            const canReforge = !isInCombat && player.gold >= 250 && player.refineStones >= 1;
 
             return (
               <div key={item.uid} className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-3 flex flex-col justify-between">
@@ -703,26 +736,63 @@ export function ForgeTab({
 
                   <div className="text-xs text-slate-400">{item.desc}</div>
 
+                  {/* 洗鍊副詞條顯示區 */}
+                  <div className="flex items-center justify-between gap-2 bg-purple-950/25 border border-purple-700/40 rounded-xl px-3 py-2 text-xs">
+                    <div>
+                      <span className="text-[11px] text-purple-300 font-bold">✨ 洗鍊詞條：</span>
+                      {item.reforgeAffix ? (
+                        <span className="text-amber-200 font-bold">
+                          【{item.reforgeAffix.name}】{item.reforgeAffix.desc}
+                        </span>
+                      ) : (
+                        <span className="text-slate-500 italic">尚未覺醒副詞條</span>
+                      )}
+                    </div>
+                    {handleReforgeEquipment && (
+                      <button
+                        type="button"
+                        disabled={!canReforge}
+                        onClick={() => handleReforgeEquipment(rawItem)}
+                        className="px-2.5 py-1 rounded-lg bg-purple-700 hover:bg-purple-600 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold text-[11px] flex items-center gap-1 shrink-0 transition-all"
+                        title="消耗 250 金幣 + 1 精鍊石重鑄隨機副詞條"
+                      >
+                        <Wand2 className="w-3 h-3" />
+                        <span>洗鍊 (250金+1石)</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* 精鍊操作區 */}
                   <div className="pt-1 space-y-1.5">
-                    <div className="flex justify-between items-center text-[11px] font-mono">
+                    <div className="flex justify-between items-center text-[11px] font-mono flex-wrap gap-1">
                       <span className="text-slate-400">
-                        消耗：<span className="text-cyan-300 font-bold">1 精鍊石</span> ＋ <span className="text-amber-300 font-bold">{goldCost} 金幣</span>
+                        消耗：<span className="text-cyan-300 font-bold">1石</span>＋<span className="text-amber-300 font-bold">{goldCost}金</span>（下級 +{nextIncPct}%）
                       </span>
                       <span
                         className={`px-2 py-0.5 rounded font-bold border ${
-                          isRisky
-                            ? 'bg-rose-950/80 text-rose-300 border-rose-700/80'
-                            : 'bg-emerald-950/80 text-emerald-300 border-emerald-700/80'
+                          scrollProtected
+                            ? 'bg-indigo-950/80 text-indigo-300 border-indigo-600'
+                            : isRisky
+                              ? 'bg-rose-950/80 text-rose-300 border-rose-700/80'
+                              : 'bg-emerald-950/80 text-emerald-300 border-emerald-700/80'
                         }`}
                       >
-                        {isRisky ? '⚠️ 成功率 65% (失敗降1級)' : '✅ 成功率 100%'}
+                        {scrollProtected
+                          ? `🛡️ 成功率 ${ratePct}% (保底護持)`
+                          : isRisky
+                            ? `⚠️ 成功率 ${ratePct}% (失敗降1級)`
+                            : `✅ 成功率 ${ratePct}%`}
                       </span>
                     </div>
                     <button
                       disabled={!canRefine}
-                      onClick={() => handleRefineEquipment(rawItem)}
+                      onClick={() => handleRefineEquipment(rawItem, scrollProtected)}
                       className={`w-full py-2.5 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold text-xs rounded-xl shadow transition-all ${
-                        isRisky ? 'bg-orange-600 hover:bg-orange-500' : 'bg-amber-600 hover:bg-amber-500'
+                        scrollProtected
+                          ? 'bg-indigo-600 hover:bg-indigo-500'
+                          : isRisky
+                            ? 'bg-orange-600 hover:bg-orange-500'
+                            : 'bg-amber-600 hover:bg-amber-500'
                       }`}
                     >
                       {isInCombat
@@ -731,11 +801,12 @@ export function ForgeTab({
                           ? '精鍊石不足'
                           : player.gold < goldCost
                             ? '金幣不足'
-                            : `🔨 強化精鍊至 +${lvl + 1}`}
+                            : `🔨 強化精鍊至 +${lvl + 1}${scrollProtected ? '（消耗1張保底符）' : ''}`}
                     </button>
                   </div>
                 </div>
 
+                {/* 寶石插槽區 */}
                 <div className="pt-2.5 border-t border-slate-800/80 space-y-2">
                   <div className="text-[11px] text-slate-400 flex items-center justify-between">
                     <span className="flex items-center gap-1 font-bold text-cyan-300">
