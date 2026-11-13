@@ -33,9 +33,9 @@ const INITIAL_PLAYER = {
   rage: 0, ammo: 12, maxAmmo: 12,
   atk: 36, def: 18, speed: 10,
   gold: 300, refineStones: 4,
-  statPoints: 5, sp: 1, tp: 2,
+  statPoints: 5, sp: 0, tp: 2,
   stats: { str: 10, con: 10, int: 10, agi: 10 },
-  skillLevels: { 0: 0, 1: 0, 2: 0 },
+  skillLevels: { 0: 1, 1: 1, 2: 0, 3: 0 },
   equipped: { weapon: null, offhand: null, helmet: null, armor: null, shoes: null, accessory: null }
 };
 
