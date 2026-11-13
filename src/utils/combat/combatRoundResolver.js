@@ -17,9 +17,6 @@ import {
   executePlayerAction
 } from './playerAndHeroActions';
 
-/**
- * 結算撤退逃跑（65% 成功脫離，35% 失敗遭追擊）
- */
 export function resolveFleeCombat(context) {
   if (Math.random() < 0.65) {
     return {
@@ -61,11 +58,8 @@ export function resolveFleeCombat(context) {
   };
 }
 
-/**
- * 完整單回合戰鬥推進純函數（支援速度先手行動排序、速度閃避／連擊與 ★+5 技能卡連發）
- */
 export function resolveCombatRound({
-  actionInput = { type: 'attack' },
+  actionInput,
   monsters,
   player,
   heroRoster,
@@ -93,7 +87,7 @@ export function resolveCombatRound({
   let currentRoster = heroRoster.map(h => normalizeHero(h));
   const currentBuffs = {
     ...combatBuffs,
-    skillCooldowns: { 0: 0, 1: 0, 2: 0, ...(combatBuffs?.skillCooldowns || {}) }
+    skillCooldowns: { 0: 0, 1: 0, 2: 0, 3: 0, ...(combatBuffs?.skillCooldowns || {}) }
   };
   const currentHeroBuffs = { ...heroBattleBuffs };
   const updatedDownedIds = [...battleDownedHeroIds];
@@ -120,17 +114,16 @@ export function resolveCombatRound({
   const skillValidation = validateAndConsumePlayerSkill({
     actionInput,
     currentPlayer,
-    currentRoster,
-    activeHeroInstanceIds,
     currentBuffs
   });
   if (!skillValidation.valid) {
     return skillValidation.abortResult;
   }
 
-  // 1. 建構本回合「速度先手行動序列」並由高至低排序
+  // 1. 建構本回合「速度先手行動序列」
+  const windSpeedAdd = currentBuffs.windBuffTurns > 0 ? (currentBuffs.windSpeedBonus || 0) : 0;
   const turnQueue = [
-    { type: 'PLAYER', label: currentPlayer.name, speed: playerTotalSpeed, priority: 3 }
+    { type: 'PLAYER', label: currentPlayer.name, speed: playerTotalSpeed + windSpeedAdd, priority: 3 }
   ];
 
   currentRoster.forEach(h => {
@@ -141,7 +134,7 @@ export function resolveCombatRound({
         type: 'HERO',
         instanceId: h.instanceId,
         label: h.name,
-        speed: effectiveSpeed,
+        speed: effectiveSpeed + windSpeedAdd,
         priority: 2
       });
     }
@@ -161,16 +154,7 @@ export function resolveCombatRound({
 
   turnQueue.sort((a, b) => (b.speed - a.speed) || (b.priority - a.priority));
 
-  const orderPreview = turnQueue
-    .slice(0, 6)
-    .map(u => `${u.label}(${u.speed})`)
-    .join(' ＞ ');
-  logs.push({
-    text: `⚡ 【速度先手序列】${orderPreview}${turnQueue.length > 6 ? ' ...' : ''}`,
-    type: 'sys'
-  });
-
-  // 2. 依速度序列逐一結算所有單位行動
+  // 2. 依速度序列結算行動
   for (const actor of turnQueue) {
     if (currentMonsters.every(m => m.hp <= 0) || currentPlayer.hp <= 0) break;
 
@@ -203,6 +187,7 @@ export function resolveCombatRound({
         currentPlayer,
         currentRoster,
         activeHeroInstanceIds,
+        currentBuffs,
         currentHeroBuffs,
         playerTotalMaxHp,
         playerTotalMaxMp,
@@ -224,7 +209,7 @@ export function resolveCombatRound({
           updatedBuffs: currentBuffs,
           heroBattleBuffs: currentHeroBuffs,
           playerTotalDef,
-          playerTotalSpeed,
+          playerTotalSpeed: playerTotalSpeed + windSpeedAdd,
           playerRowBuff,
           rawFormBonus,
           formMultiplier,
@@ -240,7 +225,6 @@ export function resolveCombatRound({
     }
   }
 
-  // 檢查是否於行動序列中勝負已分
   if (currentPlayer.hp <= 0) {
     const defeatRes = resolveBattleDefeat({
       player: currentPlayer,
@@ -271,8 +255,7 @@ export function resolveCombatRound({
     return { outcome: 'VICTORY', logs, ...vicRes };
   }
 
-  // 3. 回合末持續負面傷害階段（劇毒、灼燒）
-  let anyPoisonedAlive = false;
+  // 3. 回合末持續負面傷害階段（劇毒、灼燒、流血）
   currentMonsters = currentMonsters.map(m => {
     if (m.hp <= 0) return m;
     const updatedM = { ...m };
@@ -285,11 +268,10 @@ export function resolveCombatRound({
       updatedM.hp = Math.max(0, updatedM.hp - poisonDmg);
       recordMonsterHit(updatedM.id, poisonDmg, false);
       logs.push({
-        text: `☠️ 【${updatedM.name}】劇毒發作，受到 ${poisonDmg} 點無視防禦真傷（攻擊力持續 -20%）！`,
+        text: `☠️ 【${updatedM.name}】劇毒發作，受到 ${poisonDmg} 點無視防禦真傷！`,
         type: 'player',
         dmgRole: 'dot_poison'
       });
-      if (updatedM.hp > 0) anyPoisonedAlive = true;
     }
 
     if (updatedM.hp > 0 && updatedM.burnTurns > 0) {
@@ -297,7 +279,18 @@ export function resolveCombatRound({
       updatedM.hp = Math.max(0, updatedM.hp - burnDmg);
       recordMonsterHit(updatedM.id, burnDmg, false);
       logs.push({
-        text: `🔥 【${updatedM.name}】受到灼燒持續傷害 ${burnDmg} 點！`,
+        text: `🔥 【${updatedM.name}】受到灼燒持續法傷 ${burnDmg} 點！`,
+        type: 'player',
+        dmgRole: 'dot_burn'
+      });
+    }
+
+    if (updatedM.hp > 0 && updatedM.bleedTurns > 0) {
+      const bleedDmg = updatedM.bleedDmg || 15;
+      updatedM.hp = Math.max(0, updatedM.hp - bleedDmg);
+      recordMonsterHit(updatedM.id, bleedDmg, false);
+      logs.push({
+        text: `🩸 【${updatedM.name}】傷口撕裂流血，受到 ${bleedDmg} 點持續物理傷害！`,
         type: 'player',
         dmgRole: 'dot_burn'
       });
@@ -307,7 +300,7 @@ export function resolveCombatRound({
   });
 
   if (currentMonsters.every(m => m.hp <= 0)) {
-    logs.push({ text: `🎉 敵軍在劇毒與烈焰中全數倒下！戰鬥勝利（整備功能已解鎖）！`, type: 'sys' });
+    logs.push({ text: `🎉 敵軍在持續傷害中全數倒下！戰鬥勝利！`, type: 'sys' });
     const vicRes = resolveBattleVictory({
       player: currentPlayer,
       defeatedMonsters: currentMonsters,
@@ -321,35 +314,61 @@ export function resolveCombatRound({
     return { outcome: 'VICTORY', logs, ...vicRes };
   }
 
-  // 4. 回合末狀態遞減、技能冷卻倒數與藥師回藍
+  // 回合末我方生機緩回（藥師普渡甘霖 / 風水師八卦陣）
+  if (currentBuffs.teamRegenTurns > 0 && (currentBuffs.teamRegenVal || 0) > 0) {
+    const rVal = currentBuffs.teamRegenVal;
+    currentPlayer.hp = Math.min(playerTotalMaxHp, currentPlayer.hp + rVal);
+    recordAllyHeal('PLAYER', rVal);
+    currentRoster = currentRoster.map(ally => {
+      if (!activeHeroInstanceIds.includes(ally.instanceId) || ally.hp <= 0) return ally;
+      const { effectiveMaxHp } = calculateHeroEffectiveStats(
+        ally,
+        isFengShui,
+        currentHeroBuffs[ally.instanceId],
+        getHeroRowIdx(ally.instanceId)
+      );
+      recordAllyHeal(ally.instanceId, rVal);
+      return { ...ally, hp: Math.min(effectiveMaxHp, ally.hp + rVal) };
+    });
+    logs.push({
+      text: `🌱 陣法生機流轉，我方全體自動恢復 +${rVal} HP！`,
+      type: 'sys',
+      dmgRole: 'heal'
+    });
+  }
+
+  // 4. 回合末狀態遞減、4 招冷卻倒數
   const tickedMonsters = currentMonsters.map(m => {
-    const nextElemShift = Math.max(0, (m.elemShiftTurns || 0) - 1);
     const nextPoison = Math.max(0, (m.poisonTurns || 0) - 1);
     return {
       ...m,
       armorBreakTurns: Math.max(0, (m.armorBreakTurns || 0) - 1),
+      weakenTurns: Math.max(0, (m.weakenTurns || 0) - 1),
       blindTurns: Math.max(0, (m.blindTurns || 0) - 1),
-      elemShiftTurns: nextElemShift,
-      element: nextElemShift === 0 ? (m.originalElement || m.element) : m.element,
       burnTurns: Math.max(0, (m.burnTurns || 0) - 1),
+      bleedTurns: Math.max(0, (m.bleedTurns || 0) - 1),
       poisonTurns: nextPoison,
       poisonStacks: nextPoison === 0 ? 0 : m.poisonStacks,
       vulnTurns: Math.max(0, (m.vulnTurns || 0) - 1)
     };
   });
 
-  const prevCds = currentBuffs.skillCooldowns || { 0: 0, 1: 0, 2: 0 };
+  const prevCds = currentBuffs.skillCooldowns || { 0: 0, 1: 0, 2: 0, 3: 0 };
   const tickedCooldowns = {
     0: Math.max(0, (prevCds[0] || 0) - 1),
     1: Math.max(0, (prevCds[1] || 0) - 1),
-    2: Math.max(0, (prevCds[2] || 0) - 1)
+    2: Math.max(0, (prevCds[2] || 0) - 1),
+    3: Math.max(0, (prevCds[3] || 0) - 1)
   };
 
   const tickedBuffs = {
     ...currentBuffs,
     tauntTurns: Math.max(0, (currentBuffs.tauntTurns || 0) - 1),
-    reflectTurns: Math.max(0, (currentBuffs.reflectTurns || 0) - 1),
+    guardTurns: Math.max(0, (currentBuffs.guardTurns || 0) - 1),
     baguaTurns: Math.max(0, (currentBuffs.baguaTurns || 0) - 1),
+    windBuffTurns: Math.max(0, (currentBuffs.windBuffTurns || 0) - 1),
+    tianjiTurns: Math.max(0, (currentBuffs.tianjiTurns || 0) - 1),
+    teamRegenTurns: Math.max(0, (currentBuffs.teamRegenTurns || 0) - 1),
     skillCooldowns: tickedCooldowns
   };
 
@@ -360,11 +379,6 @@ export function resolveCombatRound({
       tickedHeroBuffs[hId] = { ...currentHeroBuffs[hId], surgeTurns: nextTurns };
     }
   });
-
-  if (currentPlayer.job === '藥師') {
-    const regenMp = 10 + (anyPoisonedAlive ? 8 : 0);
-    currentPlayer.mp = Math.min(playerTotalMaxMp, currentPlayer.mp + regenMp);
-  }
 
   return {
     outcome: 'CONTINUE',
