@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import GameUI from './GameUI';
 
-import { ZONES } from './data/constants';
 import { CLASS_CONFIGS } from './data/classes';
 import { FORMATIONS_CONFIG } from './data/formations';
 import { SKILL_CARDS_DB, createSkillCardInstance } from './data/skillCards';
@@ -58,7 +57,6 @@ function autoFuseDuplicateHeroes(rawRoster, deployedIds = []) {
   Object.values(groups).forEach(group => {
     if (group.length < 2) return;
 
-    // 優先保留已出戰、星級最高、等級最高的本尊
     const sorted = [...group].sort((a, b) => {
       const aDep = deployedIds.includes(a.instanceId) ? 1 : 0;
       const bDep = deployedIds.includes(b.instanceId) ? 1 : 0;
@@ -125,7 +123,7 @@ export default function App() {
   const [starterHeroCandidates, setStarterHeroCandidates] = useState([]);
 
   const [player, setPlayer] = useState(INITIAL_PLAYER);
-  const [heroRoster, setHeroRosterRaw] = useState([]);
+  const [heroRoster, setHeroRoster] = useState([]);
   const [activeHeroInstanceIds, setActiveHeroInstanceIds] = useState([]);
   const [currentFormation, setCurrentFormation] = useState('none');
   const [formationSlots, setFormationSlots] = useState({ 0: 'PLAYER', 2: null, 4: null, 6: null, 8: null });
@@ -143,43 +141,37 @@ export default function App() {
   const [turnCount, setTurnCount] = useState(1);
 
   const chatEndRef = useRef(null);
+  const turnCountRef = useRef(turnCount);
+  turnCountRef.current = turnCount;
   const isFengShui = player.job === '風水師';
 
-  // 包裝 setHeroRoster：每次名冊變動（包含市集抽卡、戰利品掉落等）自動合併同名分身突破
-  const setHeroRoster = useCallback((updater) => {
-    setHeroRosterRaw(prev => {
-      const nextRaw = typeof updater === 'function' ? updater(prev) : updater;
-      if (!Array.isArray(nextRaw)) return nextRaw;
+  // 安全自動突破偵測：僅在名冊確實存在可合併的同名分身時觸發一次
+  useEffect(() => {
+    if (!Array.isArray(heroRoster) || heroRoster.length < 2) return;
 
-      const { roster, consumedIds, recoveredCards, fusionLogs } = autoFuseDuplicateHeroes(
-        nextRaw,
-        activeHeroInstanceIds
-      );
+    const { roster, consumedIds, recoveredCards, fusionLogs } = autoFuseDuplicateHeroes(
+      heroRoster,
+      activeHeroInstanceIds
+    );
 
-      if (consumedIds.size > 0) {
-        if (recoveredCards.length > 0) {
-          setTimeout(() => {
-            setSkillCardsInventory(cardsPrev => [...cardsPrev, ...recoveredCards]);
-          }, 0);
-        }
-        if (fusionLogs.length > 0) {
-          setTimeout(() => {
-            setCombatLogs(logsPrev => [
-              ...logsPrev,
-              ...fusionLogs.map((text, idx) => ({
-                id: Date.now() + Math.random() + idx * 0.001,
-                turn: turnCount,
-                text,
-                type: 'sys'
-              }))
-            ]);
-          }, 0);
-        }
+    if (consumedIds.size > 0) {
+      setHeroRoster(roster);
+      if (recoveredCards.length > 0) {
+        setSkillCardsInventory(prev => [...prev, ...recoveredCards]);
       }
-
-      return roster;
-    });
-  }, [activeHeroInstanceIds, turnCount]);
+      if (fusionLogs.length > 0) {
+        setCombatLogs(prev => [
+          ...prev,
+          ...fusionLogs.map((text, idx) => ({
+            id: Date.now() + Math.random() + idx * 0.001,
+            turn: turnCountRef.current,
+            text,
+            type: 'sys'
+          }))
+        ]);
+      }
+    }
+  }, [heroRoster, activeHeroInstanceIds]);
 
   // 初始化開局可選夥伴候選名單
   useEffect(() => {
@@ -224,8 +216,8 @@ export default function App() {
   const playerTotalSpeed = Math.floor((player.speed + (player.stats.agi * 1) + equipBonus.speed) * (1 + ((rawFormBonus.speedPct || 0) * formMultiplier) + (playerRowBuff.speedPct || 0) + codexBonus.speedPct));
 
   const addLog = useCallback((text, type = 'info') => {
-    setCombatLogs(prev => [...prev, { id: Date.now() + Math.random(), turn: turnCount, text, type }]);
-  }, [turnCount]);
+    setCombatLogs(prev => [...prev, { id: Date.now() + Math.random(), turn: turnCountRef.current, text, type }]);
+  }, []);
 
   const appendBatchLogs = useCallback((entries = []) => {
     if (!entries.length) return;
@@ -233,13 +225,13 @@ export default function App() {
       ...prev,
       ...entries.map((entry, i) => ({
         id: Date.now() + Math.random() + i * 0.001,
-        turn: turnCount,
+        turn: turnCountRef.current,
         text: entry.text,
         type: entry.type || 'info',
         dmgRole: entry.dmgRole || null
       }))
     ]);
-  }, [turnCount]);
+  }, []);
 
   // 1. 戰鬥與推圖管理 Hook
   const combat = useCombatManager({
@@ -363,7 +355,7 @@ export default function App() {
 
     setPlayer(newPlayer);
     setEquipmentInventory([]);
-    setHeroRosterRaw([starterHero]);
+    setHeroRoster([starterHero]);
     setActiveHeroInstanceIds([starterHero.instanceId]);
     setCurrentFormation('none');
     setFormationSlots(syncFormationSlots('none', {}, [starterHero.instanceId]));
