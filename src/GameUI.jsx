@@ -876,14 +876,55 @@ export default function GameUI(props) {
                     )}
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <button
-                      disabled={combatPhase !== 'PLAYER_SELECT'}
-                      onClick={() => handleExecuteRound({ type: 'attack' })}
-                      className="p-3 rounded-2xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-left transition-all disabled:opacity-40"
-                    >
-                      <div className="font-black text-xs text-slate-100">🗡️ 普通攻擊（回復職業資源）</div>
-                      <div className="text-[11px] text-slate-400 mt-0.5">無消耗・速度領先時機率觸發 50% 威力連擊</div>
-                    </button>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {currentClassSkills.map((sk, idx) => {
+                      const skLvl = player.skillLevels?.[idx] || 0;
+                      const { unlockLevel, reqPrevSkillLevel } = getSkillMeta(sk, idx);
+                      const prevLvl = idx > 0 ? (player.skillLevels?.[idx - 1] || 0) : 99;
+                      const cdLeft = combatBuffs.skillCooldowns?.[idx] || 0;
+                      const lockedByLvl = player.level < unlockLevel;
+                      const lockedByPrev = idx > 0 && reqPrevSkillLevel > 0 && prevLvl < reqPrevSkillLevel;
+                      const notLearned = skLvl <= 0;
+                      const onCd = cdLeft > 0;
+                      const costLabel = sk.cost === 0
+                        ? '無消耗'
+                        : sk.costType === 'rage'
+                          ? `${sk.cost}怒`
+                          : sk.costType === 'ammo'
+                            ? `${sk.cost}彈`
+                            : `${sk.cost}MP`;
+
+                      return (
+                        <button
+                          key={sk.id}
+                          disabled={combatPhase !== 'PLAYER_SELECT' || lockedByLvl || lockedByPrev || notLearned || onCd}
+                          onClick={() => handleExecuteRound({ type: 'skill', skill: sk, skillIdx: idx })}
+                          className={`p-3 rounded-2xl border text-left transition-all disabled:bg-slate-950 disabled:border-slate-800 disabled:opacity-45 ${
+                            idx === 0
+                              ? 'bg-slate-800/90 hover:bg-slate-700 border-slate-600'
+                              : 'bg-amber-950/40 hover:bg-amber-900/50 border-amber-600/60'
+                          }`}
+                        >
+                          <div className="flex justify-between items-center text-xs font-extrabold text-amber-300">
+                            <span>{sk.icon || '✨'} {sk.name} {skLvl > 0 ? `(Lv.${skLvl})` : ''}</span>
+                            <span className="font-mono text-[11px] text-cyan-300">
+                              {lockedByLvl
+                                ? `🔒 Lv.${unlockLevel}解鎖`
+                                : lockedByPrev
+                                  ? `🔒 需前置Lv.${reqPrevSkillLevel}`
+                                  : notLearned
+                                    ? '未領悟'
+                                    : onCd
+                                      ? `⏳ CD ${cdLeft}T`
+                                      : costLabel}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-slate-300 mt-0.5 line-clamp-1">{sk.desc}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
 
                     {currentClassSkills.map((sk, idx) => {
                       const skLvl = player.skillLevels?.[idx] || 0;
