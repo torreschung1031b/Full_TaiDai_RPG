@@ -1,6 +1,6 @@
 import React from 'react';
 import { ELEMENTS, MAX_LEVEL } from '../../data/constants';
-import { calculateHeroEffectiveStats } from '../../utils/statCalculator';
+import { calculateHeroEffectiveStats, normalizeHero } from '../../utils/statCalculator';
 import { getRowPositionBuffs } from '../../utils/formationHelper';
 
 const TIER_BADGE_STYLES = {
@@ -9,6 +9,12 @@ const TIER_BADGE_STYLES = {
   3: 'bg-indigo-950/80 text-indigo-200 border-indigo-500/80',
   2: 'bg-emerald-950/80 text-emerald-200 border-emerald-600/80',
   1: 'bg-slate-900 text-slate-300 border-slate-700'
+};
+
+const TARGET_TYPE_LABELS = {
+  aoe: '全體橫掃',
+  heal: '全隊治療',
+  single: '單體爆發'
 };
 
 function SkillSlotPair({ slots = [], type, isInCombat, onUnequip, onOpenConfig }) {
@@ -58,7 +64,7 @@ function SkillSlotPair({ slots = [], type, isInCombat, onUnequip, onOpenConfig }
 }
 
 export function HeroCard({
-  hero,
+  hero: rawHero,
   isDeployed,
   isInCombat,
   isFengShui,
@@ -73,6 +79,7 @@ export function HeroCard({
   onReleaseHero,
   onUnequipSkillCard
 }) {
+  const hero = normalizeHero(rawHero);
   const rowLabel = isDeployed ? getRowPositionBuffs(heroRowIdx * 3).label : '待命中';
   const { effectiveMaxHp, effectiveAtk, effectiveDef, effectiveSpeed, skillChance } =
     calculateHeroEffectiveStats(hero, isFengShui, null, heroRowIdx);
@@ -81,6 +88,11 @@ export function HeroCard({
   const canFuse = !isInCombat && duplicateCount > 0 && fusionLvl < maxFusion;
   const hasDualActive = (hero.activeSkillSlots || []).length >= 2;
   const tierBadgeClass = TIER_BADGE_STYLES[hero.tier] || TIER_BADGE_STYLES[1];
+
+  const sigSkill = hero.signatureSkill;
+  const effectiveSigMult = sigSkill
+    ? ((sigSkill.mult || 1.7) * (1 + fusionLvl * 0.12)).toFixed(2)
+    : null;
 
   const statBoxes = [
     { label: '❤️ 生命', val: `${hero.hp}/${effectiveMaxHp}`, color: 'text-rose-400' },
@@ -129,7 +141,7 @@ export function HeroCard({
             </span>
             {fusionLvl >= 5 && (
               <span className="bg-amber-950/70 text-amber-200 border border-amber-400/80 px-2 py-0.5 rounded font-bold">
-                🔥 ★+5 無雙連攜（25% 技能卡二連發）
+                🔥 ★+5 無雙連攜（25% 技能二連發）
               </span>
             )}
           </div>
@@ -162,10 +174,36 @@ export function HeroCard({
           <span>敏 AGI: <strong className="text-slate-200">{hero.stats?.agi}</strong></span>
         </div>
 
+        {/* 本命天賦與固有本命絕學展示 */}
+        <div className="bg-slate-900/75 border border-slate-800 rounded-xl p-2.5 space-y-1.5">
+          <div className="text-[11px] leading-snug">
+            <span className="text-emerald-300 font-extrabold">🌟 天賦【{hero.traitName}】：</span>
+            <span className="text-slate-300">{hero.traitDesc}</span>
+          </div>
+          {sigSkill && (
+            <div className="pt-1.5 border-t border-slate-800/80 text-[11px] space-y-0.5">
+              <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                <span className="text-amber-300 font-extrabold">
+                  {sigSkill.icon || '🔥'} 本命絕學【{sigSkill.name}】
+                </span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <span className="text-[10px] bg-amber-950/80 text-amber-200 border border-amber-600/60 px-1.5 py-0.2 rounded font-mono">
+                    {TARGET_TYPE_LABELS[sigSkill.target] || '專屬絕技'} • {effectiveSigMult}x
+                  </span>
+                  <span className="text-[10px] bg-purple-950/70 text-purple-200 border border-purple-700/60 px-1.5 py-0.2 rounded">
+                    固有免槽
+                  </span>
+                </div>
+              </div>
+              <div className="text-[10px] text-slate-400">{sigSkill.desc}</div>
+            </div>
+          )}
+        </div>
+
         {/* 技能卡插槽區 */}
         <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
           <div className="flex items-center justify-between text-[11px]">
-            <span className="font-bold text-amber-300">⚡ 主動技能卡 ({hero.activeSkillSlots?.length || 0}/2)</span>
+            <span className="font-bold text-amber-300">⚡ 額外主動技能卡 ({hero.activeSkillSlots?.length || 0}/2)</span>
             {hasDualActive ? (
               <span className="text-[10px] bg-amber-500/20 text-amber-200 border border-amber-400/60 px-2 py-0.5 rounded font-bold">
                 🔥 雙卡共鳴 (+10%率/+15%威)
