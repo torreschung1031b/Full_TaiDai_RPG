@@ -94,6 +94,8 @@ export default function GameUI(props) {
     activeTowerFloor,
     autoBattle,
     handleToggleAutoBattle,
+    autoTower,
+    handleToggleAutoTower,
     creationData,
     setCreationData,
     starterHeroCandidates,
@@ -306,7 +308,7 @@ export default function GameUI(props) {
     { id: 'forge', label: '鐵匠精鍊', icon: Hammer },
     { id: 'character', label: `屬性配點${player.statPoints > 0 ? ` (${player.statPoints})` : ''}`, icon: User },
     { id: 'formations', label: '陣法五行', icon: Compass },
-    { id: 'tower', label: `鎮魔塔 (${towerFloor}層)`, icon: Castle },
+    { id: 'tower', label: `鎮魔塔 (${towerFloor}層)${autoTower ? '・自動' : ''}`, icon: Castle },
     { id: 'shop', label: '江湖市集', icon: Store },
     { id: 'codex', label: '英雄圖鑑', icon: BookOpen },
     { id: 'saveload', label: '存檔管理', icon: Save }
@@ -480,7 +482,21 @@ export default function GameUI(props) {
                     <span className="text-slate-300">
                       護盾：<strong className="text-cyan-300">{combatBuffs.shield || 0}</strong> • 速度先手排序制
                     </span>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {activeTowerFloor && (
+                        <button
+                          onClick={handleToggleAutoTower}
+                          className={`flex items-center gap-1 px-3 py-1.5 rounded-xl font-black border transition-all ${
+                            autoTower
+                              ? 'bg-amber-500 border-amber-300 text-slate-950'
+                              : 'bg-slate-900 border-slate-700 text-amber-300 hover:border-amber-500'
+                          }`}
+                        >
+                          <Castle className="w-3.5 h-3.5" />
+                          <span>{autoTower ? '🗼 自動爬塔：開' : '🗼 自動爬塔：關'}</span>
+                        </button>
+                      )}
+
                       <button
                         onClick={handleToggleAutoBattle}
                         className={`flex items-center gap-1 px-3 py-1.5 rounded-xl font-black border transition-all ${
@@ -980,6 +996,8 @@ export default function GameUI(props) {
             towerFloor={towerFloor}
             towerBestFloor={towerBestFloor}
             isInCombat={isInCombat}
+            autoTower={autoTower}
+            handleToggleAutoTower={handleToggleAutoTower}
             handleStartTowerChallenge={handleStartTowerChallenge}
           />
         )}
@@ -1053,6 +1071,8 @@ export default function GameUI(props) {
         defeatSummary={defeatSummary}
         setDefeatSummary={setDefeatSummary}
         handleRestInn={handleRestInn}
+        autoTower={autoTower}
+        handleToggleAutoTower={handleToggleAutoTower}
       />
 
       {/* 江湖指南彈窗 */}
