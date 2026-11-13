@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { ZONES, ELEMENTS } from './data/constants';
 import { CLASS_CONFIGS } from './data/classes';
+import { FORMATIONS_CONFIG } from './data/formations';
 import { PROTAGONIST_SKILLS_DB, getSkillMultiplier } from './data/skills';
 import { enrichEquipmentMeta } from './data/equipment';
 import { calculateHeroEffectiveStats } from './utils/statCalculator';
@@ -179,6 +180,7 @@ export default function GameUI(props) {
   const isSweepLevelUnlocked = (player.level || 1) >= sweepReqLevel;
   const isSweepHpReady = (player.hp || 0) > 1;
   const canSweepCurrentZone = isSweepLevelUnlocked && isSweepHpReady;
+  const activeFormationMeta = FORMATIONS_CONFIG[currentFormation] || FORMATIONS_CONFIG['none'];
 
   const getHeroRowIdx = (heroInstanceId) => {
     const foundKey = Object.keys(formationSlots || {}).find(k => formationSlots[k] === heroInstanceId);
@@ -316,8 +318,13 @@ export default function GameUI(props) {
 
   const handleSlotClick = (slotIdx) => {
     if (isInCombat) return;
+    // 僅允許點擊當前陣法已開放的陣眼槽位
+    if (!Object.prototype.hasOwnProperty.call(formationSlots || {}, slotIdx)) return;
+
     if (selectedSlotForSwap === null) {
       setSelectedSlotForSwap(slotIdx);
+    } else if (selectedSlotForSwap === slotIdx) {
+      setSelectedSlotForSwap(null);
     } else {
       handleSwapFormationSlots(selectedSlotForSwap, slotIdx);
       setSelectedSlotForSwap(null);
@@ -638,18 +645,23 @@ export default function GameUI(props) {
 
               {/* 我方九宮陣法與排位狀態 */}
               <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 space-y-2.5">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="font-extrabold text-emerald-400">🛡️ 我方戰術站位（前排 65% / 中排 25% / 後排 10% 受擊）</span>
+                <div className="flex flex-wrap justify-between items-center gap-1.5 text-xs">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-extrabold text-emerald-400">🛡️ 我方戰術站位</span>
+                    <span className="text-[11px] bg-slate-950 border border-slate-700 text-amber-300 px-2 py-0.5 rounded-full font-bold">
+                      {activeFormationMeta.icon} {activeFormationMeta.name}（5 陣眼）
+                    </span>
+                  </div>
                   {!isInCombat && (
                     <span className="text-[11px] text-slate-400">
-                      {selectedSlotForSwap !== null ? '請點擊另一格互換位置' : '點擊兩格可互換前後排'}
+                      {selectedSlotForSwap !== null ? '✨ 請點擊另一處亮起陣眼互換位置' : '點擊亮起陣眼可互換角色站位'}
                     </span>
                   )}
                 </div>
 
                 <div className="grid grid-cols-3 gap-2">
                   {[0, 1, 2].map(rowIdx => {
-                    const rowNames = ['🛡️ 前排 (65%受擊)', '⚡ 中排 (25%受擊)', '✨ 後排 (10%受擊)'];
+                    const rowNames = ['🛡️ 前排 (60%受擊)', '⚡ 中排 (25%受擊)', '✨ 後排 (15%受擊)'];
                     return (
                       <div key={rowIdx} className="space-y-1.5">
                         <div className="text-[10px] text-center font-bold text-slate-400 bg-slate-950 py-1 rounded-lg border border-slate-800">
@@ -657,34 +669,48 @@ export default function GameUI(props) {
                         </div>
                         {[0, 1, 2].map(colIdx => {
                           const slotIdx = rowIdx * 3 + colIdx;
-                          const occupant = formationSlots?.[slotIdx];
+                          const isAvailableSlot = Object.prototype.hasOwnProperty.call(formationSlots || {}, slotIdx);
+                          const occupant = isAvailableSlot ? formationSlots[slotIdx] : undefined;
                           const isSelectedSwap = selectedSlotForSwap === slotIdx;
 
+                          // 1. 該陣法未開放的格子：明確標記為「非陣眼位」並禁用點擊
+                          if (!isAvailableSlot) {
+                            return (
+                              <div
+                                key={slotIdx}
+                                title="此位置不屬於當前陣法的有效陣眼，無法駐守角色"
+                                className="p-2 rounded-xl border border-dashed border-slate-800/40 bg-slate-950/25 text-[10px] text-center h-[54px] flex flex-col items-center justify-center text-slate-600/80 select-none cursor-not-allowed"
+                              >
+                                <span>🚫 非陣眼位</span>
+                              </div>
+                            );
+                          }
+
+                          // 2. 少俠主角所在槽位
                           if (occupant === 'PLAYER') {
                             const allyHit = lastRoundHits?.allies?.PLAYER;
                             return (
                               <div
                                 key={slotIdx}
                                 onClick={() => handleSlotClick(slotIdx)}
-                                className={`p-2 rounded-xl border text-xs transition-all ${
+                                className={`p-2 rounded-xl border text-xs h-[54px] flex flex-col justify-center transition-all ${
                                   !isInCombat ? 'cursor-pointer hover:border-amber-400' : ''
                                 } ${
                                   isSelectedSwap
-                                    ? 'bg-amber-900/50 border-amber-300'
+                                    ? 'bg-amber-900/50 border-amber-300 ring-1 ring-amber-300'
                                     : 'bg-amber-950/30 border-amber-500/60'
                                 }`}
                               >
                                 <div className="font-black text-amber-300 truncate">👑 {player.name}</div>
-                                <div className="text-[10px] font-mono text-rose-300">
-                                  HP {player.hp}/{playerTotalMaxHp}
+                                <div className="flex items-center justify-between text-[10px] font-mono text-rose-300">
+                                  <span>HP {player.hp}/{playerTotalMaxHp}</span>
+                                  {allyHit?.dmg > 0 && <span className="font-bold">-{allyHit.dmg}</span>}
                                 </div>
-                                {allyHit?.dmg > 0 && (
-                                  <span className="text-[10px] font-mono font-bold text-rose-300">-{allyHit.dmg}</span>
-                                )}
                               </div>
                             );
                           }
 
+                          // 3. 出戰英雄所在槽位
                           const hero = occupant ? heroRoster.find(h => h.instanceId === occupant) : null;
                           if (hero) {
                             const { effectiveMaxHp } = calculateHeroEffectiveStats(hero, isFengShui, heroBattleBuffs[hero.instanceId], rowIdx);
@@ -693,40 +719,41 @@ export default function GameUI(props) {
                               <div
                                 key={slotIdx}
                                 onClick={() => handleSlotClick(slotIdx)}
-                                className={`p-2 rounded-xl border text-xs transition-all ${
+                                className={`p-2 rounded-xl border text-xs h-[54px] flex flex-col justify-center transition-all ${
                                   !isInCombat ? 'cursor-pointer hover:border-emerald-400' : ''
                                 } ${
                                   isSelectedSwap
-                                    ? 'bg-amber-900/50 border-amber-300'
+                                    ? 'bg-amber-900/50 border-amber-300 ring-1 ring-amber-300'
                                     : hero.hp <= 0
                                       ? 'bg-slate-950/50 border-rose-900/60 opacity-50'
-                                      : 'bg-slate-950 border-slate-800'
+                                      : 'bg-slate-950 border-slate-700'
                                 }`}
                               >
                                 <div className="font-bold text-emerald-300 truncate">
                                   {hero.name} {hero.fusionLevel > 0 ? `★+${hero.fusionLevel}` : ''}
                                 </div>
-                                <div className="text-[10px] font-mono text-slate-400">
-                                  HP {hero.hp}/{effectiveMaxHp}
+                                <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
+                                  <span>HP {hero.hp}/{effectiveMaxHp}</span>
+                                  {allyHit?.dmg > 0 && <span className="font-bold text-rose-300">-{allyHit.dmg}</span>}
                                 </div>
-                                {allyHit?.dmg > 0 && (
-                                  <span className="text-[10px] font-mono font-bold text-rose-300">-{allyHit.dmg}</span>
-                                )}
                               </div>
                             );
                           }
 
+                          // 4. 已開放但尚無角色駐守的有效陣眼空位
                           return (
                             <div
                               key={slotIdx}
                               onClick={() => handleSlotClick(slotIdx)}
-                              className={`p-2 rounded-xl border border-dashed text-[10px] text-center h-[54px] flex items-center justify-center ${
-                                !isInCombat ? 'cursor-pointer hover:border-slate-600' : ''
+                              className={`p-2 rounded-xl border border-dashed text-[10px] text-center h-[54px] flex flex-col items-center justify-center transition-all ${
+                                !isInCombat ? 'cursor-pointer hover:border-emerald-400/70 hover:text-emerald-300' : ''
                               } ${
-                                isSelectedSwap ? 'border-amber-400 bg-amber-950/30 text-amber-300' : 'border-slate-800/80 text-slate-600'
+                                isSelectedSwap
+                                  ? 'border-amber-400 bg-amber-950/30 text-amber-300 ring-1 ring-amber-400'
+                                  : 'border-emerald-800/60 bg-emerald-950/10 text-emerald-400/80'
                               }`}
                             >
-                              空位
+                              <span>✨ 可駐守空位</span>
                             </div>
                           );
                         })}
