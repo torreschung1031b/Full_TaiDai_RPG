@@ -1,18 +1,11 @@
 import { getElementMultiplier } from '../statCalculator';
 
-/**
- * 取得怪物有效速度（相容舊存檔無 speed 欄位之怪物）
- */
 export function getMonsterSpeed(m) {
   if (!m) return 10;
   if (typeof m.speed === 'number' && m.speed > 0) return m.speed;
   return Math.max(6, Math.floor(8 + ((m.atk || 10) * 0.14)));
 }
 
-/**
- * 計算速度差帶來的閃避率與普攻連擊率
- * - 每領先 5 點速度：+1.5% 閃避率（上限 25%）、+2% 連擊率（上限 30%）
- */
 export function getSpeedAdvantage(actorSpeed = 10, targetSpeed = 10) {
   const diff = Math.max(0, actorSpeed - targetSpeed);
   const steps = Math.floor(diff / 5);
@@ -21,16 +14,10 @@ export function getSpeedAdvantage(actorSpeed = 10, targetSpeed = 10) {
   return { diff, evasionRate, doubleStrikeRate };
 }
 
-/**
- * 取得各歷練區域解鎖「快速掃蕩」所需等級
- */
 export function getZoneSweepReqLevel(zoneIdx = 0) {
   return (zoneIdx * 4) + 3;
 }
 
-/**
- * 依據主角職業回傳屬性成長係數與主屬性公式
- */
 export function getPlayerStatScaling(job) {
   if (job === '猛將') {
     return {
@@ -65,17 +52,19 @@ export function getPlayerStatScaling(job) {
 }
 
 /**
- * 取得技能的解鎖等級門檻與冷卻回合數（CD）
+ * 取得技能的等級門檻、前置技能 Lv.5 門檻與冷卻回合數（CD）
  */
 export function getSkillMeta(skill, skillIdx) {
-  const unlockLevel = skill?.unlockLevel ?? (skillIdx === 0 ? 1 : skillIdx * 5);
-  const cooldown = skill?.cd ?? (skillIdx === 0 ? 0 : skillIdx === 1 ? 2 : 4);
-  return { unlockLevel, cooldown };
+  const defaultUnlock = skillIdx <= 1 ? 1 : skillIdx === 2 ? 5 : 10;
+  const defaultPrevReq = skillIdx <= 1 ? 0 : 5;
+  const defaultCd = skillIdx === 0 ? 0 : skillIdx === 1 ? 2 : skillIdx === 2 ? 3 : 4;
+
+  const unlockLevel = skill?.unlockLevel ?? defaultUnlock;
+  const reqPrevSkillLevel = skill?.reqPrevSkillLevel ?? defaultPrevReq;
+  const cooldown = skill?.cd ?? defaultCd;
+  return { unlockLevel, reqPrevSkillLevel, cooldown };
 }
 
-/**
- * 計算主角暴擊率與暴擊倍率
- */
 export function getPlayerCritProfile(player) {
   const agi = player.stats?.agi || 10;
   const jobBonus = player.job === '巧匠' ? 0.10 : player.job === '風水師' ? 0.05 : 0;
@@ -84,9 +73,6 @@ export function getPlayerCritProfile(player) {
   return { critRate, critDamage };
 }
 
-/**
- * 計算英雄暴擊率與暴擊倍率（含同名合成星級加成）
- */
 export function getHeroCritProfile(hero) {
   const agi = hero.stats?.agi || 4;
   const fusionLevel = Math.min(5, hero.fusionLevel || 0);
@@ -96,9 +82,6 @@ export function getHeroCritProfile(hero) {
   return { critRate, critDamage };
 }
 
-/**
- * 計算我方對單體怪物造成的最終傷害
- */
 export function calculateDamageToMonster(rawAtk, monster, attElem, options = {}) {
   const {
     ignoreDefPct = 0,
