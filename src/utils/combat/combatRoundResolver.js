@@ -81,12 +81,14 @@ export function resolveCombatRound({
   isFengShui,
   getHeroRowIdx
 }) {
+  const roundNum = (combatBuffs?.roundCount || 0) + 1;
   const logs = [];
   let currentMonsters = monsters.map(m => ({ ...m }));
   const currentPlayer = { ...player };
   let currentRoster = heroRoster.map(h => normalizeHero(h));
   const currentBuffs = {
     ...combatBuffs,
+    roundCount: roundNum,
     skillCooldowns: { 0: 0, 1: 0, 2: 0, 3: 0, ...(combatBuffs?.skillCooldowns || {}) }
   };
   const currentHeroBuffs = { ...heroBattleBuffs };
@@ -119,6 +121,13 @@ export function resolveCombatRound({
   if (!skillValidation.valid) {
     return skillValidation.abortResult;
   }
+
+  // 插入本回合明確分隔標題
+  logs.push({
+    text: `第 ${roundNum} 回合交鋒`,
+    roundNum,
+    type: 'round_divider'
+  });
 
   // 1. 建構本回合「速度先手行動序列」
   const windSpeedAdd = currentBuffs.windBuffTurns > 0 ? (currentBuffs.windSpeedBonus || 0) : 0;
@@ -255,7 +264,8 @@ export function resolveCombatRound({
     return { outcome: 'VICTORY', logs, ...vicRes };
   }
 
-  // 3. 回合末持續負面傷害階段（劇毒、灼燒、流血）
+  // 3. 回合末持續負面傷害與緩回結算階段
+  const endPhaseLogs = [];
   currentMonsters = currentMonsters.map(m => {
     if (m.hp <= 0) return m;
     const updatedM = { ...m };
@@ -267,10 +277,11 @@ export function resolveCombatRound({
       );
       updatedM.hp = Math.max(0, updatedM.hp - poisonDmg);
       recordMonsterHit(updatedM.id, poisonDmg, false);
-      logs.push({
+      endPhaseLogs.push({
         text: `☠️ 【${updatedM.name}】劇毒發作，受到 ${poisonDmg} 點無視防禦真傷！`,
         type: 'player',
-        dmgRole: 'dot_poison'
+        dmgRole: 'dot_poison',
+        isSubEvent: true
       });
     }
 
@@ -278,10 +289,11 @@ export function resolveCombatRound({
       const burnDmg = updatedM.burnDmg || 15;
       updatedM.hp = Math.max(0, updatedM.hp - burnDmg);
       recordMonsterHit(updatedM.id, burnDmg, false);
-      logs.push({
+      endPhaseLogs.push({
         text: `🔥 【${updatedM.name}】受到灼燒持續法傷 ${burnDmg} 點！`,
         type: 'player',
-        dmgRole: 'dot_burn'
+        dmgRole: 'dot_burn',
+        isSubEvent: true
       });
     }
 
@@ -289,32 +301,17 @@ export function resolveCombatRound({
       const bleedDmg = updatedM.bleedDmg || 15;
       updatedM.hp = Math.max(0, updatedM.hp - bleedDmg);
       recordMonsterHit(updatedM.id, bleedDmg, false);
-      logs.push({
+      endPhaseLogs.push({
         text: `🩸 【${updatedM.name}】傷口撕裂流血，受到 ${bleedDmg} 點持續物理傷害！`,
         type: 'player',
-        dmgRole: 'dot_burn'
+        dmgRole: 'dot_burn',
+        isSubEvent: true
       });
     }
 
     return updatedM;
   });
 
-  if (currentMonsters.every(m => m.hp <= 0)) {
-    logs.push({ text: `🎉 敵軍在持續傷害中全數倒下！戰鬥勝利！`, type: 'sys' });
-    const vicRes = resolveBattleVictory({
-      player: currentPlayer,
-      defeatedMonsters: currentMonsters,
-      currentRoster,
-      activeHeroInstanceIds,
-      currentZoneIndex,
-      activeTowerFloor,
-      isFengShui,
-      getHeroRowIdx
-    });
-    return { outcome: 'VICTORY', logs, ...vicRes };
-  }
-
-  // 回合末我方生機緩回（藥師普渡甘霖 / 風水師八卦陣）
   if (currentBuffs.teamRegenTurns > 0 && (currentBuffs.teamRegenVal || 0) > 0) {
     const rVal = currentBuffs.teamRegenVal;
     currentPlayer.hp = Math.min(playerTotalMaxHp, currentPlayer.hp + rVal);
@@ -330,11 +327,35 @@ export function resolveCombatRound({
       recordAllyHeal(ally.instanceId, rVal);
       return { ...ally, hp: Math.min(effectiveMaxHp, ally.hp + rVal) };
     });
-    logs.push({
-      text: `🌱 陣法生機流轉，我方全體自動恢復 +${rVal} HP！`,
+    endPhaseLogs.push({
+      text: `🌱 生機流轉，我方全體自動恢復 +${rVal} HP！`,
       type: 'sys',
-      dmgRole: 'heal'
+      dmgRole: 'heal',
+      isSubEvent: true
     });
+  }
+
+  if (endPhaseLogs.length > 0) {
+    logs.push({
+      text: `第 ${roundNum} 回合末狀態結算`,
+      type: 'phase_divider'
+    });
+    logs.push(...endPhaseLogs);
+  }
+
+  if (currentMonsters.every(m => m.hp <= 0)) {
+    logs.push({ text: `🎉 敵軍在持續傷害中全數倒下！戰鬥勝利！`, type: 'sys' });
+    const vicRes = resolveBattleVictory({
+      player: currentPlayer,
+      defeatedMonsters: currentMonsters,
+      currentRoster,
+      activeHeroInstanceIds,
+      currentZoneIndex,
+      activeTowerFloor,
+      isFengShui,
+      getHeroRowIdx
+    });
+    return { outcome: 'VICTORY', logs, ...vicRes };
   }
 
   // 4. 回合末狀態遞減、4 招冷卻倒數
