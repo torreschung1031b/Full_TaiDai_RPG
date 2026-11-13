@@ -17,6 +17,7 @@ import {
 import HeroRosterTab from './components/HeroRosterTab';
 import SkillTreeTab from './components/SkillTreeTab';
 import HelpGuideModal from './components/HelpGuideModal';
+import BattleResultModals from './components/BattleResultModals';
 import {
   CharacterTab,
   ForgeTab,
@@ -173,7 +174,9 @@ export default function GameUI(props) {
     ? props.classSkills
     : buildAdaptedClassSkills(player.job, classInfo.skills);
   const sweepReqLevel = getZoneSweepReqLevel(currentZoneIndex);
-  const canSweepCurrentZone = (player.level || 1) >= sweepReqLevel;
+  const isSweepLevelUnlocked = (player.level || 1) >= sweepReqLevel;
+  const isSweepHpReady = (player.hp || 0) > 1;
+  const canSweepCurrentZone = isSweepLevelUnlocked && isSweepHpReady;
 
   const getHeroRowIdx = (heroInstanceId) => {
     const foundKey = Object.keys(formationSlots || {}).find(k => formationSlots[k] === heroInstanceId);
@@ -434,12 +437,22 @@ export default function GameUI(props) {
                     <button
                       disabled={!canSweepCurrentZone}
                       onClick={() => handleSweepZone(3)}
-                      title={canSweepCurrentZone ? '一鍵連戰結算 3 場野外戰鬥獎勵' : `需主角達到 Lv.${sweepReqLevel} 解鎖`}
+                      title={
+                        !isSweepLevelUnlocked
+                          ? `需少俠達到 Lv.${sweepReqLevel} 解鎖此區域快速掃蕩`
+                          : !isSweepHpReady
+                            ? '少俠氣血過低，請先客棧休養再掃蕩'
+                            : '一鍵模擬連戰 3 場並承受真實戰損（中途戰敗即中止）'
+                      }
                       className="py-3 px-3.5 rounded-2xl bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-600 hover:to-indigo-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-black text-xs flex items-center justify-center gap-1.5 shadow transition-all"
                     >
                       <Zap className="w-4 h-4" />
                       <span>
-                        {canSweepCurrentZone ? '⚡ 快速掃蕩 ×3' : `🔒 掃蕩 (Lv.${sweepReqLevel})`}
+                        {!isSweepLevelUnlocked
+                          ? `🔒 掃蕩 (Lv.${sweepReqLevel})`
+                          : !isSweepHpReady
+                            ? '⚠️ 氣血過低'
+                            : '⚡ 快速掃蕩 ×3'}
                       </span>
                     </button>
 
@@ -1033,70 +1046,14 @@ export default function GameUI(props) {
         )}
       </main>
 
-      {/* 戰鬥勝利 / 快速掃蕩結算視窗 */}
-      {victorySummary && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-amber-400/70 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
-            <h3 className="text-xl font-black text-amber-400 text-center">
-              {victorySummary.isSweep
-                ? `⚡ 【${victorySummary.zoneName}】×${victorySummary.sweepCount} 場快速掃蕩結算`
-                : '🎉 戰鬥大捷・戰利品結算'}
-            </h3>
-            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-1.5 text-xs font-mono max-h-80 overflow-y-auto">
-              <div>💰 獲得金幣：<span className="text-amber-300 font-bold">+{victorySummary.gold}</span></div>
-              <div>✨ 獲得經驗：<span className="text-emerald-300 font-bold">+{victorySummary.exp}</span></div>
-              {victorySummary.stones > 0 && (
-                <div>💎 掉落精鍊石：<span className="text-cyan-300 font-bold">+{victorySummary.stones} 顆</span></div>
-              )}
-              {victorySummary.droppedEquipments?.map(eq => (
-                <div key={eq.uid} className="text-purple-300 font-bold">
-                  🗡️ 掉落裝備：【{enrichEquipmentMeta(eq).tierTag}・{eq.name}】
-                </div>
-              ))}
-              {(victorySummary.droppedSkillCards || (victorySummary.droppedSkillCard ? [victorySummary.droppedSkillCard] : [])).map((sc, idx) => (
-                <div key={sc.uid || idx} className="text-amber-200 font-bold">
-                  🃏 掉落技能卡：【{sc.name}】
-                </div>
-              ))}
-              {(victorySummary.droppedHeroes || (victorySummary.droppedHero ? [victorySummary.droppedHero] : [])).map((dh, idx) => (
-                <div key={dh.instanceId || idx} className="text-emerald-300 font-bold">
-                  👥 俠客投效：【Tier {dh.tier}】{dh.name} 加入名冊！
-                </div>
-              ))}
-              {victorySummary.msgs?.map((m, i) => (
-                <div key={i} className="text-amber-300 pt-1">{m}</div>
-              ))}
-            </div>
-            <button
-              onClick={() => setVictorySummary(null)}
-              className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-black text-sm"
-            >
-              收下戰利品
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 戰敗結算視窗 */}
-      {defeatSummary && (
-        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-rose-500/70 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
-            <h3 className="text-xl font-black text-rose-400 text-center">☠️ 勝敗乃兵家常事</h3>
-            <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 space-y-2 text-xs">
-              <div>少俠退回安全營地，損失 <strong className="text-rose-300">{defeatSummary.expLost}</strong> 點經驗值。</div>
-              {defeatSummary.casualties?.map((c, idx) => (
-                <div key={idx} className="text-rose-300">{c}</div>
-              ))}
-            </div>
-            <button
-              onClick={() => setDefeatSummary(null)}
-              className="w-full py-2.5 rounded-xl bg-rose-700 hover:bg-rose-600 text-white font-black text-sm"
-            >
-              返回營地休整
-            </button>
-          </div>
-        </div>
-      )}
+      {/* 戰鬥勝利 / 快速掃蕩 / 戰敗結算視窗 */}
+      <BattleResultModals
+        victorySummary={victorySummary}
+        setVictorySummary={setVictorySummary}
+        defeatSummary={defeatSummary}
+        setDefeatSummary={setDefeatSummary}
+        handleRestInn={handleRestInn}
+      />
 
       {/* 江湖指南彈窗 */}
       <HelpGuideModal helpModalTab={helpModalTab} setHelpModalTab={setHelpModalTab} />
