@@ -12,7 +12,7 @@ import { calculateCodexBonus } from './components/SecondaryTabs';
 import { getRowPositionBuffs, syncFormationSlots } from './utils/formationHelper';
 import { getRandomElement, normalizeHero } from './utils/statCalculator';
 import { getPlayerStatScaling } from './utils/combatEngine';
-import { MAX_HERO_FUSION } from './utils/heroFusionHelper';
+import { MAX_HERO_FUSION, mergeHeroIntoTarget } from './utils/heroFusionHelper';
 
 import { useSaveSystem } from './hooks/useSaveSystem';
 import { useRosterAndFormation } from './hooks/useRosterAndFormation';
@@ -40,6 +40,79 @@ const INITIAL_PLAYER = {
   equipped: { weapon: null, offhand: null, helmet: null, armor: null, shoes: null, accessory: null }
 };
 
+/**
+ * 自動掃描並合併重複的同名英雄（未達 ★+5 時自動突破升星）
+ */
+function autoFuseDuplicateHeroes(rawRoster, deployedIds = []) {
+  const groups = {};
+  rawRoster.forEach(h => {
+    if (!groups[h.baseId]) groups[h.baseId] = [];
+    groups[h.baseId].push(h);
+  });
+
+  const consumedIds = new Set();
+  const upgradedMap = {};
+  const recoveredCards = [];
+  const fusionLogs = [];
+
+  Object.values(groups).forEach(group => {
+    if (group.length < 2) return;
+
+    // 優先保留已出戰、星級最高、等級最高的本尊
+    const sorted = [...group].sort((a, b) => {
+      const aDep = deployedIds.includes(a.instanceId) ? 1 : 0;
+      const bDep = deployedIds.includes(b.instanceId) ? 1 : 0;
+      return (
+        bDep - aDep ||
+        (b.fusionLevel || 0) - (a.fusionLevel || 0) ||
+        (b.level || 1) - (a.level || 1)
+      );
+    });
+
+    let mainHero = sorted[0];
+    let didFuseThisHero = false;
+
+    for (let i = 1; i < sorted.length; i++) {
+      const curFusion = Math.min(MAX_HERO_FUSION, mainHero.fusionLevel || 0);
+      if (curFusion >= MAX_HERO_FUSION) break;
+
+      const matHero = sorted[i];
+      const nextFusion = curFusion + 1;
+      mainHero = mergeHeroIntoTarget(mainHero, matHero, nextFusion);
+      consumedIds.add(matHero.instanceId);
+      didFuseThisHero = true;
+
+      recoveredCards.push(
+        ...(matHero.activeSkillSlots || []),
+        ...(matHero.passiveSkillSlots || [])
+      );
+
+      const milestoneHint = nextFusion === 3
+        ? '【覺醒：護主靈罡】'
+        : nextFusion === 5
+          ? '【覺醒：無雙連攜】'
+          : '';
+      fusionLogs.push(
+        `🌟 獲得重複英雄【${mainHero.name}】，自動同名突破至 ★+${nextFusion}（全屬性 +${nextFusion * 15}%）${milestoneHint}！`
+      );
+    }
+
+    if (didFuseThisHero) {
+      upgradedMap[mainHero.instanceId] = mainHero;
+    }
+  });
+
+  if (consumedIds.size === 0) {
+    return { roster: rawRoster, consumedIds, recoveredCards, fusionLogs };
+  }
+
+  const nextRoster = rawRoster
+    .filter(h => !consumedIds.has(h.instanceId))
+    .map(h => upgradedMap[h.instanceId] || h);
+
+  return { roster: nextRoster, consumedIds, recoveredCards, fusionLogs };
+}
+
 export default function App() {
   const [gameStarted, setGameStarted] = useState(false);
   const [creationData, setCreationData] = useState({
@@ -52,7 +125,7 @@ export default function App() {
   const [starterHeroCandidates, setStarterHeroCandidates] = useState([]);
 
   const [player, setPlayer] = useState(INITIAL_PLAYER);
-  const [heroRoster, setHeroRoster] = useState([]);
+  const [heroRoster, setHeroRosterRaw] = useState([]);
   const [activeHeroInstanceIds, setActiveHeroInstanceIds] = useState([]);
   const [currentFormation, setCurrentFormation] = useState('none');
   const [formationSlots, setFormationSlots] = useState({ 0: 'PLAYER', 2: null, 4: null, 6: null, 8: null });
@@ -71,6 +144,42 @@ export default function App() {
 
   const chatEndRef = useRef(null);
   const isFengShui = player.job === '風水師';
+
+  // 包裝 setHeroRoster：每次名冊變動（包含市集抽卡、戰利品掉落等）自動合併同名分身突破
+  const setHeroRoster = useCallback((updater) => {
+    setHeroRosterRaw(prev => {
+      const nextRaw = typeof updater === 'function' ? updater(prev) : updater;
+      if (!Array.isArray(nextRaw)) return nextRaw;
+
+      const { roster, consumedIds, recoveredCards, fusionLogs } = autoFuseDuplicateHeroes(
+        nextRaw,
+        activeHeroInstanceIds
+      );
+
+      if (consumedIds.size > 0) {
+        if (recoveredCards.length > 0) {
+          setTimeout(() => {
+            setSkillCardsInventory(cardsPrev => [...cardsPrev, ...recoveredCards]);
+          }, 0);
+        }
+        if (fusionLogs.length > 0) {
+          setTimeout(() => {
+            setCombatLogs(logsPrev => [
+              ...logsPrev,
+              ...fusionLogs.map((text, idx) => ({
+                id: Date.now() + Math.random() + idx * 0.001,
+                turn: turnCount,
+                text,
+                type: 'sys'
+              }))
+            ]);
+          }, 0);
+        }
+      }
+
+      return roster;
+    });
+  }, [activeHeroInstanceIds, turnCount]);
 
   // 初始化開局可選夥伴候選名單
   useEffect(() => {
@@ -254,7 +363,7 @@ export default function App() {
 
     setPlayer(newPlayer);
     setEquipmentInventory([]);
-    setHeroRoster([starterHero]);
+    setHeroRosterRaw([starterHero]);
     setActiveHeroInstanceIds([starterHero.instanceId]);
     setCurrentFormation('none');
     setFormationSlots(syncFormationSlots('none', {}, [starterHero.instanceId]));
