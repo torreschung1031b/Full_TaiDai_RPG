@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Swords, Users, Sparkles, Shield, Hammer, User, Compass,
-  Castle, Store, BookOpen, Save, HelpCircle, LogOut, Search, Zap, Bot
+  Castle, Store, BookOpen, Save, HelpCircle, LogOut, Search, Zap, Bot, FastForward
 } from 'lucide-react';
 import { ZONES, ELEMENTS } from './data/constants';
 import { CLASS_CONFIGS } from './data/classes';
@@ -17,6 +17,7 @@ import {
 } from './utils/combatEngine';
 import HeroRosterTab from './components/HeroRosterTab';
 import SkillTreeTab from './components/SkillTreeTab';
+import ShopTab from './components/ShopTab';
 import HelpGuideModal from './components/HelpGuideModal';
 import BattleResultModals from './components/BattleResultModals';
 import {
@@ -27,17 +28,6 @@ import {
   CodexTab,
   SaveLoadTab
 } from './components/SecondaryTabs';
-
-const SHOP_ITEMS = [
-  { id: 'stone_1', name: '精鍊石 ×1', price: 150, tag: '鍛造素材', desc: '鐵匠鋪強化裝備必備靈石。' },
-  { id: 'stone_5', name: '五連精鍊石禮盒 ×5', price: 700, tag: '超值禮盒', desc: '一次補充 5 顆精鍊石（省 50 金幣）。' },
-  { id: 'ration_full', name: '行軍大還丹禮包', price: 120, tag: '即時補給', desc: '立即恢復全隊 100% 生命與內力／彈藥。' },
-  { id: 'skill_box', name: '秘傳技能卡盲盒', price: 260, tag: '英雄強化', desc: '隨機開出一張英雄主動或被動強化技能卡。' },
-  { id: 'equip_box_mid', name: '江湖兵器箱 (T1~T3)', price: 320, tag: '神兵抽獎', desc: '隨機獲得 Tier 1～3 裝備，25% 機率自帶 +1 精鍊。' },
-  { id: 'equip_box_high', name: '天工神兵匣 (T3~T5)', price: 950, tag: '頂級寶匣', desc: '必得 Tier 3～5 名器，有高機率開出靈寶與仙器！' },
-  { id: 'hero_scroll_normal', name: '江湖英雄帖 (T1~T3)', price: 380, tag: '英雄招募', desc: '招募 Tier 1～3 俠客（抽到同名英雄可進行合成升星）。' },
-  { id: 'hero_scroll_rare', name: '名將點將錄 (T3~T5)', price: 1100, tag: '絕世招募', desc: '必得 Tier 3～5 絕世名將，大幅提升陣容上限！' }
-];
 
 const EQUIP_SLOTS = [
   { key: 'weapon', label: '🗡️ 武器' },
@@ -97,6 +87,8 @@ export default function GameUI(props) {
     handleToggleAutoBattle,
     autoTower,
     handleToggleAutoTower,
+    battleSpeed = 1,
+    handleCycleBattleSpeed,
     creationData,
     setCreationData,
     starterHeroCandidates,
@@ -169,6 +161,7 @@ export default function GameUI(props) {
 
   const [helpModalTab, setHelpModalTab] = useState(null);
   const [selectedSlotForSwap, setSelectedSlotForSwap] = useState(null);
+  const [logFilter, setLogFilter] = useState('all'); // 'all' | 'combat' | 'sys'
 
   const isFengShui = player.job === '風水師';
   const isWarlock = player.job === '術士';
@@ -187,13 +180,24 @@ export default function GameUI(props) {
     return foundKey !== undefined ? Math.floor(Number(foundKey) / 3) : 1;
   };
 
+  // 右側戰報篩選
+  const filteredCombatLogs = useMemo(() => {
+    if (logFilter === 'all') return combatLogs;
+    if (logFilter === 'combat') {
+      return combatLogs.filter(
+        l => l.dmgRole || l.text?.includes('暴擊') || l.text?.includes('連攜') || l.text?.includes('剋制')
+      );
+    }
+    return combatLogs.filter(l => l.type === 'sys' || l.type === 'danger');
+  }, [combatLogs, logFilter]);
+
   // ==================== 創角畫面 ====================
   if (!gameStarted) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
         <div className="max-w-3xl w-full bg-slate-900/90 border border-amber-500/40 rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
           <div className="text-center space-y-1">
-            <h1 className="text-2xl sm:text-3xl font-black text-amber-400 tracking-wider">⚔️ 《泰太 Online》文字武俠 RPG</h1>
+            <h1 className="text-2xl sm:text-3xl font-black text-amber-400 tracking-wider">⚔️ 《天外 Online》文字武俠 RPG</h1>
             <p className="text-xs text-slate-400">創立少俠名號、選擇本命五行與門派職業，招募同行俠客踏入江湖</p>
           </div>
 
@@ -294,7 +298,7 @@ export default function GameUI(props) {
             onClick={handleStartGame}
             className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black text-base shadow-xl transition-all"
           >
-            ⚔️ 踏入《泰太 Online》江湖
+            ⚔️ 踏入《天外 Online》江湖
           </button>
         </div>
       </div>
@@ -318,7 +322,6 @@ export default function GameUI(props) {
 
   const handleSlotClick = (slotIdx) => {
     if (isInCombat) return;
-    // 僅允許點擊當前陣法已開放的陣眼槽位
     if (!Object.prototype.hasOwnProperty.call(formationSlots || {}, slotIdx)) return;
 
     if (selectedSlotForSwap === null) {
@@ -337,7 +340,7 @@ export default function GameUI(props) {
       <header className="sticky top-0 z-30 bg-slate-950/95 border-b border-slate-800 backdrop-blur px-4 py-3">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2.5 flex-wrap">
-            <span className="font-black text-amber-400 text-base sm:text-lg">⚔️ 泰太 Online</span>
+            <span className="font-black text-amber-400 text-base sm:text-lg">⚔️ 天外 Online</span>
             <span className="text-xs bg-slate-900 border border-slate-700 px-2.5 py-1 rounded-full font-bold text-slate-200">
               {player.name} • Lv.{player.level} {player.job} ({ELEMENTS[player.element]?.icon}{player.element})
             </span>
@@ -407,7 +410,7 @@ export default function GameUI(props) {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
             {/* 左側戰場與操作區 */}
             <div className="lg:col-span-7 space-y-4">
-              {/* 地圖選擇、搜敵、快速掃蕩與自動戰鬥控制 */}
+              {/* 地圖選擇、搜敵、快速掃蕩、自動戰鬥與倍速控制 */}
               <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs font-extrabold text-amber-400">
@@ -437,7 +440,7 @@ export default function GameUI(props) {
                   <div className="flex flex-wrap gap-2">
                     <button
                       onClick={() => spawnEncounter(currentZoneIndex)}
-                      className="flex-1 min-w-[160px] py-3 px-4 rounded-2xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg transition-all"
+                      className="flex-1 min-w-[150px] py-3 px-4 rounded-2xl bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-lg transition-all"
                     >
                       <Search className="w-4 h-4" />
                       <span>🔍 尋找怪群</span>
@@ -477,6 +480,24 @@ export default function GameUI(props) {
                       <span>{autoBattle ? '🤖 自動戰鬥：開' : '🤖 自動戰鬥：關'}</span>
                     </button>
 
+                    {handleCycleBattleSpeed && (
+                      <button
+                        type="button"
+                        onClick={handleCycleBattleSpeed}
+                        title="切換自動戰鬥行動與結算速度 (1x / 2x / 3x)"
+                        className={`py-3 px-3 rounded-2xl font-mono font-black text-xs flex items-center gap-1 border transition-all ${
+                          battleSpeed === 3
+                            ? 'bg-amber-500/25 border-amber-400 text-amber-300'
+                            : battleSpeed === 2
+                              ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+                              : 'bg-slate-950 border-slate-700 text-slate-300 hover:border-slate-500'
+                        }`}
+                      >
+                        <FastForward className="w-3.5 h-3.5" />
+                        <span>{battleSpeed}x</span>
+                      </button>
+                    )}
+
                     <button
                       onClick={handleRestInn}
                       className="py-3 px-3.5 rounded-2xl bg-emerald-700 hover:bg-emerald-600 text-white font-bold text-xs shadow transition-all"
@@ -487,9 +508,27 @@ export default function GameUI(props) {
                 ) : (
                   <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-950/90 border border-slate-800 rounded-2xl px-3.5 py-2.5 text-xs">
                     <span className="text-slate-300">
-                      護盾：<strong className="text-cyan-300">{combatBuffs.shield || 0}</strong> • 速度先手排序制
+                      護盾：<strong className="text-cyan-300">{combatBuffs.shield || 0}</strong> • 速度先手制
                     </span>
                     <div className="flex items-center gap-2 flex-wrap">
+                      {handleCycleBattleSpeed && (
+                        <button
+                          type="button"
+                          onClick={handleCycleBattleSpeed}
+                          title="切換自動戰鬥行動與結算速度 (1x / 2x / 3x)"
+                          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-mono font-black border transition-all ${
+                            battleSpeed === 3
+                              ? 'bg-amber-500/25 border-amber-400 text-amber-300'
+                              : battleSpeed === 2
+                                ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+                                : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-500'
+                          }`}
+                        >
+                          <FastForward className="w-3.5 h-3.5" />
+                          <span>{battleSpeed}x</span>
+                        </button>
+                      )}
+
                       {activeTowerFloor && (
                         <button
                           onClick={handleToggleAutoTower}
@@ -528,7 +567,7 @@ export default function GameUI(props) {
                 )}
               </div>
 
-              {/* 敵方怪群區（含五行相剋即時提示與速度對比） */}
+              {/* 敵方怪群區（含向上飄動淡出傷害飄字特效） */}
               {isInCombat && (
                 <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 space-y-3">
                   <div className="flex justify-between items-center text-xs">
@@ -553,7 +592,7 @@ export default function GameUI(props) {
                         <div
                           key={m.id}
                           onClick={() => !dead && setSelectedTargetIndex(idx)}
-                          className={`p-3 rounded-2xl border transition-all relative ${
+                          className={`p-3 rounded-2xl border transition-all relative overflow-visible ${
                             dead
                               ? 'bg-slate-950/40 border-slate-900 opacity-40'
                               : isTarget
@@ -561,6 +600,20 @@ export default function GameUI(props) {
                                 : 'bg-slate-950 border-slate-800 hover:border-slate-600 cursor-pointer'
                           }`}
                         >
+                          {/* 浮動傷害飄字特效 */}
+                          {hitInfo?.dmg > 0 && (
+                            <div
+                              key={`${m.id}_t${turnCount}_${hitInfo.dmg}`}
+                              className={`pointer-events-none absolute -top-3 right-3 z-20 px-2 py-0.5 rounded-lg font-mono font-black shadow-lg animate-float-dmg ${
+                                hitInfo.isCrit
+                                  ? 'text-sm bg-amber-500 text-slate-950 border border-amber-200'
+                                  : 'text-xs bg-cyan-950/95 text-cyan-200 border border-cyan-500'
+                              }`}
+                            >
+                              {hitInfo.isCrit ? `💥 暴擊 -${hitInfo.dmg}!` : `-${hitInfo.dmg}`}
+                            </div>
+                          )}
+
                           <div className="flex justify-between items-center gap-1.5 text-xs font-bold">
                             <span className="text-slate-100 truncate">
                               {isTarget ? '🎯 ' : ''}{m.name}
@@ -624,17 +677,6 @@ export default function GameUI(props) {
                                 易傷 {m.vulnTurns}T
                               </span>
                             )}
-                            {hitInfo?.dmg > 0 && (
-                              <span
-                                className={`text-[10px] font-mono font-black px-1.5 rounded ml-auto ${
-                                  hitInfo.isCrit
-                                    ? 'bg-amber-500/30 border border-amber-400 text-amber-200'
-                                    : 'bg-cyan-950 border border-cyan-700 text-cyan-200'
-                                }`}
-                              >
-                                {hitInfo.isCrit ? `💥-${hitInfo.dmg}` : `-${hitInfo.dmg}`}
-                              </span>
-                            )}
                           </div>
                         </div>
                       );
@@ -643,7 +685,7 @@ export default function GameUI(props) {
                 </div>
               )}
 
-              {/* 我方九宮陣法與排位狀態 */}
+              {/* 我方九宮陣法與排位狀態（含我方受擊飄字特效） */}
               <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 space-y-2.5">
                 <div className="flex flex-wrap justify-between items-center gap-1.5 text-xs">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -673,7 +715,6 @@ export default function GameUI(props) {
                           const occupant = isAvailableSlot ? formationSlots[slotIdx] : undefined;
                           const isSelectedSwap = selectedSlotForSwap === slotIdx;
 
-                          // 1. 該陣法未開放的格子：明確標記為「非陣眼位」並禁用點擊
                           if (!isAvailableSlot) {
                             return (
                               <div
@@ -686,14 +727,13 @@ export default function GameUI(props) {
                             );
                           }
 
-                          // 2. 少俠主角所在槽位
                           if (occupant === 'PLAYER') {
                             const allyHit = lastRoundHits?.allies?.PLAYER;
                             return (
                               <div
                                 key={slotIdx}
                                 onClick={() => handleSlotClick(slotIdx)}
-                                className={`p-2 rounded-xl border text-xs h-[54px] flex flex-col justify-center transition-all ${
+                                className={`relative p-2 rounded-xl border text-xs h-[54px] flex flex-col justify-center transition-all ${
                                   !isInCombat ? 'cursor-pointer hover:border-amber-400' : ''
                                 } ${
                                   isSelectedSwap
@@ -701,16 +741,22 @@ export default function GameUI(props) {
                                     : 'bg-amber-950/30 border-amber-500/60'
                                 }`}
                               >
+                                {allyHit?.dmg > 0 && (
+                                  <span
+                                    key={`player_t${turnCount}_${allyHit.dmg}`}
+                                    className="pointer-events-none absolute -top-2.5 right-1.5 z-20 px-1.5 py-0.2 rounded bg-rose-600 text-white font-mono font-black text-[10px] shadow animate-float-dmg"
+                                  >
+                                    -{allyHit.dmg}
+                                  </span>
+                                )}
                                 <div className="font-black text-amber-300 truncate">👑 {player.name}</div>
                                 <div className="flex items-center justify-between text-[10px] font-mono text-rose-300">
                                   <span>HP {player.hp}/{playerTotalMaxHp}</span>
-                                  {allyHit?.dmg > 0 && <span className="font-bold">-{allyHit.dmg}</span>}
                                 </div>
                               </div>
                             );
                           }
 
-                          // 3. 出戰英雄所在槽位
                           const hero = occupant ? heroRoster.find(h => h.instanceId === occupant) : null;
                           if (hero) {
                             const { effectiveMaxHp } = calculateHeroEffectiveStats(hero, isFengShui, heroBattleBuffs[hero.instanceId], rowIdx);
@@ -719,7 +765,7 @@ export default function GameUI(props) {
                               <div
                                 key={slotIdx}
                                 onClick={() => handleSlotClick(slotIdx)}
-                                className={`p-2 rounded-xl border text-xs h-[54px] flex flex-col justify-center transition-all ${
+                                className={`relative p-2 rounded-xl border text-xs h-[54px] flex flex-col justify-center transition-all ${
                                   !isInCombat ? 'cursor-pointer hover:border-emerald-400' : ''
                                 } ${
                                   isSelectedSwap
@@ -729,18 +775,24 @@ export default function GameUI(props) {
                                       : 'bg-slate-950 border-slate-700'
                                 }`}
                               >
+                                {allyHit?.dmg > 0 && (
+                                  <span
+                                    key={`${hero.instanceId}_t${turnCount}_${allyHit.dmg}`}
+                                    className="pointer-events-none absolute -top-2.5 right-1.5 z-20 px-1.5 py-0.2 rounded bg-rose-600 text-white font-mono font-black text-[10px] shadow animate-float-dmg"
+                                  >
+                                    -{allyHit.dmg}
+                                  </span>
+                                )}
                                 <div className="font-bold text-emerald-300 truncate">
                                   {hero.name} {hero.fusionLevel > 0 ? `★+${hero.fusionLevel}` : ''}
                                 </div>
                                 <div className="flex items-center justify-between text-[10px] font-mono text-slate-400">
                                   <span>HP {hero.hp}/{effectiveMaxHp}</span>
-                                  {allyHit?.dmg > 0 && <span className="font-bold text-rose-300">-{allyHit.dmg}</span>}
                                 </div>
                               </div>
                             );
                           }
 
-                          // 4. 已開放但尚無角色駐守的有效陣眼空位
                           return (
                             <div
                               key={slotIdx}
@@ -770,7 +822,7 @@ export default function GameUI(props) {
                     <span className="font-extrabold text-amber-300">⚔️ 選擇本回合行動指令</span>
                     {autoBattle && (
                       <span className="text-[11px] font-bold text-cyan-300">
-                        🤖 自動戰鬥運作中（點上方按鈕可隨時接管）
+                        🤖 自動戰鬥運作中（{battleSpeed}x 速 • 點上方按鈕可隨時接管）
                       </span>
                     )}
                   </div>
@@ -821,26 +873,74 @@ export default function GameUI(props) {
               )}
             </div>
 
-            {/* 右側即時戰報日誌 */}
+            {/* 右側即時戰報日誌（附分類過濾膠囊與特效高亮徽章） */}
             <div className="lg:col-span-5 bg-slate-900/80 border border-slate-800 rounded-3xl p-4 flex flex-col h-[560px]">
-              <div className="text-xs font-extrabold text-amber-400 border-b border-slate-800 pb-2.5 mb-2.5 flex justify-between items-center">
-                <span>📜 即時江湖戰報</span>
-                <span className="text-[11px] font-mono text-slate-400">總攻 {playerTotalAtk} • 總防 {playerTotalDef} • 速 {playerTotalSpeed}</span>
+              <div className="border-b border-slate-800 pb-2.5 mb-2.5 space-y-2">
+                <div className="text-xs font-extrabold text-amber-400 flex justify-between items-center">
+                  <span>📜 即時江湖戰報</span>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    總攻 {playerTotalAtk} • 總防 {playerTotalDef} • 速 {playerTotalSpeed}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5 text-[11px]">
+                  {[
+                    { id: 'all', label: `全部 (${combatLogs.length})` },
+                    { id: 'combat', label: '💥 傷害暴擊' },
+                    { id: 'sys', label: '🎁 系統與掉落' }
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setLogFilter(tab.id)}
+                      className={`px-2.5 py-0.5 rounded-full font-bold border transition-all ${
+                        logFilter === tab.id
+                          ? 'bg-amber-500 text-slate-950 border-amber-300'
+                          : 'bg-slate-950 text-slate-400 border-slate-800 hover:border-slate-600'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
               </div>
+
               <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 text-xs leading-relaxed">
-                {combatLogs.map(log => {
+                {filteredCombatLogs.map(log => {
                   let style = 'text-slate-300 bg-slate-950/60 border-slate-800/70';
-                  if (log.dmgRole === 'player_crit') style = 'text-amber-200 bg-amber-500/20 border-amber-400 font-bold';
-                  else if (log.dmgRole === 'player_normal') style = 'text-cyan-200 bg-cyan-950/50 border-cyan-800/70';
-                  else if (log.dmgRole === 'monster_crit') style = 'text-rose-100 bg-rose-600/35 border-rose-400 font-bold';
-                  else if (log.dmgRole === 'monster_normal') style = 'text-rose-300 bg-rose-950/40 border-rose-900/70';
-                  else if (log.dmgRole === 'heal' || log.dmgRole === 'shield') style = 'text-emerald-200 bg-emerald-950/50 border-emerald-700/70';
-                  else if (log.type === 'danger') style = 'text-rose-300 bg-rose-950/60 border-rose-700 font-bold';
-                  else if (log.type === 'sys') style = 'text-amber-300/90 bg-slate-950/90 border-slate-800';
+                  let badge = null;
+
+                  if (log.dmgRole === 'player_crit') {
+                    style = 'text-amber-200 bg-amber-500/20 border-amber-400 font-bold';
+                    badge = '💥 暴擊';
+                  } else if (log.dmgRole === 'player_normal') {
+                    style = 'text-cyan-200 bg-cyan-950/50 border-cyan-800/70';
+                  } else if (log.dmgRole === 'monster_crit') {
+                    style = 'text-rose-100 bg-rose-600/35 border-rose-400 font-bold';
+                    badge = '⚠️ 敵暴擊';
+                  } else if (log.dmgRole === 'monster_normal') {
+                    style = 'text-rose-300 bg-rose-950/40 border-rose-900/70';
+                  } else if (log.dmgRole === 'heal' || log.dmgRole === 'shield') {
+                    style = 'text-emerald-200 bg-emerald-950/50 border-emerald-700/70';
+                    badge = '💚 護療';
+                  } else if (log.type === 'danger') {
+                    style = 'text-rose-300 bg-rose-950/60 border-rose-700 font-bold';
+                  } else if (log.type === 'sys') {
+                    style = 'text-amber-300/90 bg-slate-950/90 border-slate-800';
+                  }
+
+                  if (!badge && log.text?.includes('無雙連攜')) badge = '🔥 無雙連攜';
+                  else if (!badge && log.text?.includes('雙卡共鳴')) badge = '✨ 共鳴';
+                  else if (!badge && log.text?.includes('五行剋制')) badge = '☯️ 剋制';
 
                   return (
                     <div key={log.id} className={`px-3 py-1.5 rounded-xl border ${style}`}>
                       <span className="text-[10px] font-mono text-slate-500 mr-1.5">[T{log.turn}]</span>
+                      {badge && (
+                        <span className="inline-block text-[10px] font-black px-1.5 py-0.2 mr-1.5 rounded bg-slate-950/80 border border-current">
+                          {badge}
+                        </span>
+                      )}
                       <span>{log.text}</span>
                     </div>
                   );
@@ -1029,49 +1129,14 @@ export default function GameUI(props) {
           />
         )}
 
-        {/* ==================== 9. 江湖市集 ==================== */}
+        {/* ==================== 9. 江湖市集（已正式接上新版 ShopTab） ==================== */}
         {activeTab === 'shop' && (
-          <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-5 max-w-5xl mx-auto">
-            <div className="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
-              <div>
-                <h2 className="font-extrabold text-amber-400 text-lg">🏮 江湖行腳商市集</h2>
-                <p className="text-xs text-slate-400 mt-0.5">購買精鍊石、神兵寶匣、強化技能卡與招募同名英雄進行合成突破</p>
-              </div>
-              <span className="text-xs font-mono font-bold bg-slate-950 text-amber-300 px-3.5 py-1.5 rounded-full border border-slate-800">
-                💰 持有金幣：{player.gold}
-              </span>
-            </div>
-
-            {shopLastReward && (
-              <div className="bg-emerald-950/60 border border-emerald-500/70 text-emerald-200 rounded-2xl p-3.5 text-xs sm:text-sm font-bold">
-                {shopLastReward}
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-              {SHOP_ITEMS.map(item => {
-                const canBuy = !isInCombat && player.gold >= item.price;
-                return (
-                  <div key={item.id} className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex flex-col justify-between space-y-3">
-                    <div className="space-y-1.5">
-                      <span className="text-[10px] bg-amber-950/60 text-amber-300 border border-amber-700/60 px-2 py-0.5 rounded font-bold">
-                        {item.tag}
-                      </span>
-                      <div className="font-extrabold text-sm text-slate-100">{item.name}</div>
-                      <p className="text-[11px] text-slate-400 leading-relaxed">{item.desc}</p>
-                    </div>
-                    <button
-                      disabled={!canBuy}
-                      onClick={() => handleShopPurchase(item)}
-                      className="w-full py-2 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold text-xs transition-all"
-                    >
-                      {isInCombat ? '🔒 戰鬥中' : `💰 ${item.price} 金幣購買`}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <ShopTab
+            player={player}
+            isInCombat={isInCombat}
+            shopLastReward={shopLastReward}
+            handleShopPurchase={handleShopPurchase}
+          />
         )}
 
         {/* ==================== 10. 英雄圖鑑 ==================== */}
@@ -1091,15 +1156,18 @@ export default function GameUI(props) {
         )}
       </main>
 
-      {/* 戰鬥勝利 / 快速掃蕩 / 戰敗結算視窗 */}
+      {/* 戰鬥勝利 / 快速掃蕩 / 戰敗結算視窗（支援直接停止自動戰鬥與自動爬塔） */}
       <BattleResultModals
         victorySummary={victorySummary}
         setVictorySummary={setVictorySummary}
         defeatSummary={defeatSummary}
         setDefeatSummary={setDefeatSummary}
         handleRestInn={handleRestInn}
+        autoBattle={autoBattle}
+        handleToggleAutoBattle={handleToggleAutoBattle}
         autoTower={autoTower}
         handleToggleAutoTower={handleToggleAutoTower}
+        battleSpeed={battleSpeed}
       />
 
       {/* 江湖指南彈窗 */}
