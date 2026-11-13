@@ -261,6 +261,7 @@ export default function App() {
     setTowerFloor(1);
     setTowerBestFloor(1);
     combat.setActiveTowerFloor(null);
+    combat.setAutoTower(false);
     combat.setMonsters([]);
     combat.setLastRoundHits({ monsters: {}, allies: {} });
     setGameStarted(true);
@@ -281,6 +282,8 @@ export default function App() {
       activeTowerFloor={combat.activeTowerFloor}
       autoBattle={combat.autoBattle}
       handleToggleAutoBattle={combat.handleToggleAutoBattle}
+      autoTower={combat.autoTower}
+      handleToggleAutoTower={combat.handleToggleAutoTower}
       creationData={creationData}
       setCreationData={setCreationData}
       starterHeroCandidates={starterHeroCandidates}
