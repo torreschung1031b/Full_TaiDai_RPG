@@ -1,5 +1,5 @@
 /**
- * 《天外 Online》戰鬥核心計算引擎統一匯出入口（Barrel Export）
+ * 《泰太 Online》戰鬥核心計算引擎統一匯出入口（Barrel Export）
  * 對外保持 100% 既有具名匯出介面相容，內部職責已拆分至 src/utils/combat/ 各純函式模組。
  */
 
