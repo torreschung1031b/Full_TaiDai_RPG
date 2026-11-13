@@ -1,13 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import {
   Swords, Users, Sparkles, Shield, Hammer, User, Compass,
-  Castle, Store, BookOpen, Save, HelpCircle, LogOut, Search, Zap, Bot, FastForward
+  Castle, Store, BookOpen, Save, HelpCircle, LogOut, Search, Zap, Bot, FastForward, Filter
 } from 'lucide-react';
 import { ZONES, ELEMENTS } from './data/constants';
 import { CLASS_CONFIGS } from './data/classes';
 import { FORMATIONS_CONFIG } from './data/formations';
 import { PROTAGONIST_SKILLS_DB, getSkillMultiplier } from './data/skills';
-import { enrichEquipmentMeta } from './data/equipment';
+import { enrichEquipmentMeta, getActiveSetBonuses } from './data/equipment';
 import { calculateHeroEffectiveStats } from './utils/statCalculator';
 import {
   getSkillMeta,
@@ -30,12 +30,19 @@ import {
 } from './components/SecondaryTabs';
 
 const EQUIP_SLOTS = [
-  { key: 'weapon', label: '🗡️ 武器' },
-  { key: 'offhand', label: '🛡️ 副手' },
-  { key: 'helmet', label: '🪖 頭冠' },
-  { key: 'armor', label: '🥋 戰甲' },
-  { key: 'shoes', label: '👢 戰靴' },
-  { key: 'accessory', label: '💍 飾品' }
+  { key: 'weapon', label: '🗡️ 武器', short: '武器' },
+  { key: 'offhand', label: '🛡️ 副手', short: '副手' },
+  { key: 'helmet', label: '🪖 頭冠', short: '頭冠' },
+  { key: 'armor', label: '🥋 戰甲', short: '戰甲' },
+  { key: 'shoes', label: '👢 戰靴', short: '戰靴' },
+  { key: 'accessory', label: '💍 飾品', short: '飾品' }
+];
+
+const TIER_FILTER_OPTIONS = [
+  { tier: 1, label: 'T1 凡鐵' },
+  { tier: 2, label: 'T2 精鋼' },
+  { tier: 3, label: 'T3 玄鐵' },
+  { tier: 4, label: 'T4 靈寶' }
 ];
 
 function buildAdaptedClassSkills(job, fallbackSkills = []) {
@@ -114,7 +121,7 @@ export default function GameUI(props) {
     handleEquipItem,
     handleUnequipItem,
     handleSellEquipment,
-    handleBulkSellUnusableEquipment,
+    handleBulkSellFilteredEquipment,
     handleSelectFormation,
     formationSlots,
     handleSwapFormationSlots,
@@ -139,6 +146,7 @@ export default function GameUI(props) {
     skillCardsInventory,
     forgeFeedback,
     handleRefineEquipment,
+    handleReforgeEquipment,
     handleSocketGem,
     shopLastReward,
     handleShopPurchase,
@@ -161,7 +169,14 @@ export default function GameUI(props) {
 
   const [helpModalTab, setHelpModalTab] = useState(null);
   const [selectedSlotForSwap, setSelectedSlotForSwap] = useState(null);
-  const [logFilter, setLogFilter] = useState('all'); // 'all' | 'combat' | 'sys'
+  const [logFilter, setLogFilter] = useState('all');
+
+  // 批量清理篩選面板狀態
+  const [showBulkCleanPanel, setShowBulkCleanPanel] = useState(false);
+  const [cleanTiers, setCleanTiers] = useState([1, 2]);
+  const [cleanTypes, setCleanTypes] = useState(['weapon', 'offhand', 'helmet', 'armor', 'shoes', 'accessory']);
+  const [cleanOnlyUnusable, setCleanOnlyUnusable] = useState(false);
+  const [cleanProtectModified, setCleanProtectModified] = useState(true);
 
   const isFengShui = player.job === '風水師';
   const isWarlock = player.job === '術士';
@@ -180,7 +195,6 @@ export default function GameUI(props) {
     return foundKey !== undefined ? Math.floor(Number(foundKey) / 3) : 1;
   };
 
-  // 右側戰報篩選
   const filteredCombatLogs = useMemo(() => {
     if (logFilter === 'all') return combatLogs;
     if (logFilter === 'combat') {
@@ -190,6 +204,54 @@ export default function GameUI(props) {
     }
     return combatLogs.filter(l => l.type === 'sys' || l.type === 'danger');
   }, [combatLogs, logFilter]);
+
+  // 高階裝備排在前面（Tier 降冪 -> 精鍊等級降冪 -> 本職可用優先）
+  const sortedEquipmentInventory = useMemo(() => {
+    return [...(equipmentInventory || [])].sort((a, b) => {
+      const tierDiff = (b.tier || 1) - (a.tier || 1);
+      if (tierDiff !== 0) return tierDiff;
+      const refineDiff = (b.refineLevel || 0) - (a.refineLevel || 0);
+      if (refineDiff !== 0) return refineDiff;
+      const aMeta = enrichEquipmentMeta(a);
+      const bMeta = enrichEquipmentMeta(b);
+      const aUsable = aMeta.allowedJobs.includes(player.job) ? 1 : 0;
+      const bUsable = bMeta.allowedJobs.includes(player.job) ? 1 : 0;
+      return bUsable - aUsable;
+    });
+  }, [equipmentInventory, player.job]);
+
+  // 即時試算符合批量清理條件的裝備數量與總金幣
+  const bulkCleanPreview = useMemo(() => {
+    let count = 0;
+    let totalGold = 0;
+    (equipmentInventory || []).forEach(item => {
+      const meta = enrichEquipmentMeta(item);
+      const matchTier = cleanTiers.includes(meta.tier);
+      const matchType = cleanTypes.includes(meta.type);
+      const matchJob = !cleanOnlyUnusable || !meta.allowedJobs.includes(player.job);
+      const isModified =
+        (item.refineLevel || 0) > 0 ||
+        (item.sockets || []).some(Boolean) ||
+        Boolean(item.reforgeAffix);
+      const matchClean = !cleanProtectModified || !isModified;
+
+      if (matchTier && matchType && matchJob && matchClean) {
+        count += 1;
+        totalGold += meta.sellPrice;
+      }
+    });
+    return { count, totalGold };
+  }, [equipmentInventory, cleanTiers, cleanTypes, cleanOnlyUnusable, cleanProtectModified, player.job]);
+
+  const activeSetBonuses = useMemo(() => getActiveSetBonuses(player.equipped), [player.equipped]);
+
+  const toggleCleanTier = (t) => {
+    setCleanTiers(prev => (prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]));
+  };
+
+  const toggleCleanType = (typeKey) => {
+    setCleanTypes(prev => (prev.includes(typeKey) ? prev.filter(x => x !== typeKey) : [...prev, typeKey]));
+  };
 
   // ==================== 創角畫面 ====================
   if (!gameStarted) {
@@ -408,9 +470,7 @@ export default function GameUI(props) {
         {/* ==================== 1. 歷練戰鬥頁 ==================== */}
         {activeTab === 'combat' && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-            {/* 左側戰場與操作區 */}
             <div className="lg:col-span-7 space-y-4">
-              {/* 地圖選擇、搜敵、快速掃蕩、自動戰鬥與倍速控制 */}
               <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs font-extrabold text-amber-400">
@@ -449,13 +509,6 @@ export default function GameUI(props) {
                     <button
                       disabled={!canSweepCurrentZone}
                       onClick={() => handleSweepZone(3)}
-                      title={
-                        !isSweepLevelUnlocked
-                          ? `需少俠達到 Lv.${sweepReqLevel} 解鎖此區域快速掃蕩`
-                          : !isSweepHpReady
-                            ? '少俠氣血過低，請先客棧休養再掃蕩'
-                            : '一鍵模擬連戰 3 場並承受真實戰損（中途戰敗即中止）'
-                      }
                       className="py-3 px-3.5 rounded-2xl bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-600 hover:to-indigo-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-black text-xs flex items-center justify-center gap-1.5 shadow transition-all"
                     >
                       <Zap className="w-4 h-4" />
@@ -484,7 +537,6 @@ export default function GameUI(props) {
                       <button
                         type="button"
                         onClick={handleCycleBattleSpeed}
-                        title="切換自動戰鬥行動與結算速度 (1x / 2x / 3x)"
                         className={`py-3 px-3 rounded-2xl font-mono font-black text-xs flex items-center gap-1 border transition-all ${
                           battleSpeed === 3
                             ? 'bg-amber-500/25 border-amber-400 text-amber-300'
@@ -515,7 +567,6 @@ export default function GameUI(props) {
                         <button
                           type="button"
                           onClick={handleCycleBattleSpeed}
-                          title="切換自動戰鬥行動與結算速度 (1x / 2x / 3x)"
                           className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl font-mono font-black border transition-all ${
                             battleSpeed === 3
                               ? 'bg-amber-500/25 border-amber-400 text-amber-300'
@@ -567,7 +618,7 @@ export default function GameUI(props) {
                 )}
               </div>
 
-              {/* 敵方怪群區（含向上飄動淡出傷害飄字特效） */}
+              {/* 敵方怪群區 */}
               {isInCombat && (
                 <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 space-y-3">
                   <div className="flex justify-between items-center text-xs">
@@ -600,7 +651,6 @@ export default function GameUI(props) {
                                 : 'bg-slate-950 border-slate-800 hover:border-slate-600 cursor-pointer'
                           }`}
                         >
-                          {/* 浮動傷害飄字特效 */}
                           {hitInfo?.dmg > 0 && (
                             <div
                               key={`${m.id}_t${turnCount}_${hitInfo.dmg}`}
@@ -685,7 +735,7 @@ export default function GameUI(props) {
                 </div>
               )}
 
-              {/* 我方九宮陣法與排位狀態（含我方受擊飄字特效） */}
+              {/* 我方九宮陣法與排位狀態 */}
               <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-4 space-y-2.5">
                 <div className="flex flex-wrap justify-between items-center gap-1.5 text-xs">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -719,7 +769,6 @@ export default function GameUI(props) {
                             return (
                               <div
                                 key={slotIdx}
-                                title="此位置不屬於當前陣法的有效陣眼，無法駐守角色"
                                 className="p-2 rounded-xl border border-dashed border-slate-800/40 bg-slate-950/25 text-[10px] text-center h-[54px] flex flex-col items-center justify-center text-slate-600/80 select-none cursor-not-allowed"
                               >
                                 <span>🚫 非陣眼位</span>
@@ -873,7 +922,7 @@ export default function GameUI(props) {
               )}
             </div>
 
-            {/* 右側即時戰報日誌（附分類過濾膠囊與特效高亮徽章） */}
+            {/* 右側即時戰報日誌 */}
             <div className="lg:col-span-5 bg-slate-900/80 border border-slate-800 rounded-3xl p-4 flex flex-col h-[560px]">
               <div className="border-b border-slate-800 pb-2.5 mb-2.5 space-y-2">
                 <div className="text-xs font-extrabold text-amber-400 flex justify-between items-center">
@@ -983,20 +1032,173 @@ export default function GameUI(props) {
           />
         )}
 
-        {/* ==================== 4. 裝備與背包 ==================== */}
+        {/* ==================== 4. 裝備與背包（高階排序＋勾選清理＋套裝共鳴顯性化） ==================== */}
         {activeTab === 'equip' && (
           <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-6 max-w-5xl mx-auto">
             <div className="flex flex-wrap justify-between items-center gap-2 border-b border-slate-800 pb-3">
-              <h2 className="font-extrabold text-amber-400 text-lg">🛡️ 少俠已穿戴神兵與裝備背包</h2>
+              <div>
+                <h2 className="font-extrabold text-amber-400 text-lg">🛡️ 少俠已穿戴神兵與裝備背包</h2>
+                <p className="text-xs text-slate-400 mt-0.5">背包已自動依階級（T5 仙器 → T1 凡鐵）與精鍊等級由高至低排序</p>
+              </div>
               <button
+                type="button"
                 disabled={isInCombat}
-                onClick={handleBulkSellUnusableEquipment}
-                className="px-3.5 py-1.5 rounded-xl bg-rose-900/80 hover:bg-rose-800 disabled:opacity-40 text-rose-200 font-bold text-xs border border-rose-700"
+                onClick={() => setShowBulkCleanPanel(prev => !prev)}
+                className={`px-3.5 py-2 rounded-xl font-bold text-xs border flex items-center gap-1.5 transition-all disabled:opacity-40 ${
+                  showBulkCleanPanel
+                    ? 'bg-rose-600 border-rose-400 text-white'
+                    : 'bg-rose-950/80 hover:bg-rose-900 text-rose-200 border-rose-700'
+                }`}
               >
-                🧹 一鍵賣出非本職白板裝
+                <Filter className="w-3.5 h-3.5" />
+                <span>{showBulkCleanPanel ? '▲ 收起批量清理設定' : '🧹 一鍵清理（自訂階級／類型）'}</span>
               </button>
             </div>
 
+            {/* 勾選階級與裝備類型的批量清理面板 */}
+            {showBulkCleanPanel && (
+              <div className="bg-slate-950/95 border border-rose-500/50 rounded-2xl p-4 space-y-3.5 shadow-xl">
+                <div className="text-xs font-extrabold text-rose-300 flex items-center justify-between flex-wrap gap-2">
+                  <span>🧹 勾選要批量出售的裝備條件（預設保護 T5 仙器）：</span>
+                  <div className="flex gap-2 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setCleanTiers([1, 2, 3, 4])}
+                      className="text-amber-300 hover:underline"
+                    >
+                      全選 T1~T4
+                    </button>
+                    <span className="text-slate-600">|</span>
+                    <button
+                      type="button"
+                      onClick={() => setCleanTypes(EQUIP_SLOTS.map(s => s.key))}
+                      className="text-cyan-300 hover:underline"
+                    >
+                      全選類型
+                    </button>
+                  </div>
+                </div>
+
+                {/* 階級勾選 */}
+                <div className="space-y-1.5">
+                  <div className="text-[11px] font-bold text-slate-400">1. 選擇裝備階級：</div>
+                  <div className="flex flex-wrap gap-2">
+                    {TIER_FILTER_OPTIONS.map(opt => {
+                      const checked = cleanTiers.includes(opt.tier);
+                      return (
+                        <button
+                          key={opt.tier}
+                          type="button"
+                          onClick={() => toggleCleanTier(opt.tier)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                            checked
+                              ? 'bg-amber-500/25 border-amber-400 text-amber-200'
+                              : 'bg-slate-900 border-slate-800 text-slate-500 hover:border-slate-600'
+                          }`}
+                        >
+                          {checked ? '☑️' : '⬜'} {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 裝備類型勾選 */}
+                <div className="space-y-1.5">
+                  <div className="text-[11px] font-bold text-slate-400">2. 選擇裝備部位類型：</div>
+                  <div className="flex flex-wrap gap-2">
+                    {EQUIP_SLOTS.map(slot => {
+                      const checked = cleanTypes.includes(slot.key);
+                      return (
+                        <button
+                          key={slot.key}
+                          type="button"
+                          onClick={() => toggleCleanType(slot.key)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                            checked
+                              ? 'bg-cyan-500/25 border-cyan-400 text-cyan-200'
+                              : 'bg-slate-900 border-slate-800 text-slate-500 hover:border-slate-600'
+                          }`}
+                        >
+                          {checked ? '☑️' : '⬜'} {slot.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* 安全保護開關 */}
+                <div className="flex flex-wrap items-center gap-4 pt-1 text-xs">
+                  <label className="flex items-center gap-1.5 text-slate-300 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={cleanOnlyUnusable}
+                      onChange={(e) => setCleanOnlyUnusable(e.target.checked)}
+                      className="accent-rose-500 w-3.5 h-3.5"
+                    />
+                    <span>僅出售「非本職業可穿戴」裝備</span>
+                  </label>
+
+                  <label className="flex items-center gap-1.5 text-emerald-300 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={cleanProtectModified}
+                      onChange={(e) => setCleanProtectModified(e.target.checked)}
+                      className="accent-emerald-500 w-3.5 h-3.5"
+                    />
+                    <span>自動跳過已精鍊 / 已鑲嵌寶石 / 已洗鍊神兵</span>
+                  </label>
+                </div>
+
+                {/* 預覽件數與確認出售按鈕 */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-slate-800">
+                  <div className="text-xs font-mono text-slate-300">
+                    符合條件：<strong className="text-rose-300">{bulkCleanPreview.count}</strong> 件 • 預計獲得：<strong className="text-amber-300">+{bulkCleanPreview.totalGold} 金幣</strong>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isInCombat || bulkCleanPreview.count === 0}
+                    onClick={() => {
+                      handleBulkSellFilteredEquipment({
+                        tiers: cleanTiers,
+                        types: cleanTypes,
+                        onlyUnusable: cleanOnlyUnusable,
+                        protectModified: cleanProtectModified
+                      });
+                    }}
+                    className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:bg-slate-800 disabled:text-slate-500 text-white font-black text-xs shadow transition-all"
+                  >
+                    💰 確認批量出售 ({bulkCleanPreview.count} 件)
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 套裝共鳴顯性化進度條 */}
+            {activeSetBonuses.length > 0 && (
+              <div className="bg-amber-950/25 border border-amber-500/45 rounded-2xl p-4 space-y-2">
+                <div className="text-xs font-extrabold text-amber-300">🔮 已穿戴套裝共鳴效果</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  {activeSetBonuses.map(s => (
+                    <div key={s.setId} className="bg-slate-950/90 border border-slate-800 rounded-xl p-3 space-y-1">
+                      <div className="flex items-center justify-between text-xs font-bold">
+                        <span className="text-amber-300">【{s.name}】</span>
+                        <span className={`font-mono px-2 py-0.5 rounded ${s.hasAnyUnlocked ? 'bg-emerald-950 text-emerald-300 border border-emerald-700' : 'bg-slate-900 text-slate-400'}`}>
+                          {s.count} / {s.maxPieces} 件
+                        </span>
+                      </div>
+                      {s.tiers.map(t => (
+                        <div key={t.pieces} className={`text-[11px] ${t.unlocked ? 'text-emerald-300 font-bold' : 'text-slate-500'}`}>
+                          {t.unlocked ? '✅' : '⬜'} ({t.pieces}件套) {t.desc}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 已穿戴裝備欄 */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {EQUIP_SLOTS.map(slot => {
                 const rawItem = player.equipped?.[slot.key];
@@ -1022,6 +1224,11 @@ export default function GameUI(props) {
                           <span>{item.name} (+{item.refineLevel})</span>
                         </div>
                         <div className="text-[11px] text-slate-300">{item.desc}</div>
+                        {item.reforgeAffix && (
+                          <div className="text-[11px] text-purple-300 font-bold">
+                            ✨ 詞條【{item.reforgeAffix.name}】{item.reforgeAffix.desc}
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="text-xs text-slate-600 italic py-2">尚未穿戴裝備</div>
@@ -1031,13 +1238,14 @@ export default function GameUI(props) {
               })}
             </div>
 
+            {/* 裝備背包清單（高階置頂） */}
             <div className="space-y-2.5">
-              <div className="text-xs font-bold text-amber-300">🎒 裝備背包（{equipmentInventory.length} 件）</div>
-              {equipmentInventory.length === 0 ? (
+              <div className="text-xs font-bold text-amber-300">🎒 裝備背包（{sortedEquipmentInventory.length} 件 • 高階優先排序）</div>
+              {sortedEquipmentInventory.length === 0 ? (
                 <div className="text-xs text-slate-500 py-6 text-center">背包目前空空如也。</div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {equipmentInventory.map(rawItem => {
+                  {sortedEquipmentInventory.map(rawItem => {
                     const item = enrichEquipmentMeta(rawItem);
                     const jobAllowed = item.allowedJobs.includes(player.job);
                     return (
@@ -1053,6 +1261,11 @@ export default function GameUI(props) {
                             </span>
                           </div>
                           <div className="text-[11px] text-slate-300">{item.desc}</div>
+                          {item.reforgeAffix && (
+                            <div className="text-[11px] text-purple-300 font-bold">
+                              ✨ 詞條【{item.reforgeAffix.name}】{item.reforgeAffix.desc}
+                            </div>
+                          )}
                         </div>
                         <div className="flex gap-2">
                           <button
@@ -1087,6 +1300,7 @@ export default function GameUI(props) {
             equipmentInventory={equipmentInventory}
             forgeFeedback={forgeFeedback}
             handleRefineEquipment={handleRefineEquipment}
+            handleReforgeEquipment={handleReforgeEquipment}
             handleSocketGem={handleSocketGem}
             setHelpModalTab={setHelpModalTab}
           />
@@ -1129,7 +1343,7 @@ export default function GameUI(props) {
           />
         )}
 
-        {/* ==================== 9. 江湖市集（已正式接上新版 ShopTab） ==================== */}
+        {/* ==================== 9. 江湖市集 ==================== */}
         {activeTab === 'shop' && (
           <ShopTab
             player={player}
@@ -1156,7 +1370,7 @@ export default function GameUI(props) {
         )}
       </main>
 
-      {/* 戰鬥勝利 / 快速掃蕩 / 戰敗結算視窗（支援直接停止自動戰鬥與自動爬塔） */}
+      {/* 戰鬥勝利 / 快速掃蕩 / 戰敗結算視窗 */}
       <BattleResultModals
         victorySummary={victorySummary}
         setVictorySummary={setVictorySummary}
