@@ -192,12 +192,6 @@ export default function App() {
     }
   }, [combatLogs, activeTab]);
 
- useEffect(() => {
-    if (activeTab === 'combat') {
-      chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-  }, [combatLogs, activeTab]);
-
   // 衍生屬性計算（全部加上 useMemo 防止無限渲染死循環）
   const activeHeroes = React.useMemo(
     () => activeHeroInstanceIds.map(id => heroRoster.find(h => h.instanceId === id)).filter(Boolean),
