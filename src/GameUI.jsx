@@ -44,7 +44,8 @@ export default function GameUI(props) {
     equipmentInventory, skillCardsInventory, forgeFeedback,
     handleRefineEquipment, handleReforgeEquipment, handleSocketGem,
     shopLastReward, handleShopPurchase, currentFormation,
-    towerFloor, towerBestFloor, handleStartTowerChallenge,
+    towerFloor, towerBestFloor, towerProgress,
+    selectedTowerType, setSelectedTowerType, handleStartTowerChallenge,
     jsonSaveText, setJsonSaveText, saveLoadStatus,
     handleExportSave, handleImportSave, handleResetSave,
     victorySummary, setVictorySummary, defeatSummary, setDefeatSummary,
@@ -82,7 +83,7 @@ export default function GameUI(props) {
     { id: 'forge', label: '鐵匠精鍊', icon: Hammer },
     { id: 'character', label: `屬性配點${player.statPoints > 0 ? ` (${player.statPoints})` : ''}`, icon: User },
     { id: 'formations', label: '陣法五行', icon: Compass },
-    { id: 'tower', label: `鎮魔塔 (${towerFloor}層)${autoTower ? '・自動' : ''}`, icon: Castle },
+    { id: 'tower', label: `鎮魔五塔${autoTower ? '・自動' : ''}`, icon: Castle },
     { id: 'shop', label: '江湖市集', icon: Store },
     { id: 'codex', label: '英雄圖鑑', icon: BookOpen },
     { id: 'saveload', label: '存檔管理', icon: Save }
@@ -265,8 +266,12 @@ export default function GameUI(props) {
 
         {activeTab === 'tower' && (
           <TowerTab
+            player={player}
             towerFloor={towerFloor}
             towerBestFloor={towerBestFloor}
+            towerProgress={towerProgress}
+            selectedTowerType={selectedTowerType}
+            setSelectedTowerType={setSelectedTowerType}
             isInCombat={isInCombat}
             autoTower={autoTower}
             handleToggleAutoTower={handleToggleAutoTower}
