@@ -1,3 +1,12 @@
+html {
+  overflow-y: scroll !important;
+  scrollbar-gutter: stable;
+}
+
+html, body, #root {
+  overflow-anchor: none;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
