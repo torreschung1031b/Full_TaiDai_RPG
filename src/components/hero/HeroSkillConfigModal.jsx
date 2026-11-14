@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { X, Wand2, Trash2, ShieldAlert } from 'lucide-react';
 
 function ModalSlotColumn({ title, badge, slots = [], type, isInCombat, onUnequip }) {
@@ -59,6 +59,49 @@ export function HeroSkillConfigModal({
 }) {
   const [showOccupiedCards, setShowOccupiedCards] = useState(false);
 
+  // 記錄本次開啟彈窗或切換英雄時原本存在的卡種，避免最後 1 張裝出時卡片突然消失導致版面跳動
+  const sessionGroupsRef = useRef({ heroKey: null, map: new Map() });
+
+  const heroSessionKey = configuringHero
+    ? `${configuringHero.instanceId}_${configuringHero.heroClass}`
+    : null;
+
+  useEffect(() => {
+    if (!configuringHero) {
+      sessionGroupsRef.current = { heroKey: null, map: new Map() };
+    }
+  }, [configuringHero]);
+
+  const compatibleGroups = useMemo(() => {
+    if (!configuringHero) return [];
+
+    if (sessionGroupsRef.current.heroKey !== heroSessionKey) {
+      sessionGroupsRef.current = { heroKey: heroSessionKey, map: new Map() };
+    }
+
+    const currentMap = new Map();
+    groupedInventoryCards.forEach(g => {
+      if (g?.sample?.allowedJobs?.includes(configuringHero.heroClass)) {
+        const key = g.key || `${g.sample.type}_${g.sample.name}`;
+        currentMap.set(key, g);
+        sessionGroupsRef.current.map.set(key, g.sample);
+      }
+    });
+
+    const merged = [];
+    sessionGroupsRef.current.map.forEach((sampleCard, key) => {
+      const liveGroup = currentMap.get(key);
+      merged.push({
+        key,
+        sample: liveGroup?.sample || sampleCard,
+        count: liveGroup?.count || 0,
+        instances: (liveGroup?.instances || []).filter(Boolean)
+      });
+    });
+
+    return merged;
+  }, [configuringHero, heroSessionKey, groupedInventoryCards]);
+
   const occupiedCardsByOthers = useMemo(() => {
     if (!configuringHero) return [];
     const list = [];
@@ -79,14 +122,14 @@ export function HeroSkillConfigModal({
 
   if (!configuringHero) return null;
 
-  const compatibleGroups = groupedInventoryCards.filter(g =>
-    g?.sample?.allowedJobs?.includes(configuringHero.heroClass) && (g.instances || []).length > 0
-  );
   const totalEquipped = (configuringHero.activeSkillSlots?.length || 0) + (configuringHero.passiveSkillSlots?.length || 0);
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5" onClick={onClose}>
-      <div className="bg-slate-900 border-2 border-cyan-500/80 rounded-3xl max-w-3xl w-full max-h-[88vh] flex flex-col shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="bg-slate-900 border-2 border-cyan-500/80 rounded-3xl max-w-3xl w-full h-[86vh] sm:h-[82vh] flex flex-col shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* 頂部標題 */}
         <div className="p-4 sm:p-5 border-b border-slate-800 bg-slate-950/90 flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2.5 flex-wrap">
@@ -106,8 +149,8 @@ export function HeroSkillConfigModal({
           </button>
         </div>
 
-        {/* 滾動內容區 */}
-        <div className="p-4 sm:p-5 overflow-y-auto space-y-5 flex-1">
+        {/* 滾動內容區：關閉瀏覽器自動捲動錨點跳動 */}
+        <div className="p-4 sm:p-5 overflow-y-auto overscroll-contain [overflow-anchor:none] space-y-5 flex-1">
           {deployedHeroes.length > 1 && (
             <div className="flex items-center gap-1.5 flex-wrap text-xs">
               <span className="text-slate-400 font-bold mr-1">切換出戰隊友：</span>
@@ -126,9 +169,9 @@ export function HeroSkillConfigModal({
 
           {/* 目前 4 個卡槽狀態 */}
           <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 min-h-[30px]">
+            <div className="flex flex-wrap items-center justify-between gap-2 min-h-[32px]">
               <span className="text-xs font-extrabold text-amber-300">📌 當前已鑲嵌卡槽（點擊已裝卡片可直接卸下）</span>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
                   disabled={isInCombat}
@@ -138,17 +181,15 @@ export function HeroSkillConfigModal({
                   <Wand2 className="w-3.5 h-3.5" />
                   <span>✨ 一鍵推薦配卡</span>
                 </button>
-                {totalEquipped > 0 && (
-                  <button
-                    type="button"
-                    disabled={isInCombat}
-                    onClick={() => onUnequipAll(configuringHero)}
-                    className="px-3 py-1.5 rounded-xl font-bold text-xs bg-rose-950/80 hover:bg-rose-800 text-rose-200 border border-rose-700/70 flex items-center gap-1 disabled:opacity-40"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>全卸下</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  disabled={isInCombat || totalEquipped === 0}
+                  onClick={() => onUnequipAll(configuringHero)}
+                  className="px-3 py-1.5 rounded-xl font-bold text-xs bg-rose-950/80 hover:bg-rose-800 text-rose-200 border border-rose-700/70 flex items-center gap-1 disabled:opacity-35 disabled:cursor-not-allowed"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>全卸下</span>
+                </button>
               </div>
             </div>
 
@@ -174,7 +215,7 @@ export function HeroSkillConfigModal({
 
           {/* 倉庫可用卡片 */}
           <div className="space-y-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 min-h-[22px]">
               <span className="text-xs font-extrabold text-emerald-300">✅ 倉庫中【{configuringHero.heroClass}】可用技能卡（同名已摺疊）</span>
               {occupiedCardsByOthers.length > 0 && (
                 <label className="flex items-center gap-1.5 text-[11px] text-slate-400 cursor-pointer select-none">
@@ -190,36 +231,52 @@ export function HeroSkillConfigModal({
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {compatibleGroups.map((group, gIdx) => {
+                {compatibleGroups.map((group) => {
                   const card = group.sample;
                   const isActive = card.type === 'active';
-                  const isSlotFull = isActive ? (configuringHero.activeSkillSlots?.length || 0) >= 2 : (configuringHero.passiveSkillSlots?.length || 0) >= 2;
-                  const nextInstance = (group.instances || []).find(Boolean);
+                  const isSlotFull = isActive
+                    ? (configuringHero.activeSkillSlots?.length || 0) >= 2
+                    : (configuringHero.passiveSkillSlots?.length || 0) >= 2;
+                  const nextInstance = group.instances[0] || null;
+                  const isDepleted = group.count <= 0 || !nextInstance;
 
                   return (
-                    <div key={group.key || `${card.name}-${gIdx}`} className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 flex flex-col justify-between gap-2.5">
+                    <div
+                      key={group.key}
+                      className={`bg-slate-950 p-3.5 rounded-2xl border flex flex-col justify-between gap-2.5 transition-opacity ${
+                        isDepleted ? 'border-slate-800/60 opacity-60' : 'border-slate-800'
+                      }`}
+                    >
                       <div className="space-y-1">
                         <div className="flex items-center justify-between gap-1.5">
                           <span className={`text-xs font-extrabold truncate ${isActive ? 'text-amber-300' : 'text-cyan-300'}`}>
                             {isActive ? '⚡' : '💠'} {card.name}
                           </span>
                           <div className="flex items-center gap-1.5 shrink-0">
-                            <span className="text-[11px] font-mono font-black bg-slate-900 text-amber-200 border border-amber-500/50 px-2 py-0.5 rounded-full">持有 ×{group.count}</span>
+                            <span className="text-[11px] font-mono tabular-nums font-black bg-slate-900 text-amber-200 border border-amber-500/50 px-2 py-0.5 rounded-full">
+                              持有 ×{group.count}
+                            </span>
                             <span className={`text-[10px] px-1.5 py-0.5 rounded border font-bold ${isActive ? 'bg-amber-950/60 text-amber-300 border-amber-700/60' : 'bg-cyan-950/60 text-cyan-300 border-cyan-700/60'}`}>
                               {isActive ? '主動' : '被動'}
                             </span>
                           </div>
                         </div>
-                        <div className="text-[11px] text-slate-300 leading-relaxed min-h-[34px]">{card.desc}</div>
+                        <div className="text-[11px] text-slate-300 leading-relaxed h-[34px] line-clamp-2">{card.desc}</div>
                       </div>
 
                       <button
                         type="button"
-                        disabled={isInCombat || isSlotFull || !nextInstance}
+                        disabled={isInCombat || isSlotFull || isDepleted}
                         onClick={() => nextInstance && onEquipSkillCard(configuringHero.instanceId, nextInstance)}
                         className={`w-full py-2 rounded-xl font-black text-xs transition-colors disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white ${isActive ? 'bg-amber-600 hover:bg-amber-500' : 'bg-cyan-600 hover:bg-cyan-500'}`}
                       >
-                        {isInCombat ? '🔒 戰鬥中鎖定' : isSlotFull ? `${isActive ? '主動' : '被動'}卡槽已滿 (2/2)` : `+ 鑲嵌至【${configuringHero.name}】`}
+                        {isInCombat
+                          ? '🔒 戰鬥中鎖定'
+                          : isDepleted
+                            ? '已全數裝出 (0)'
+                            : isSlotFull
+                              ? `${isActive ? '主動' : '被動'}卡槽已滿 (2/2)`
+                              : `+ 鑲嵌至【${configuringHero.name}】`}
                       </button>
                     </div>
                   );
