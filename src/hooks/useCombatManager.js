@@ -13,7 +13,7 @@ import { useAutoCombatScheduler } from './useAutoCombatScheduler';
 import {
   createInitialBattleStats,
   accumulateStatsFromRoundLogs
-} from '../components/combat/BattleMvpPanel';
+} from '../utils/combat/BattleMvpPanel';
 
 const SPEED_CONFIG = {
   1: { roundMs: 450, summaryMs: 3000, label: '1x 正常' },
