@@ -1,3 +1,4 @@
+import { buildTurnOrderQueue } from './turnOrderHelper.jsx';
 import {
   calculateHeroEffectiveStats,
   normalizeHero
@@ -130,39 +131,18 @@ export function resolveCombatRound({
   });
 
   // 1. 建構本回合「速度先手行動序列」
-  const windSpeedAdd = currentBuffs.windBuffTurns > 0 ? (currentBuffs.windSpeedBonus || 0) : 0;
-  const turnQueue = [
-    { type: 'PLAYER', label: currentPlayer.name, speed: playerTotalSpeed + windSpeedAdd, priority: 3 }
-  ];
-
-  currentRoster.forEach(h => {
-    if (activeHeroInstanceIds.includes(h.instanceId) && h.hp > 0) {
-      const hRow = getHeroRowIdx(h.instanceId);
-      const { effectiveSpeed } = calculateHeroEffectiveStats(h, isFengShui, currentHeroBuffs[h.instanceId], hRow);
-      turnQueue.push({
-        type: 'HERO',
-        instanceId: h.instanceId,
-        label: h.name,
-        speed: effectiveSpeed + windSpeedAdd,
-        priority: 2
-      });
-    }
+const windSpeedAdd = currentBuffs.windBuffTurns > 0 ? (currentBuffs.windSpeedBonus || 0) : 0;
+  const turnQueue = buildTurnOrderQueue({
+    player: currentPlayer,
+    playerTotalSpeed,
+    heroRoster: currentRoster,
+    activeHeroInstanceIds,
+    monsters: currentMonsters,
+    combatBuffs: currentBuffs,
+    heroBattleBuffs: currentHeroBuffs,
+    isFengShui,
+    getHeroRowIdx
   });
-
-  currentMonsters.forEach(m => {
-    if (m.hp > 0) {
-      turnQueue.push({
-        type: 'MONSTER',
-        monsterId: m.id,
-        label: m.name,
-        speed: getMonsterSpeed(m),
-        priority: 1
-      });
-    }
-  });
-
-  turnQueue.sort((a, b) => (b.speed - a.speed) || (b.priority - a.priority));
-
   // 2. 依速度序列結算行動
   for (const actor of turnQueue) {
     if (currentMonsters.every(m => m.hp <= 0) || currentPlayer.hp <= 0) break;
