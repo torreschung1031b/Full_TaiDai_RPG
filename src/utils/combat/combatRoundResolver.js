@@ -3,7 +3,6 @@ import {
   calculateHeroEffectiveStats,
   normalizeHero
 } from '../statCalculator';
-import { getMonsterSpeed } from './combatFormulas';
 import {
   resolveBattleVictory,
   resolveBattleDefeat
@@ -78,6 +77,7 @@ export function resolveCombatRound({
   rawFormBonus,
   formMultiplier,
   currentZoneIndex,
+  activeTower,
   activeTowerFloor,
   isFengShui,
   getHeroRowIdx
@@ -131,7 +131,7 @@ export function resolveCombatRound({
   });
 
   // 1. 建構本回合「速度先手行動序列」
-const windSpeedAdd = currentBuffs.windBuffTurns > 0 ? (currentBuffs.windSpeedBonus || 0) : 0;
+  const windSpeedAdd = currentBuffs.windBuffTurns > 0 ? (currentBuffs.windSpeedBonus || 0) : 0;
   const turnQueue = buildTurnOrderQueue({
     player: currentPlayer,
     playerTotalSpeed,
@@ -143,6 +143,7 @@ const windSpeedAdd = currentBuffs.windBuffTurns > 0 ? (currentBuffs.windSpeedBon
     isFengShui,
     getHeroRowIdx
   });
+
   // 2. 依速度序列結算行動
   for (const actor of turnQueue) {
     if (currentMonsters.every(m => m.hp <= 0) || currentPlayer.hp <= 0) break;
@@ -237,6 +238,7 @@ const windSpeedAdd = currentBuffs.windBuffTurns > 0 ? (currentBuffs.windSpeedBon
       currentRoster,
       activeHeroInstanceIds,
       currentZoneIndex,
+      activeTower,
       activeTowerFloor,
       isFengShui,
       getHeroRowIdx
@@ -331,6 +333,7 @@ const windSpeedAdd = currentBuffs.windBuffTurns > 0 ? (currentBuffs.windSpeedBon
       currentRoster,
       activeHeroInstanceIds,
       currentZoneIndex,
+      activeTower,
       activeTowerFloor,
       isFengShui,
       getHeroRowIdx
