@@ -30,32 +30,33 @@ function SkillSlotPair({ slots = [], type, isInCombat, onUnequip, onOpenConfig }
     <div className="grid grid-cols-2 gap-1.5">
       {[0, 1].map(idx => {
         const card = slots[idx];
-        return card ? (
+        return (
           <button
-            key={`equipped-${idx}`}
+            key={`slot-${type}-${idx}`}
             type="button"
             disabled={isInCombat}
-            onClick={() => onUnequip(card)}
-            title={`${card.name}：${card.desc}（點擊直接卸下）`}
-            className={`h-[54px] flex flex-col justify-center text-left px-2.5 py-1.5 rounded-xl border hover:border-rose-400 text-[11px] transition-colors group overflow-hidden ${equippedCls}`}
+            onClick={() => (card ? onUnequip(card) : onOpenConfig())}
+            title={card ? `${card.name}：${card.desc}（點擊直接卸下）` : `點擊配置${isActive ? '主動' : '被動'}技能卡`}
+            style={{ height: '54px', minHeight: '54px', maxHeight: '54px' }}
+            className={`w-full flex flex-col justify-center px-2.5 py-1.5 rounded-xl border text-[11px] overflow-hidden ${
+              card
+                ? `text-left hover:border-rose-400 group ${equippedCls}`
+                : `items-center bg-slate-900/60 border-dashed border-slate-700 text-slate-400 text-center disabled:opacity-40 ${emptyHoverCls}`
+            }`}
           >
-            <div className="font-bold truncate flex justify-between items-center w-full">
-              <span className="truncate">{isActive ? '⚡' : '💠'} {card.name}</span>
-              <span className="text-[9px] text-rose-300 opacity-0 group-hover:opacity-100 shrink-0 ml-1">卸下</span>
-            </div>
-            <div className={`text-[10px] truncate w-full mt-0.5 ${isActive ? 'text-slate-300' : 'text-emerald-300'}`}>
-              {card.desc}{!isActive && ' (×1.5)'}
-            </div>
-          </button>
-        ) : (
-          <button
-            key={`empty-${idx}`}
-            type="button"
-            disabled={isInCombat}
-            onClick={onOpenConfig}
-            className={`h-[54px] flex items-center justify-center px-2.5 py-1.5 rounded-xl bg-slate-900/60 border border-dashed border-slate-700 text-[10px] text-slate-400 text-center transition-colors disabled:opacity-40 ${emptyHoverCls}`}
-          >
-            + 鑲嵌{isActive ? '主動' : '被動'}卡
+            {card ? (
+              <>
+                <div className="font-bold truncate flex justify-between items-center w-full leading-tight">
+                  <span className="truncate">{isActive ? '⚡' : '💠'} {card.name}</span>
+                  <span className="text-[9px] text-rose-300 opacity-0 group-hover:opacity-100 shrink-0 ml-1">卸下</span>
+                </div>
+                <div className={`text-[10px] truncate w-full mt-0.5 leading-tight ${isActive ? 'text-slate-300' : 'text-emerald-300'}`}>
+                  {card.desc}{!isActive && ' (×1.5)'}
+                </div>
+              </>
+            ) : (
+              <span className="leading-tight">+ 鑲嵌{isActive ? '主動' : '被動'}卡</span>
+            )}
           </button>
         );
       })}
