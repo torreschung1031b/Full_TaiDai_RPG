@@ -1,6 +1,6 @@
 import { ZONES } from '../../data/constants';
 import { getRandomElement, normalizeHero } from '../statCalculator';
-import { getSkillMeta } from './combatFormulas';
+import { getSkillMeta, calculateMonsterLevel } from './combatFormulas';
 import { resolveCombatRound } from './combatRoundResolver';
 
 /**
@@ -72,6 +72,7 @@ export function simulateZoneSweep({
   let completedBattles = 0;
   let isDefeated = false;
   let defeatSummary = null;
+  let lastExpRateLabel = '';
 
   const allDroppedEquipments = [];
   const allDroppedSkillCards = [];
@@ -89,6 +90,7 @@ export function simulateZoneSweep({
       const eliteStatMult = isElite ? 1.35 : 1.0;
       const eliteRewardMult = isElite ? 1.40 : 1.0;
       const elem = template.element || getRandomElement();
+      const mLevel = calculateMonsterLevel(currentZoneIndex, isElite, false);
 
       const mHp = Math.floor((template.hp || 100) * zoneScale * eliteStatMult);
       const mAtk = Math.floor((template.atk || 15) * zoneScale * eliteStatMult);
@@ -97,6 +99,7 @@ export function simulateZoneSweep({
       monsters.push({
         id: `sweep_m_${s}_${i}_${Math.random().toString(36).slice(2, 7)}`,
         name: `${isElite ? '【菁英】' : ''}${template.name}`,
+        level: mLevel,
         isElite,
         isBoss: false,
         element: elem,
@@ -133,7 +136,10 @@ export function simulateZoneSweep({
         sumGold += res.victorySummary.gold;
         sumExp += res.victorySummary.exp;
         sumStones += res.victorySummary.stones;
-        allMsgs.push(`⚔️ 第 ${s + 1} 場掃蕩勝利（耗時 ${roundCount} 回合，剩餘 HP: ${simPlayer.hp}/${playerTotalMaxHp || simPlayer.maxHp}）`);
+        lastExpRateLabel = res.victorySummary.expRateLabel || lastExpRateLabel;
+        allMsgs.push(
+          `⚔️ 第 ${s + 1} 場掃蕩勝利（耗時 ${roundCount} 回合，+${res.victorySummary.exp} EXP［${res.victorySummary.expRateLabel}］，剩餘 HP: ${simPlayer.hp}/${playerTotalMaxHp || simPlayer.maxHp}）`
+        );
         if (res.droppedEquipments?.length > 0) allDroppedEquipments.push(...res.droppedEquipments);
         if (res.droppedSkillCard) allDroppedSkillCards.push(res.droppedSkillCard);
         if (res.victorySummary.droppedHero) allDroppedHeroes.push(res.victorySummary.droppedHero);
@@ -181,6 +187,7 @@ export function simulateZoneSweep({
         rawFormBonus,
         formMultiplier,
         currentZoneIndex,
+        activeTower: null,
         activeTowerFloor: null,
         isFengShui,
         getHeroRowIdx
@@ -230,6 +237,7 @@ export function simulateZoneSweep({
       zoneName: zone.name,
       gold: sumGold,
       exp: sumExp,
+      expRateLabel: lastExpRateLabel,
       stones: sumStones,
       droppedEquipments: allDroppedEquipments,
       droppedSkillCards: allDroppedSkillCards,
