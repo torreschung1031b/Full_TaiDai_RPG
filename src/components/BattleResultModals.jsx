@@ -1,6 +1,7 @@
 import React from 'react';
 import { Trophy, Skull, Sparkles, Coffee, AlertTriangle, Swords, Square } from 'lucide-react';
 import { enrichEquipmentMeta } from '../data/equipment';
+import BattleMvpPanel from './combat/BattleMvpPanel';
 
 export default function BattleResultModals({
   victorySummary,
@@ -36,7 +37,7 @@ export default function BattleResultModals({
       {/* 勝利 / 掃蕩結算彈窗 */}
       {victorySummary && (
         <div
-          className={`bg-slate-900 border rounded-3xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-4 ${
+          className={`bg-slate-900 border rounded-3xl p-5 sm:p-6 max-w-xl w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-4 ${
             isSweepDefeated ? 'border-rose-500/75' : 'border-amber-500/60'
           }`}
         >
@@ -87,6 +88,11 @@ export default function BattleResultModals({
               <div className="text-base font-black text-cyan-300 mt-0.5">+{victorySummary.stones}</div>
             </div>
           </div>
+
+          {/* 本場戰鬥 MVP 傷害／治療／承傷統計面板 */}
+          {victorySummary.battleStats && (
+            <BattleMvpPanel battleStats={victorySummary.battleStats} />
+          )}
 
           {/* 逐場實戰模擬戰報（僅快速掃蕩顯示） */}
           {isSweep && victorySummary.battleReports?.length > 0 && (
@@ -228,7 +234,7 @@ export default function BattleResultModals({
             </div>
           )}
 
-          {/* 底部操作按鈕（支援結算畫面直接停止自動戰鬥 / 自動爬塔） */}
+          {/* 底部操作按鈕 */}
           <div className="flex flex-wrap gap-2.5 pt-1">
             {isAutoTowerNext && handleToggleAutoTower && (
               <button
@@ -281,7 +287,7 @@ export default function BattleResultModals({
 
       {/* 戰敗結算彈窗 */}
       {defeatSummary && (
-        <div className="bg-slate-900 border border-rose-600/70 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+        <div className="bg-slate-900 border border-rose-600/70 rounded-3xl p-5 sm:p-6 max-w-xl w-full max-h-[90vh] overflow-y-auto shadow-2xl space-y-4">
           <div className="flex items-center gap-2.5 border-b border-slate-800 pb-3">
             <Skull className="w-6 h-6 text-rose-400 shrink-0" />
             <div>
@@ -298,6 +304,11 @@ export default function BattleResultModals({
               目前經驗進度：{defeatSummary.remainingExp} / {defeatSummary.maxExp}
             </div>
           </div>
+
+          {/* 戰敗本場戰鬥 MVP 統計面板（方便檢討哪路承傷過高或輸出不足） */}
+          {defeatSummary.battleStats && (
+            <BattleMvpPanel battleStats={defeatSummary.battleStats} />
+          )}
 
           {defeatSummary.casualties?.length > 0 && (
             <div className="bg-slate-950 border border-rose-900/70 rounded-2xl p-3 space-y-1.5 text-xs text-rose-300">
