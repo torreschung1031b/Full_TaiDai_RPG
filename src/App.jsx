@@ -192,13 +192,22 @@ export default function App() {
     }
   }, [combatLogs, activeTab]);
 
-  // 衍生屬性計算
+ useEffect(() => {
+    if (activeTab === 'combat') {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [combatLogs, activeTab]);
+
+  // 衍生屬性計算（全部加上 useMemo 防止無限渲染死循環）
   const activeHeroes = React.useMemo(
     () => activeHeroInstanceIds.map(id => heroRoster.find(h => h.instanceId === id)).filter(Boolean),
     [activeHeroInstanceIds, heroRoster]
   );
 
-  const { bonus: equipBonus, setAtkPct, setHpPct, setMpPct, setDefPct } = calculateEquipmentBonus(player.equipped);
+  const { bonus: equipBonus, setAtkPct, setHpPct, setMpPct, setDefPct } = React.useMemo(
+    () => calculateEquipmentBonus(player.equipped),
+    [player.equipped]
+  );
   const codexBonus = React.useMemo(() => calculateCodexBonus(heroRoster), [heroRoster]);
   const effectiveFormationKey = isFengShui ? currentFormation : 'none';
   const syncedSlots = React.useMemo(
@@ -213,6 +222,7 @@ export default function App() {
     return foundKey !== undefined ? Math.floor(Number(foundKey) / 3) : 1;
   }, [syncedSlots]);
 
+  
   const rawFormBonus = FORMATIONS_CONFIG[effectiveFormationKey]?.bonus || {};
   const formMultiplier = isFengShui ? 2 : 1;
   const statScaling = getPlayerStatScaling(player.job);
