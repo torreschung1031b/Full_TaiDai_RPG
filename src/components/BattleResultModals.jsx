@@ -1,7 +1,7 @@
 import React from 'react';
 import { Trophy, Skull, Sparkles, Coffee, AlertTriangle, Swords, Square } from 'lucide-react';
 import { enrichEquipmentMeta } from '../data/equipment';
-import BattleMvpPanel from './combat/BattleMvpPanel';
+import BattleMvpPanel from '../utils/combat/BattleMvpPanel.jsx';
 
 export default function BattleResultModals({
   victorySummary,
