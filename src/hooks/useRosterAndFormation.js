@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { FORMATIONS_CONFIG } from '../data/formations';
 import { syncFormationSlots } from '../utils/formationHelper';
 import { MAX_HERO_FUSION, mergeHeroIntoTarget } from '../utils/heroFusionHelper';
@@ -17,6 +17,19 @@ export function useRosterAndFormation({
   setSkillCardsInventory,
   addLog
 }) {
+  const [fusionFeedback, setFusionFeedback] = useState(null);
+  // 防止鍵盤連發、滑鼠微動連點或事件冒泡造成「不斷插卡和拔卡」死循環
+  const cardActionLockRef = useRef(0);
+
+  const acquireCardActionLock = () => {
+    const now = Date.now();
+    if (now - cardActionLockRef.current < 180) {
+      return false;
+    }
+    cardActionLockRef.current = now;
+    return true;
+  };
+  
   const [fusionFeedback, setFusionFeedback] = useState(null);
 
   const handleToggleDeployHero = (hero) => {
