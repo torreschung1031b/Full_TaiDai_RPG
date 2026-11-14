@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { ZONES } from '../data/constants';
 import { CLASS_CONFIGS } from '../data/classes';
+import { DEMON_TOWERS, normalizeTowerProgress } from '../data/towers';
 import { calculateHeroEffectiveStats } from '../utils/statCalculator';
 import {
   resolveCombatRound,
@@ -62,7 +63,8 @@ export function useCombatManager({
   appendBatchLogs
 }) {
   const [currentZoneIndex, setCurrentZoneIndex] = useState(0);
-  const [activeTowerFloor, setActiveTowerFloor] = useState(null);
+  const [selectedTowerType, setSelectedTowerType] = useState('gold');
+  const [activeTower, setActiveTower] = useState(null); // { type: 'gold'|'refine'|'hero'|'skill'|'equip', floor: number }
   const [monsters, setMonsters] = useState([]);
   const [selectedTargetIndex, setSelectedTargetIndex] = useState(0);
   const [lastRoundHits, setLastRoundHits] = useState({ monsters: {}, allies: {} });
@@ -77,9 +79,10 @@ export function useCombatManager({
   const [heroBattleBuffs, setHeroBattleBuffs] = useState({});
   const [battleDownedHeroIds, setBattleDownedHeroIds] = useState([]);
 
-  // 追蹤單場戰鬥 MVP 數據統計（不觸發額外重渲染）
   const battleStatsRef = useRef(null);
 
+  const activeTowerFloor = activeTower?.floor || null;
+  const towerProgress = normalizeTowerProgress({ ...player, towerFloor });
   const isInCombat = monsters.some(m => m.hp > 0);
   const speedMeta = SPEED_CONFIG[battleSpeed] || SPEED_CONFIG[1];
 
@@ -144,7 +147,10 @@ export function useCombatManager({
     });
   }, [addLog]);
 
-  const handleToggleAutoTower = useCallback(() => {
+  const handleToggleAutoTower = useCallback((towerTypeOverride = null) => {
+    if (towerTypeOverride && DEMON_TOWERS[towerTypeOverride]) {
+      setSelectedTowerType(towerTypeOverride);
+    }
     setAutoTower(prev => {
       const next = !prev;
       setAutoBattle(next);
@@ -152,15 +158,16 @@ export function useCombatManager({
         setDefeatSummary(null);
         setCombatPhase('PLAYER_SELECT');
       }
+      const tMeta = DEMON_TOWERS[towerTypeOverride || selectedTowerType] || DEMON_TOWERS.gold;
       addLog(
         next
-          ? '🗼 已開啟【自動爬塔】：通關後結算畫面停留並持續挑戰下一層（戰敗或手動關閉時停止）！'
+          ? `🗼 已開啟【${tMeta.name}・自動爬塔】：通關後將自動推進下一層（戰敗或手動關閉時停止）！`
           : '🖐️ 已停止【自動爬塔】，已切換為手動操作！',
         'sys'
       );
       return next;
     });
-  }, [addLog]);
+  }, [addLog, selectedTowerType]);
 
   const handleSelectZone = (zoneIdx) => {
     if (isInCombat) {
@@ -168,7 +175,7 @@ export function useCombatManager({
       return;
     }
     setCurrentZoneIndex(zoneIdx);
-    setActiveTowerFloor(null);
+    setActiveTower(null);
     setMonsters([]);
     setLastRoundHits({ monsters: {}, allies: {} });
     addLog(`🗺️ 已前往【${ZONES[zoneIdx].name}】安全營地，請點擊「🔍 尋找怪群」或「⚡ 快速掃蕩」！`, 'sys');
@@ -191,7 +198,7 @@ export function useCombatManager({
 
     battleStatsRef.current = createInitialBattleStats(player, deployed);
     resetCombatStates(openingShield);
-    setActiveTowerFloor(null);
+    setActiveTower(null);
     setMonsters(list);
     setSelectedTargetIndex(0);
     setTurnCount(1);
@@ -200,7 +207,10 @@ export function useCombatManager({
     return list;
   }, [isInCombat, player, activeHeroes, applyOpeningAwakeningAndResources, resetCombatStates, setTurnCount, autoBattle, addLog]);
 
-  const handleStartTowerChallenge = useCallback(() => {
+  /**
+   * 開始挑戰指定鎮魔塔（預設挑戰該塔目前最高未通關層，亦可傳入 customFloor 挑戰已通關層）
+   */
+  const handleStartTowerChallenge = useCallback((towerTypeParam = null, customFloor = null) => {
     if (isInCombat) {
       addLog(`⚠️ 當前已在戰鬥中，無法開啟新的鎮魔塔挑戰！`, 'sys');
       return;
@@ -211,13 +221,23 @@ export function useCombatManager({
       return;
     }
 
-    const floor = towerFloor;
-    const { isBossFloor, list } = buildTowerEncounter(floor, 1 + activeHeroes.length);
+    const resolvedType = (typeof towerTypeParam === 'string' && DEMON_TOWERS[towerTypeParam])
+      ? towerTypeParam
+      : selectedTowerType;
+    setSelectedTowerType(resolvedType);
+
+    const latestProgress = normalizeTowerProgress({ ...player, towerFloor });
+    const maxUnlockedFloor = latestProgress[resolvedType] || 1;
+    const targetFloor = customFloor && customFloor >= 1
+      ? Math.min(maxUnlockedFloor, Math.floor(customFloor))
+      : maxUnlockedFloor;
+
+    const { isBossFloor, towerMeta, list } = buildTowerEncounter(targetFloor, 1 + activeHeroes.length, resolvedType);
     const openingShield = applyOpeningAwakeningAndResources(activeHeroes, false);
 
     battleStatsRef.current = createInitialBattleStats(player, activeHeroes);
     resetCombatStates(openingShield);
-    setActiveTowerFloor(floor);
+    setActiveTower({ type: resolvedType, floor: targetFloor });
     setMonsters(list);
     setSelectedTargetIndex(0);
     setTurnCount(1);
@@ -225,11 +245,11 @@ export function useCombatManager({
     setActiveTab('combat');
     addLog(
       isBossFloor
-        ? `🔥 踏入【鎮魔塔第 ${floor} 層】，鎮守妖王首領現身！擊敗首領必得高階神裝！`
-        : `🗼 踏入【鎮魔塔第 ${floor} 層】，迎戰 ${list.length} 名鎮塔守衛！`,
+        ? `🔥 踏入【${towerMeta.name} 第 ${targetFloor} 層】，守關首領現身（鎮魔塔不提供經驗值）！`
+        : `🗼 踏入【${towerMeta.name} 第 ${targetFloor} 層】，迎戰 ${list.length} 名守衛（鎮魔塔不提供經驗值）！`,
       'sys'
     );
-  }, [isInCombat, player, towerFloor, activeHeroes, applyOpeningAwakeningAndResources, resetCombatStates, setTurnCount, setActiveTab, addLog]);
+  }, [isInCombat, player, selectedTowerType, towerFloor, activeHeroes, applyOpeningAwakeningAndResources, resetCombatStates, setTurnCount, setActiveTab, addLog]);
 
   const handleSweepZone = (sweepCount = 3) => {
     if (isInCombat) {
@@ -286,7 +306,7 @@ export function useCombatManager({
     battleStatsRef.current = null;
 
     setMonsters([]);
-    setActiveTowerFloor(null);
+    setActiveTower(null);
     resetCombatStates();
     setCombatPhase('PLAYER_SELECT');
     if (isVictory) {
@@ -301,7 +321,7 @@ export function useCombatManager({
     if (!isInCombat) return;
     setAutoBattle(false);
     setAutoTower(false);
-    const wasTower = Boolean(activeTowerFloor);
+    const wasTower = Boolean(activeTower);
     const res = resolveFleeCombat({
       monsters, player, heroRoster, activeHeroInstanceIds, battleDownedHeroIds,
       combatBuffs, heroBattleBuffs, playerTotalDef, playerTotalSpeed,
@@ -342,7 +362,6 @@ export function useCombatManager({
       return;
     }
 
-    // 若因讀檔直接進入戰鬥中而未建立統計物件，自動補齊
     if (!battleStatsRef.current) {
       battleStatsRef.current = createInitialBattleStats(player, activeHeroes);
     }
@@ -353,7 +372,7 @@ export function useCombatManager({
       selectedTargetIndex, combatBuffs, heroBattleBuffs, battleDownedHeroIds,
       playerTotalMaxHp, playerTotalMaxMp, playerTotalAtk, playerTotalDef,
       playerTotalSpeed, playerRowBuff, rawFormBonus, formMultiplier,
-      currentZoneIndex, activeTowerFloor, isFengShui, getHeroRowIdx
+      currentZoneIndex, activeTower, activeTowerFloor, isFengShui, getHeroRowIdx
     });
 
     const nextMonsters = res.outcome === 'VICTORY' ? [] : (res.tickedMonsters || monsters);
@@ -371,11 +390,25 @@ export function useCombatManager({
       if (res.droppedEquipments?.length > 0) setEquipmentInventory(prev => [...prev, ...res.droppedEquipments]);
       if (res.droppedSkillCard) setSkillCardsInventory(prev => [...prev, res.droppedSkillCard]);
 
-      if (res.clearedTowerFloor) {
-        const nextFloor = res.clearedTowerFloor + 1;
-        setTowerFloor(nextFloor);
-        setTowerBestFloor(prev => Math.max(prev, nextFloor));
-        finalizeCombatExit(true, { ...res.victorySummary, isTowerVictory: true, clearedFloor: res.clearedTowerFloor }, true);
+      if (res.clearedTower) {
+        const nextFloor = res.clearedTower.floor + 1;
+        if (typeof setTowerFloor === 'function') {
+          setTowerFloor(prev => Math.max(prev || 1, nextFloor));
+        }
+        if (typeof setTowerBestFloor === 'function') {
+          setTowerBestFloor(prev => Math.max(prev || 1, nextFloor));
+        }
+        finalizeCombatExit(
+          true,
+          {
+            ...res.victorySummary,
+            isTowerVictory: true,
+            towerType: res.clearedTower.type,
+            clearedFloor: res.clearedTower.floor,
+            nextFloor: res.victorySummary.isTowerFirstClear ? nextFloor : res.clearedTower.floor
+          },
+          true
+        );
       } else {
         finalizeCombatExit(false, res.victorySummary, true);
       }
@@ -387,7 +420,7 @@ export function useCombatManager({
       setAutoTower(false);
       setPlayer(res.defeatedPlayer);
       setHeroRoster(res.finalRoster);
-      finalizeCombatExit(Boolean(activeTowerFloor), res.defeatSummary, false);
+      finalizeCombatExit(Boolean(activeTower), res.defeatSummary, false);
       return;
     }
 
@@ -405,7 +438,7 @@ export function useCombatManager({
     selectedTargetIndex, combatBuffs, heroBattleBuffs, battleDownedHeroIds,
     playerTotalMaxHp, playerTotalMaxMp, playerTotalAtk, playerTotalDef,
     playerTotalSpeed, playerRowBuff, rawFormBonus, formMultiplier,
-    currentZoneIndex, activeTowerFloor, isFengShui, getHeroRowIdx,
+    currentZoneIndex, activeTower, activeTowerFloor, isFengShui, getHeroRowIdx,
     appendBatchLogs, setPlayer, setHeroRoster, setEquipmentInventory,
     setSkillCardsInventory, setTowerFloor, setTowerBestFloor,
     finalizeCombatExit, setTurnCount
@@ -413,7 +446,7 @@ export function useCombatManager({
 
   useAutoCombatScheduler({
     gameStarted, autoBattle, setAutoBattle, autoTower, setAutoTower,
-    activeTowerFloor, isInCombat, combatPhase, turnCount,
+    activeTower, activeTowerFloor, selectedTowerType, isInCombat, combatPhase, turnCount,
     victorySummary, setVictorySummary, defeatSummary,
     player, combatBuffs, activeHeroInstanceIds, heroRoster,
     currentZoneIndex, speedMeta, handleExecuteRound,
@@ -447,7 +480,9 @@ export function useCombatManager({
   };
 
   return {
-    isInCombat, currentZoneIndex, activeTowerFloor, setActiveTowerFloor,
+    isInCombat, currentZoneIndex,
+    selectedTowerType, setSelectedTowerType,
+    activeTower, activeTowerFloor, towerProgress,
     monsters, setMonsters, selectedTargetIndex, setSelectedTargetIndex,
     lastRoundHits, setLastRoundHits, combatPhase,
     autoBattle, setAutoBattle, autoTower, setAutoTower,
