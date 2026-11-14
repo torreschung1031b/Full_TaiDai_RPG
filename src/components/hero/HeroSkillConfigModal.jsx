@@ -77,12 +77,19 @@ export function HeroSkillConfigModal({
     ? `${configuringHero.instanceId}_${configuringHero.heroClass}`
     : null;
 
-  useEffect(() => {
+  
+useEffect(() => {
     if (!configuringHero) {
       sessionGroupsRef.current = { heroKey: null, map: new Map() };
+      return;
     }
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
   }, [configuringHero]);
-
+  
   const compatibleGroups = useMemo(() => {
     if (!configuringHero) return [];
 
