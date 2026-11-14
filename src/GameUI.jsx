@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Swords, Users, Sparkles, Shield, Hammer, User, Compass,
   Castle, Store, BookOpen, Save, HelpCircle
@@ -54,6 +54,11 @@ export default function GameUI(props) {
 
   const [helpModalTab, setHelpModalTab] = useState(null);
 
+  const getHeroRowIdx = useCallback((heroInstanceId) => {
+    const foundKey = Object.keys(formationSlots || {}).find(k => formationSlots[k] === heroInstanceId);
+    return foundKey !== undefined ? Math.floor(Number(foundKey) / 3) : 1;
+  }, [formationSlots]);
+
   if (!gameStarted) {
     return (
       <CharacterCreationScreen
@@ -69,11 +74,6 @@ export default function GameUI(props) {
   const isWarlock = player.job === '術士';
   const classInfo = CLASS_CONFIGS[player.job] || CLASS_CONFIGS['猛將'];
   const currentClassSkills = props.classSkills?.length > 0 ? props.classSkills : buildAdaptedClassSkills(player.job);
-
-  const getHeroRowIdx = (heroInstanceId) => {
-    const foundKey = Object.keys(formationSlots || {}).find(k => formationSlots[k] === heroInstanceId);
-    return foundKey !== undefined ? Math.floor(Number(foundKey) / 3) : 1;
-  };
 
   const NAV_TABS = [
     { id: 'combat', label: '歷練戰鬥', icon: Swords },
@@ -96,7 +96,7 @@ export default function GameUI(props) {
       : `💧 內力 ${player.mp}/${playerTotalMaxMp}`;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 pb-12">
+    <div style={{ scrollbarGutter: 'stable' }} className="min-h-screen bg-slate-950 text-slate-100 pb-12">
       {/* 頂部狀態欄 */}
       <header className="sticky top-0 z-30 bg-slate-950/95 border-b border-slate-800 backdrop-blur px-4 py-3">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3">
@@ -112,12 +112,12 @@ export default function GameUI(props) {
             )}
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap font-mono text-xs">
+          <div className="flex items-center gap-2 flex-wrap font-mono tabular-nums text-xs">
             <span className="bg-rose-950/70 border border-rose-800 text-rose-200 px-2.5 py-1 rounded-lg font-bold">❤️ {player.hp}/{playerTotalMaxHp}</span>
             <span className="bg-cyan-950/70 border border-cyan-800 text-cyan-200 px-2.5 py-1 rounded-lg font-bold">{resourceLabel}</span>
             <span className="bg-slate-900 border border-slate-800 text-amber-300 px-2.5 py-1 rounded-lg font-bold">💰 {player.gold}</span>
             <span className="bg-slate-900 border border-slate-800 text-cyan-300 px-2.5 py-1 rounded-lg font-bold">💎 {player.refineStones}</span>
-            <button onClick={() => setHelpModalTab('combat')} className="flex items-center gap-1 bg-amber-600/20 hover:bg-amber-600/40 border border-amber-500/50 text-amber-300 px-2.5 py-1 rounded-lg font-bold transition-colors">
+            <button type="button" onClick={() => setHelpModalTab('combat')} className="flex items-center gap-1 bg-amber-600/20 hover:bg-amber-600/40 border border-amber-500/50 text-amber-300 px-2.5 py-1 rounded-lg font-bold transition-colors">
               <HelpCircle className="w-3.5 h-3.5" />
               <span>江湖指南</span>
             </button>
@@ -134,8 +134,9 @@ export default function GameUI(props) {
             return (
               <button
                 key={tab.id}
+                type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
+                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-colors ${
                   active ? 'bg-amber-500 text-slate-950 font-black shadow-lg shadow-amber-500/20' : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800'
                 }`}
               >
