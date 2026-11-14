@@ -289,6 +289,11 @@ export function CombatTab({
                           劇毒×{m.poisonStacks || 1} ({m.poisonTurns}T)
                         </span>
                       )}
+                      {!dead && m.chargingSkill && (
+  <span className="text-[10px] bg-rose-600 text-white border border-amber-300 px-1.5 py-0.2 rounded font-black animate-pulse">
+    ⚠️ 蓄力中：{m.chargingSkill.name}
+  </span>
+)}
                       {MONSTER_DEBUFFS.map(d => m[d.key] > 0 && (
                         <span key={d.key} className={`text-[10px] border px-1.5 rounded ${d.cls}`}>{d.label} {m[d.key]}T</span>
                       ))}
