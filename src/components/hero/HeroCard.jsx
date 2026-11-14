@@ -200,12 +200,14 @@ export function HeroCard({
           )}
         </div>
 
-        {/* 技能卡插槽區 */}
+       {/* 技能卡插槽區 */}
         <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
-          <div className="h-5 flex items-center justify-between text-[11px]">
-            <span className="font-bold text-amber-300">⚡ 額外主動技能卡 ({hero.activeSkillSlots?.length || 0}/2)</span>
+          <div className="h-6 flex items-center justify-between gap-2 text-[11px] whitespace-nowrap">
+            <span className="font-bold text-amber-300 tabular-nums shrink-0">
+              ⚡ 額外主動技能卡 ({hero.activeSkillSlots?.length || 0}/2)
+            </span>
             {hasDualActive ? (
-              <span className="text-[10px] bg-amber-500/20 text-amber-200 border border-amber-400/60 px-2 py-0.5 rounded font-bold leading-none">
+              <span className="text-[10px] bg-amber-500/20 text-amber-200 border border-amber-400/60 px-2 py-0.5 rounded font-bold leading-none truncate">
                 🔥 雙卡共鳴 (+10%率/+15%威)
               </span>
             ) : (
@@ -213,7 +215,7 @@ export function HeroCard({
                 type="button"
                 disabled={isInCombat}
                 onClick={() => onOpenConfig(hero.instanceId)}
-                className="text-[10px] text-cyan-300 hover:text-cyan-200 underline disabled:opacity-40 leading-none"
+                className="text-[10px] text-cyan-300 hover:text-cyan-200 underline disabled:opacity-40 leading-none tabular-nums truncate"
               >
                 + 配置技能卡 ({compatibleBagCount}張可用)
               </button>
@@ -227,9 +229,11 @@ export function HeroCard({
             onOpenConfig={() => onOpenConfig(hero.instanceId)}
           />
 
-          <div className="h-5 flex items-center justify-between text-[11px] pt-1">
-            <span className="font-bold text-cyan-300">💠 被動技能卡 ({hero.passiveSkillSlots?.length || 0}/2)</span>
-            <span className="text-[10px] text-emerald-300 font-mono leading-none">全被動效果 ×1.5 倍</span>
+          <div className="h-6 flex items-center justify-between gap-2 text-[11px] pt-1 whitespace-nowrap">
+            <span className="font-bold text-cyan-300 tabular-nums shrink-0">
+              💠 被動技能卡 ({hero.passiveSkillSlots?.length || 0}/2)
+            </span>
+            <span className="text-[10px] text-emerald-300 font-mono leading-none truncate">全被動效果 ×1.5 倍</span>
           </div>
           <SkillSlotPair
             slots={hero.passiveSkillSlots}
@@ -239,8 +243,7 @@ export function HeroCard({
             onOpenConfig={() => onOpenConfig(hero.instanceId)}
           />
         </div>
-      </div>
-
+        
       {/* 底部操作按鈕列 */}
       <div className="pt-2 border-t border-slate-800/80 flex flex-wrap gap-2">
         <button
