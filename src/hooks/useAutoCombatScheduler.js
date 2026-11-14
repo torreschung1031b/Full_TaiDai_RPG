@@ -8,7 +8,9 @@ export function useAutoCombatScheduler({
   setAutoBattle,
   autoTower,
   setAutoTower,
+  activeTower,
   activeTowerFloor,
+  selectedTowerType,
   isInCombat,
   combatPhase,
   turnCount,
@@ -35,6 +37,7 @@ export function useAutoCombatScheduler({
     spawnEncounter,
     handleStartTowerChallenge,
     currentZoneIndex,
+    selectedTowerType,
     addLog
   });
 
@@ -48,6 +51,7 @@ export function useAutoCombatScheduler({
       spawnEncounter,
       handleStartTowerChallenge,
       currentZoneIndex,
+      selectedTowerType,
       addLog
     };
   });
@@ -73,8 +77,9 @@ export function useAutoCombatScheduler({
   }, [gameStarted, autoBattle, isInCombat, combatPhase, turnCount, speedMeta.roundMs]);
 
   // 2. 野外自動連戰搜敵排程
+  const inAnyTower = Boolean(activeTower || activeTowerFloor);
   useEffect(() => {
-    if (!gameStarted || !autoBattle || autoTower || activeTowerFloor || isInCombat || combatPhase !== 'PLAYER_SELECT') {
+    if (!gameStarted || !autoBattle || autoTower || inAnyTower || isInCombat || combatPhase !== 'PLAYER_SELECT') {
       return;
     }
     if (defeatSummary) {
@@ -97,12 +102,12 @@ export function useAutoCombatScheduler({
 
     return () => clearTimeout(timer);
   }, [
-    gameStarted, autoBattle, autoTower, activeTowerFloor, isInCombat,
+    gameStarted, autoBattle, autoTower, inAnyTower, isInCombat,
     combatPhase, victorySummary, defeatSummary, player.hp,
     speedMeta.summaryMs, speedMeta.roundMs, setAutoBattle, setVictorySummary, addLog
   ]);
 
-  // 3. 自動爬塔排程
+  // 3. 自動爬塔排程（自動推進同一座挑戰塔的下一層）
   useEffect(() => {
     if (!gameStarted || !autoTower || isInCombat || combatPhase !== 'PLAYER_SELECT') return;
     if (defeatSummary) {
@@ -117,9 +122,12 @@ export function useAutoCombatScheduler({
       return;
     }
 
+    const targetType = victorySummary.towerType || latestRef.current.selectedTowerType || 'gold';
+    const nextFloor = victorySummary.nextFloor || (victorySummary.clearedFloor ? victorySummary.clearedFloor + 1 : undefined);
+
     const timer = setTimeout(() => {
       setVictorySummary(null);
-      latestRef.current.handleStartTowerChallenge();
+      latestRef.current.handleStartTowerChallenge(targetType, nextFloor);
     }, speedMeta.summaryMs);
 
     return () => clearTimeout(timer);
