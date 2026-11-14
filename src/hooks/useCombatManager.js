@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { ZONES } from '../data/constants';
 import { CLASS_CONFIGS } from '../data/classes';
 import { calculateHeroEffectiveStats } from '../utils/statCalculator';
@@ -10,6 +10,10 @@ import {
 } from '../utils/combatEngine';
 import { buildZoneEncounter, buildTowerEncounter } from '../utils/encounterGenerator';
 import { useAutoCombatScheduler } from './useAutoCombatScheduler';
+import {
+  createInitialBattleStats,
+  accumulateStatsFromRoundLogs
+} from '../components/combat/BattleMvpPanel';
 
 const SPEED_CONFIG = {
   1: { roundMs: 450, summaryMs: 3000, label: '1x 正常' },
@@ -72,6 +76,9 @@ export function useCombatManager({
   const [combatBuffs, setCombatBuffs] = useState(INITIAL_COMBAT_BUFFS);
   const [heroBattleBuffs, setHeroBattleBuffs] = useState({});
   const [battleDownedHeroIds, setBattleDownedHeroIds] = useState([]);
+
+  // 追蹤單場戰鬥 MVP 數據統計（不觸發額外重渲染）
+  const battleStatsRef = useRef(null);
 
   const isInCombat = monsters.some(m => m.hp > 0);
   const speedMeta = SPEED_CONFIG[battleSpeed] || SPEED_CONFIG[1];
@@ -182,6 +189,7 @@ export function useCombatManager({
     const { zoneName, list } = buildZoneEncounter(zoneIdx, 1 + deployed.length);
     const openingShield = applyOpeningAwakeningAndResources(deployed, true);
 
+    battleStatsRef.current = createInitialBattleStats(player, deployed);
     resetCombatStates(openingShield);
     setActiveTowerFloor(null);
     setMonsters(list);
@@ -190,7 +198,7 @@ export function useCombatManager({
     setCombatPhase('PLAYER_SELECT');
     addLog(`⚔️ 【${zoneName}】主動搜敵遭遇 ${list.length} 隻敵怪！戰鬥開始${autoBattle ? '（🤖 自動戰鬥託管中）' : ''}！`, 'sys');
     return list;
-  }, [isInCombat, player.hp, activeHeroes, applyOpeningAwakeningAndResources, resetCombatStates, setTurnCount, autoBattle, addLog]);
+  }, [isInCombat, player, activeHeroes, applyOpeningAwakeningAndResources, resetCombatStates, setTurnCount, autoBattle, addLog]);
 
   const handleStartTowerChallenge = useCallback(() => {
     if (isInCombat) {
@@ -204,9 +212,10 @@ export function useCombatManager({
     }
 
     const floor = towerFloor;
-    const { isBossFloor, list } = buildTowerEncounter(floor);
+    const { isBossFloor, list } = buildTowerEncounter(floor, 1 + activeHeroes.length);
     const openingShield = applyOpeningAwakeningAndResources(activeHeroes, false);
 
+    battleStatsRef.current = createInitialBattleStats(player, activeHeroes);
     resetCombatStates(openingShield);
     setActiveTowerFloor(floor);
     setMonsters(list);
@@ -220,7 +229,7 @@ export function useCombatManager({
         : `🗼 踏入【鎮魔塔第 ${floor} 層】，迎戰 ${list.length} 名鎮塔守衛！`,
       'sys'
     );
-  }, [isInCombat, player.hp, towerFloor, activeHeroes, applyOpeningAwakeningAndResources, resetCombatStates, setTurnCount, setActiveTab, addLog]);
+  }, [isInCombat, player, towerFloor, activeHeroes, applyOpeningAwakeningAndResources, resetCombatStates, setTurnCount, setActiveTab, addLog]);
 
   const handleSweepZone = (sweepCount = 3) => {
     if (isInCombat) {
@@ -273,14 +282,17 @@ export function useCombatManager({
   };
 
   const finalizeCombatExit = useCallback((wasTower, summary, isVictory) => {
+    const finalStats = battleStatsRef.current ? { ...battleStatsRef.current } : null;
+    battleStatsRef.current = null;
+
     setMonsters([]);
     setActiveTowerFloor(null);
     resetCombatStates();
     setCombatPhase('PLAYER_SELECT');
     if (isVictory) {
-      setVictorySummary(summary);
+      setVictorySummary(summary ? { ...summary, battleStats: summary.battleStats || finalStats } : null);
     } else {
-      setDefeatSummary(summary);
+      setDefeatSummary(summary ? { ...summary, battleStats: summary.battleStats || finalStats } : null);
     }
     if (wasTower) setActiveTab('tower');
   }, [resetCombatStates, setActiveTab]);
@@ -296,6 +308,9 @@ export function useCombatManager({
       playerRowBuff, rawFormBonus, formMultiplier, isFengShui, getHeroRowIdx
     });
 
+    if (battleStatsRef.current) {
+      accumulateStatsFromRoundLogs(battleStatsRef.current, res.logs, monsters, res.updatedMonsters || monsters);
+    }
     appendBatchLogs(res.logs);
 
     if (res.outcome === 'ESCAPED') {
@@ -327,6 +342,11 @@ export function useCombatManager({
       return;
     }
 
+    // 若因讀檔直接進入戰鬥中而未建立統計物件，自動補齊
+    if (!battleStatsRef.current) {
+      battleStatsRef.current = createInitialBattleStats(player, activeHeroes);
+    }
+
     setCombatPhase('EXECUTING');
     const res = resolveCombatRound({
       actionInput, monsters, player, heroRoster, activeHeroInstanceIds,
@@ -336,6 +356,8 @@ export function useCombatManager({
       currentZoneIndex, activeTowerFloor, isFengShui, getHeroRowIdx
     });
 
+    const nextMonsters = res.outcome === 'VICTORY' ? [] : (res.tickedMonsters || monsters);
+    accumulateStatsFromRoundLogs(battleStatsRef.current, res.logs, monsters, nextMonsters);
     appendBatchLogs(res.logs);
 
     if (res.outcome === 'ABORTED') {
@@ -379,7 +401,7 @@ export function useCombatManager({
     setTurnCount(prev => prev + 1);
     setCombatPhase('PLAYER_SELECT');
   }, [
-    isInCombat, addLog, monsters, player, heroRoster, activeHeroInstanceIds,
+    isInCombat, addLog, monsters, player, activeHeroes, heroRoster, activeHeroInstanceIds,
     selectedTargetIndex, combatBuffs, heroBattleBuffs, battleDownedHeroIds,
     playerTotalMaxHp, playerTotalMaxMp, playerTotalAtk, playerTotalDef,
     playerTotalSpeed, playerRowBuff, rawFormBonus, formMultiplier,
