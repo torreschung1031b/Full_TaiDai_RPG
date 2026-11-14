@@ -221,10 +221,12 @@ export function useRosterAndFormation({
       addLog(`🔒 戰鬥進行中，無法更換技能卡！`, 'sys');
       return;
     }
+    if (!card || !card.uid) return;
+
     const targetHero = heroRoster.find(h => h.instanceId === heroInstanceId);
     if (!targetHero) return;
 
-    if (!card.allowedJobs.includes(targetHero.heroClass)) {
+    if (!card.allowedJobs?.includes(targetHero.heroClass)) {
       addLog(`⚠️ 職業不符！【${targetHero.heroClass}】無法裝備【${card.name}】！`, 'danger');
       return;
     }
@@ -233,7 +235,7 @@ export function useRosterAndFormation({
       ...(targetHero.activeSkillSlots || []),
       ...(targetHero.passiveSkillSlots || [])
     ];
-    if (allEquipped.some(c => c.id === card.id || c.name === card.name)) {
+    if (allEquipped.some(c => c.uid === card.uid || c.id === card.id || c.name === card.name)) {
       addLog(`⚠️ 英雄【${targetHero.name}】已裝備相同的技能卡【${card.name}】！`, 'sys');
       return;
     }
@@ -249,10 +251,14 @@ export function useRosterAndFormation({
     setSkillCardsInventory(prev => prev.filter(c => c.uid !== card.uid));
     setHeroRoster(prev => prev.map(h => {
       if (h.instanceId !== heroInstanceId) return h;
-      if (card.type === 'active') {
-        return { ...h, activeSkillSlots: [...(h.activeSkillSlots || []), card] };
+      const currentSlots = card.type === 'active' ? (h.activeSkillSlots || []) : (h.passiveSkillSlots || []);
+      if (currentSlots.length >= 2 || currentSlots.some(c => c.uid === card.uid || c.name === card.name)) {
+        return h;
       }
-      return { ...h, passiveSkillSlots: [...(h.passiveSkillSlots || []), card] };
+      if (card.type === 'active') {
+        return { ...h, activeSkillSlots: [...currentSlots, card] };
+      }
+      return { ...h, passiveSkillSlots: [...currentSlots, card] };
     }));
 
     addLog(`🔮 英雄【${targetHero.name}】成功裝備強化技能卡【${card.name}】！`, 'sys');
