@@ -32,28 +32,28 @@ function SkillSlotPair({ slots = [], type, isInCombat, onUnequip, onOpenConfig }
         const card = slots[idx];
         return card ? (
           <button
-            key={card.uid || idx}
+            key={`equipped-${idx}`}
             type="button"
             disabled={isInCombat}
             onClick={() => onUnequip(card)}
-            title="點擊直接卸下技能卡"
-            className={`text-left p-2 rounded-xl border hover:border-rose-400 text-[11px] transition-all group ${equippedCls}`}
+            title={`${card.name}：${card.desc}（點擊直接卸下）`}
+            className={`h-[54px] flex flex-col justify-center text-left px-2.5 py-1.5 rounded-xl border hover:border-rose-400 text-[11px] transition-colors group overflow-hidden ${equippedCls}`}
           >
-            <div className="font-bold truncate flex justify-between items-center">
+            <div className="font-bold truncate flex justify-between items-center w-full">
               <span className="truncate">{isActive ? '⚡' : '💠'} {card.name}</span>
               <span className="text-[9px] text-rose-300 opacity-0 group-hover:opacity-100 shrink-0 ml-1">卸下</span>
             </div>
-            <div className={`text-[10px] truncate ${isActive ? 'text-slate-300' : 'text-emerald-300'}`}>
+            <div className={`text-[10px] truncate w-full mt-0.5 ${isActive ? 'text-slate-300' : 'text-emerald-300'}`}>
               {card.desc}{!isActive && ' (×1.5)'}
             </div>
           </button>
         ) : (
           <button
-            key={idx}
+            key={`empty-${idx}`}
             type="button"
             disabled={isInCombat}
             onClick={onOpenConfig}
-            className={`p-2 rounded-xl bg-slate-900/60 border border-dashed border-slate-700 text-[10px] text-slate-400 text-center transition-all disabled:opacity-40 ${emptyHoverCls}`}
+            className={`h-[54px] flex items-center justify-center px-2.5 py-1.5 rounded-xl bg-slate-900/60 border border-dashed border-slate-700 text-[10px] text-slate-400 text-center transition-colors disabled:opacity-40 ${emptyHoverCls}`}
           >
             + 鑲嵌{isActive ? '主動' : '被動'}卡
           </button>
@@ -109,7 +109,7 @@ export function HeroCard({
       : (hero.tier || 1) >= 4 ? 'border-purple-800/60' : 'border-slate-800';
 
   return (
-    <div className={`bg-slate-950 p-4 rounded-2xl border space-y-3 flex flex-col justify-between transition-all ${cardBorder}`}>
+    <div className={`bg-slate-950 p-4 rounded-2xl border space-y-3 flex flex-col justify-between transition-colors ${cardBorder}`}>
       <div className="space-y-2.5">
         {/* 頂部識別列 */}
         <div className="flex items-start justify-between gap-2 flex-wrap">
@@ -202,10 +202,10 @@ export function HeroCard({
 
         {/* 技能卡插槽區 */}
         <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
-          <div className="flex items-center justify-between text-[11px]">
+          <div className="h-5 flex items-center justify-between text-[11px]">
             <span className="font-bold text-amber-300">⚡ 額外主動技能卡 ({hero.activeSkillSlots?.length || 0}/2)</span>
             {hasDualActive ? (
-              <span className="text-[10px] bg-amber-500/20 text-amber-200 border border-amber-400/60 px-2 py-0.5 rounded font-bold">
+              <span className="text-[10px] bg-amber-500/20 text-amber-200 border border-amber-400/60 px-2 py-0.5 rounded font-bold leading-none">
                 🔥 雙卡共鳴 (+10%率/+15%威)
               </span>
             ) : (
@@ -213,7 +213,7 @@ export function HeroCard({
                 type="button"
                 disabled={isInCombat}
                 onClick={() => onOpenConfig(hero.instanceId)}
-                className="text-[10px] text-cyan-300 hover:text-cyan-200 underline disabled:opacity-40"
+                className="text-[10px] text-cyan-300 hover:text-cyan-200 underline disabled:opacity-40 leading-none"
               >
                 + 配置技能卡 ({compatibleBagCount}張可用)
               </button>
@@ -227,9 +227,9 @@ export function HeroCard({
             onOpenConfig={() => onOpenConfig(hero.instanceId)}
           />
 
-          <div className="flex items-center justify-between text-[11px] pt-1">
+          <div className="h-5 flex items-center justify-between text-[11px] pt-1">
             <span className="font-bold text-cyan-300">💠 被動技能卡 ({hero.passiveSkillSlots?.length || 0}/2)</span>
-            <span className="text-[10px] text-emerald-300 font-mono">全被動效果 ×1.5 倍</span>
+            <span className="text-[10px] text-emerald-300 font-mono leading-none">全被動效果 ×1.5 倍</span>
           </div>
           <SkillSlotPair
             slots={hero.passiveSkillSlots}
@@ -247,7 +247,7 @@ export function HeroCard({
           type="button"
           disabled={isInCombat}
           onClick={() => onToggleDeploy(hero)}
-          className={`flex-1 py-2 px-3 rounded-xl font-bold text-xs transition-all disabled:opacity-40 ${isDeployed ? 'bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40' : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow'}`}
+          className={`flex-1 py-2 px-3 rounded-xl font-bold text-xs transition-colors disabled:opacity-40 ${isDeployed ? 'bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40' : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow'}`}
         >
           {isDeployed ? '下陣休養' : '⚔️ 派遣出戰'}
         </button>
@@ -256,7 +256,7 @@ export function HeroCard({
           type="button"
           disabled={isInCombat}
           onClick={() => onOpenConfig(hero.instanceId)}
-          className="py-2 px-3 rounded-xl font-bold text-xs bg-cyan-950/80 hover:bg-cyan-800 text-cyan-200 border border-cyan-600/70 disabled:opacity-40 transition-all"
+          className="py-2 px-3 rounded-xl font-bold text-xs bg-cyan-950/80 hover:bg-cyan-800 text-cyan-200 border border-cyan-600/70 disabled:opacity-40 transition-colors"
         >
           🃏 配卡 ({(hero.activeSkillSlots?.length || 0) + (hero.passiveSkillSlots?.length || 0)}/4)
         </button>
@@ -266,7 +266,7 @@ export function HeroCard({
             type="button"
             disabled={!canFuse}
             onClick={() => onFuseHero(hero.instanceId)}
-            className="py-2 px-3 rounded-xl font-black text-xs text-white bg-gradient-to-r from-purple-700 to-amber-600 hover:from-purple-600 hover:to-amber-500 disabled:opacity-40 shadow transition-all"
+            className="py-2 px-3 rounded-xl font-black text-xs text-white bg-gradient-to-r from-purple-700 to-amber-600 hover:from-purple-600 hover:to-amber-500 disabled:opacity-40 shadow transition-colors"
           >
             {fusionLvl >= maxFusion ? '★+5 滿星' : `✨ 合成 → ★+${fusionLvl + 1}`}
           </button>
@@ -280,7 +280,7 @@ export function HeroCard({
               onReleaseHero(hero);
             }
           }}
-          className="py-2 px-2.5 rounded-xl font-bold text-xs bg-rose-950/70 hover:bg-rose-800 text-rose-300 border border-rose-800/70 disabled:opacity-40 transition-all"
+          className="py-2 px-2.5 rounded-xl font-bold text-xs bg-rose-950/70 hover:bg-rose-800 text-rose-300 border border-rose-800/70 disabled:opacity-40 transition-colors"
         >
           放走
         </button>
