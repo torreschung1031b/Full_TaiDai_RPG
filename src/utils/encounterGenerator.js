@@ -1,3 +1,12 @@
+import { assignMonsterSkills } from '../data/monsterSkills';
+
+// 在每個 monster 物件建立後補上：
+const monsterObj = {
+  // ...原本的 id, name, hp, atk, def 等欄位
+  chargingSkill: null,
+  ...createBaseMonsterDebuffs()
+};
+monsterObj.skills = assignMonsterSkills(monsterObj);
 import { ZONES } from '../data/constants';
 import { getRandomElement } from './statCalculator';
 
