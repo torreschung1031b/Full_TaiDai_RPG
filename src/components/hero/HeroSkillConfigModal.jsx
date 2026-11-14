@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { X, Wand2, Trash2, ShieldAlert } from 'lucide-react';
 
 function ModalSlotColumn({ title, badge, slots = [], type, isInCombat, onUnequip }) {
@@ -13,7 +13,7 @@ function ModalSlotColumn({ title, badge, slots = [], type, isInCombat, onUnequip
         <span className="tabular-nums">{title} ({slots.length}/2)</span>
         {badge && <span className="text-emerald-300 text-[10px]">{badge}</span>}
       </div>
-      <div className="grid grid-cols-2 gap-2 items-stretch">
+      <div className="grid grid-cols-2 gap-2">
         {[0, 1].map(idx => {
           const card = slots[idx];
           const isFilled = Boolean(card);
@@ -23,11 +23,10 @@ function ModalSlotColumn({ title, badge, slots = [], type, isInCombat, onUnequip
               type="button"
               disabled={isInCombat || !isFilled}
               onClick={() => isFilled && onUnequip(card)}
-              style={{ height: '74px', minHeight: '74px', maxHeight: '74px' }}
-              className={`w-full p-2.5 rounded-xl border text-left overflow-hidden flex flex-col justify-between ${
+              className={`h-[74px] w-full p-2.5 rounded-xl border text-left align-top overflow-hidden flex flex-col justify-between ${
                 isFilled
                   ? cardStyle
-                  : 'bg-slate-900/60 border-dashed border-slate-700 text-slate-500 cursor-default items-center justify-center'
+                  : 'bg-slate-900/60 border-dashed border-slate-700 text-slate-500 cursor-default'
               }`}
             >
               {isFilled ? (
@@ -45,9 +44,14 @@ function ModalSlotColumn({ title, badge, slots = [], type, isInCombat, onUnequip
                   </div>
                 </>
               ) : (
-                <span className="text-[11px] text-slate-500 leading-none">
-                  空{isActive ? '主動' : '被動'}槽 #{idx + 1}
-                </span>
+                <>
+                  <div className="text-[11px] text-slate-500 leading-tight">
+                    空{isActive ? '主動' : '被動'}槽 #{idx + 1}
+                  </div>
+                  <div className="text-[10px] text-slate-600 leading-none">
+                    點擊下方卡片鑲嵌
+                  </div>
+                </>
               )}
             </button>
           );
@@ -71,54 +75,75 @@ export function HeroSkillConfigModal({
   onUnequipSkillCard
 }) {
   const [showOccupiedCards, setShowOccupiedCards] = useState(false);
-  const sessionGroupsRef = useRef({ heroKey: null, map: new Map() });
+  const [seenTemplates, setSeenTemplates] = useState({});
 
   const heroSessionKey = configuringHero
     ? `${configuringHero.instanceId}_${configuringHero.heroClass}`
-    : null;
+    : '';
 
-  
-useEffect(() => {
+  // 鎖定背景頁面滾動，並安全記錄本次彈窗中見過的該職業技能卡模板
+  useEffect(() => {
     if (!configuringHero) {
-      sessionGroupsRef.current = { heroKey: null, map: new Map() };
+      setSeenTemplates({});
       return;
     }
+
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+
+    setSeenTemplates(prev => {
+      const base = prev._sessionKey === heroSessionKey ? { ...prev } : { _sessionKey: heroSessionKey };
+      let changed = base._sessionKey !== prev._sessionKey;
+
+      groupedInventoryCards.forEach(g => {
+        if (g?.sample?.allowedJobs?.includes(configuringHero.heroClass)) {
+          const key = g.key || `${g.sample.type}_${g.sample.name}`;
+          if (!base[key]) {
+            base[key] = g.sample;
+            changed = true;
+          }
+        }
+      });
+
+      return changed ? base : prev;
+    });
+
     return () => {
       document.body.style.overflow = prevOverflow;
     };
-  }, [configuringHero]);
-  
+  }, [configuringHero, heroSessionKey, groupedInventoryCards]);
+
   const compatibleGroups = useMemo(() => {
     if (!configuringHero) return [];
-
-    if (sessionGroupsRef.current.heroKey !== heroSessionKey) {
-      sessionGroupsRef.current = { heroKey: heroSessionKey, map: new Map() };
-    }
 
     const currentMap = new Map();
     groupedInventoryCards.forEach(g => {
       if (g?.sample?.allowedJobs?.includes(configuringHero.heroClass)) {
         const key = g.key || `${g.sample.type}_${g.sample.name}`;
         currentMap.set(key, g);
-        sessionGroupsRef.current.map.set(key, g.sample);
       }
     });
 
+    const allKeys = new Set([
+      ...Object.keys(seenTemplates).filter(k => k !== '_sessionKey'),
+      ...currentMap.keys()
+    ]);
+
     const merged = [];
-    sessionGroupsRef.current.map.forEach((sampleCard, key) => {
+    allKeys.forEach(key => {
       const liveGroup = currentMap.get(key);
+      const sampleCard = liveGroup?.sample || seenTemplates[key];
+      if (!sampleCard) return;
       merged.push({
         key,
-        sample: liveGroup?.sample || sampleCard,
+        sample: sampleCard,
         count: liveGroup?.count || 0,
         instances: (liveGroup?.instances || []).filter(Boolean)
       });
     });
 
     return merged;
-  }, [configuringHero, heroSessionKey, groupedInventoryCards]);
+  }, [configuringHero, groupedInventoryCards, seenTemplates]);
 
   const occupiedCardsByOthers = useMemo(() => {
     if (!configuringHero) return [];
@@ -145,8 +170,7 @@ useEffect(() => {
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/85 flex items-center justify-center p-3 sm:p-5" onClick={onClose}>
       <div
-        style={{ height: '82vh', maxHeight: '760px' }}
-        className="bg-slate-900 border-2 border-cyan-500/80 rounded-3xl max-w-3xl w-full flex flex-col shadow-2xl overflow-hidden"
+        className="bg-slate-900 border-2 border-cyan-500/80 rounded-3xl max-w-3xl w-full h-[82vh] max-h-[760px] flex flex-col shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 頂部標題 */}
@@ -168,11 +192,8 @@ useEffect(() => {
           </button>
         </div>
 
-        {/* 滾動內容區：用 inline style 強制關閉瀏覽器捲動錨點補償 */}
-        <div
-          style={{ overflowAnchor: 'none' }}
-          className="p-4 sm:p-5 overflow-y-auto overscroll-contain space-y-5 flex-1"
-        >
+        {/* 滾動內容區 */}
+        <div className="p-4 sm:p-5 overflow-y-auto overscroll-contain space-y-5 flex-1">
           {deployedHeroes.length > 1 && (
             <div className="flex items-center gap-1.5 flex-wrap text-xs">
               <span className="text-slate-400 font-bold mr-1">切換出戰隊友：</span>
@@ -267,8 +288,7 @@ useEffect(() => {
                   return (
                     <div
                       key={group.key}
-                      style={{ height: '132px' }}
-                      className={`p-3.5 rounded-2xl border flex flex-col justify-between overflow-hidden ${
+                      className={`h-[132px] p-3.5 rounded-2xl border flex flex-col justify-between overflow-hidden ${
                         isDepleted
                           ? 'bg-slate-950/50 border-slate-800/50'
                           : 'bg-slate-950 border-slate-800'
