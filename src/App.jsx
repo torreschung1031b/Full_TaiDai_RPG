@@ -33,6 +33,8 @@ const INITIAL_PLAYER = {
   rage: 0, ammo: 12, maxAmmo: 12,
   atk: 36, def: 18, speed: 10,
   gold: 300, refineStones: 4,
+  antiExplodeScrolls: 0,
+  towerProgress: { gold: 1, refine: 1, hero: 1, skill: 1, equip: 1 },
   statPoints: 5, sp: 0, tp: 2,
   stats: { str: 10, con: 10, int: 10, agi: 10 },
   skillLevels: { 0: 1, 1: 1, 2: 0, 3: 0 },
@@ -264,6 +266,15 @@ export default function App() {
     appendBatchLogs
   });
 
+  // 向下相容舊版 setActiveTowerFloor 呼叫
+  const compatSetActiveTowerFloor = useCallback((val) => {
+    if (typeof combat.setActiveTowerFloor === 'function') {
+      combat.setActiveTowerFloor(val);
+    } else if (typeof combat.setActiveTower === 'function') {
+      combat.setActiveTower(val ? { type: 'equip', floor: val } : null);
+    }
+  }, [combat]);
+
   // 2. 存檔與讀檔管理 Hook
   const saveSystem = useSaveSystem({
     initialPlayer: INITIAL_PLAYER,
@@ -289,7 +300,7 @@ export default function App() {
     setTowerFloor,
     towerBestFloor,
     setTowerBestFloor,
-    setActiveTowerFloor: combat.setActiveTowerFloor,
+    setActiveTowerFloor: compatSetActiveTowerFloor,
     setMonsters: combat.setMonsters,
     resetCombatStates: combat.resetCombatStates,
     setAutoBattle: combat.setAutoBattle
@@ -361,7 +372,7 @@ export default function App() {
     setFormationSlots(syncFormationSlots('none', {}, [starterHero.instanceId]));
     setTowerFloor(1);
     setTowerBestFloor(1);
-    combat.setActiveTowerFloor(null);
+    compatSetActiveTowerFloor(null);
     combat.setAutoTower(false);
     combat.setMonsters([]);
     combat.setLastRoundHits({ monsters: {}, allies: {} });
@@ -446,6 +457,9 @@ export default function App() {
       currentFormation={effectiveFormationKey}
       towerFloor={towerFloor}
       towerBestFloor={towerBestFloor}
+      towerProgress={combat.towerProgress}
+      selectedTowerType={combat.selectedTowerType}
+      setSelectedTowerType={combat.setSelectedTowerType}
       handleStartTowerChallenge={combat.handleStartTowerChallenge}
       jsonSaveText={saveSystem.jsonSaveText}
       setJsonSaveText={saveSystem.setJsonSaveText}
