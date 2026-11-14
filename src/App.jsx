@@ -186,19 +186,25 @@ export default function App() {
     setCreationData(prev => ({ ...prev, selectedStarterHero: cands[0] }));
   }, []);
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [combatLogs]);
+ useEffect(() => {
+    if (activeTab === 'combat') {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [combatLogs, activeTab]);
 
   // 衍生屬性計算
-  const activeHeroes = activeHeroInstanceIds
-    .map(id => heroRoster.find(h => h.instanceId === id))
-    .filter(Boolean);
+  const activeHeroes = React.useMemo(
+    () => activeHeroInstanceIds.map(id => heroRoster.find(h => h.instanceId === id)).filter(Boolean),
+    [activeHeroInstanceIds, heroRoster]
+  );
 
   const { bonus: equipBonus, setAtkPct, setHpPct, setMpPct, setDefPct } = calculateEquipmentBonus(player.equipped);
-  const codexBonus = calculateCodexBonus(heroRoster);
+  const codexBonus = React.useMemo(() => calculateCodexBonus(heroRoster), [heroRoster]);
   const effectiveFormationKey = isFengShui ? currentFormation : 'none';
-  const syncedSlots = syncFormationSlots(effectiveFormationKey, formationSlots, activeHeroInstanceIds);
+  const syncedSlots = React.useMemo(
+    () => syncFormationSlots(effectiveFormationKey, formationSlots, activeHeroInstanceIds),
+    [effectiveFormationKey, formationSlots, activeHeroInstanceIds]
+  );
   const playerGridIdx = Number(Object.keys(syncedSlots).find(k => syncedSlots[k] === 'PLAYER') ?? 0);
   const playerRowBuff = getRowPositionBuffs(playerGridIdx);
 
