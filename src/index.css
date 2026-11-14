@@ -3,22 +3,7 @@
 @tailwind utilities;
 
 html {
-  overflow-y: scroll !important;
-  scrollbar-gutter: stable;
-}
-
-html, body, #root {
-  overflow-anchor: none;
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeSpeed;
-}
-
-/* 防止 Windows DPI 縮放與半透明深色卡片在局部狀態更新時產生亞像素高頻抖動 */
-button,
-[class*="rounded-"] {
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-  transform: translateZ(0);
+  overflow-y: scroll;
 }
 
 @keyframes floatUpFade {
