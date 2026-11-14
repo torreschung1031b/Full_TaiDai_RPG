@@ -3,14 +3,61 @@ import { SKILL_CARDS_DB, createSkillCardInstance } from '../../data/skillCards';
 import { HERO_TEMPLATES, instantiateHero } from '../../data/heroes';
 import { rollEquipmentFromTierRange } from '../../data/equipment';
 import {
+  DEMON_TOWERS,
+  normalizeTowerProgress,
+  calculateTowerFloorRewards
+} from '../../data/towers';
+import {
   getRandomElement,
   getMaxExpForLevel,
   calculateHeroEffectiveStats,
   normalizeHero
 } from '../statCalculator';
+import {
+  getAverageMonsterLevel,
+  getLevelDiffExpMultiplier,
+  getWildDropRates,
+  rollWildDropStar
+} from './combatFormulas';
 
 function pObjExpAfterGain(p, gain) {
   return p.level >= MAX_LEVEL ? 0 : p.exp + gain;
+}
+
+/**
+ * 依指定星級區間抽取英雄模板並實例化
+ */
+function rollHeroFromStarRange(minStar = 1, maxStar = 3) {
+  const candidates = HERO_TEMPLATES.filter(t => {
+    const tier = t.tier || 1;
+    return tier >= minStar && tier <= maxStar;
+  });
+  const pool = candidates.length > 0
+    ? candidates
+    : HERO_TEMPLATES.filter(t => (t.tier || 1) <= maxStar);
+  const finalPool = pool.length > 0 ? pool : HERO_TEMPLATES;
+  const picked = finalPool[Math.floor(Math.random() * finalPool.length)];
+  return normalizeHero(instantiateHero(picked, true, null, getRandomElement));
+}
+
+/**
+ * 依指定星級區間抽取技能卡並實例化（自動補齊 tier 標記以相容舊資料）
+ */
+function rollSkillCardFromStarRange(minStar = 1, maxStar = 3) {
+  const candidates = SKILL_CARDS_DB.filter(c => {
+    const tier = c.tier || 1;
+    return tier >= minStar && tier <= maxStar;
+  });
+  const pool = candidates.length > 0
+    ? candidates
+    : SKILL_CARDS_DB.filter(c => (c.tier || 1) <= maxStar);
+  const finalPool = pool.length > 0 ? pool : SKILL_CARDS_DB;
+  const picked = finalPool[Math.floor(Math.random() * finalPool.length)];
+  const instance = createSkillCardInstance(picked);
+  if (!instance.tier) {
+    instance.tier = Math.min(maxStar, Math.max(minStar, picked.tier || minStar));
+  }
+  return instance;
 }
 
 /**
@@ -18,8 +65,11 @@ function pObjExpAfterGain(p, gain) {
  */
 export function processHeroExpGain(hero, expGained, isFengShui, getHeroRowIdx) {
   let currentHero = normalizeHero(hero);
-  if (currentHero.level >= MAX_LEVEL) {
-    return { updatedHero: { ...currentHero, level: MAX_LEVEL, exp: 0 }, upgradedMsgs: [] };
+  if (currentHero.level >= MAX_LEVEL || expGained <= 0) {
+    if (currentHero.level >= MAX_LEVEL) {
+      return { updatedHero: { ...currentHero, level: MAX_LEVEL, exp: 0 }, upgradedMsgs: [] };
+    }
+    return { updatedHero: currentHero, upgradedMsgs: [] };
   }
 
   currentHero.exp += expGained;
@@ -86,7 +136,7 @@ export function processHeroExpGain(hero, expGained, isFengShui, getHeroRowIdx) {
 }
 
 /**
- * 結算戰鬥勝利戰利品、分階裝備掉落與鎮魔塔推進
+ * 結算戰鬥勝利戰利品（區分：鎮魔五塔 0 經驗專精掉落 vs 野外/掃蕩 1-3 星掉落＋等級差經驗衰減）
  */
 export function resolveBattleVictory({
   player,
@@ -94,87 +144,154 @@ export function resolveBattleVictory({
   currentRoster,
   activeHeroInstanceIds,
   currentZoneIndex,
+  activeTower,
   activeTowerFloor,
   isFengShui,
   getHeroRowIdx
 }) {
+  // 向下相容舊版 activeTowerFloor 參數
+  const resolvedTower = activeTower && activeTower.floor > 0
+    ? activeTower
+    : activeTowerFloor && activeTowerFloor > 0
+      ? { type: 'equip', floor: activeTowerFloor }
+      : null;
+
   let totalGold = 0;
-  let totalExp = 0;
+  let baseMonsterExp = 0;
   let droppedStones = 0;
+  let droppedAntiExplode = 0;
   const droppedEquipments = [];
+  let droppedHero = null;
+  let droppedSkillCard = null;
   const msgs = [];
 
+  const monsterAvgLevel = getAverageMonsterLevel(defeatedMonsters, currentZoneIndex);
+
   defeatedMonsters.forEach(m => {
-    totalGold += m.gold;
-    totalExp += m.exp;
-    if (Math.random() < 0.25) droppedStones += 1;
+    totalGold += m.gold || 0;
+    baseMonsterExp += m.exp || 0;
   });
 
-  let droppedHero = null;
-  if (Math.random() < 0.18) {
-    const candidates = HERO_TEMPLATES.filter(t => t.tier <= Math.min(5, currentZoneIndex + 2));
-    const picked = candidates[Math.floor(Math.random() * candidates.length)];
-    droppedHero = normalizeHero(instantiateHero(picked, true, null, getRandomElement));
-  }
+  // =========================================================================
+  // 分支 A：鎮魔五塔挑戰（一律 0 經驗值，依塔別產出對應專精高階資源）
+  // =========================================================================
+  let playerExpGained = 0;
+  let playerExpRateLabel = '🗼 鎮魔塔不提供經驗值';
+  let updatedTowerProgress = normalizeTowerProgress(player);
+  let isTowerFirstClear = false;
 
-  let droppedSkillCard = null;
+  if (resolvedTower) {
+    const towerMeta = DEMON_TOWERS[resolvedTower.type] || DEMON_TOWERS.equip;
+    const floor = resolvedTower.floor;
+    const highestCleared = updatedTowerProgress[towerMeta.id] || 1;
+    isTowerFirstClear = floor >= highestCleared;
 
-  if (activeTowerFloor && activeTowerFloor > 0) {
-    const isBossFloor = activeTowerFloor % 5 === 0;
-    if (isBossFloor) {
-      const bossStones = 2 + Math.floor(activeTowerFloor / 5);
-      droppedStones += bossStones;
-      const minT = activeTowerFloor >= 20 ? 4 : activeTowerFloor >= 15 ? 4 : 3;
-      const maxT = activeTowerFloor >= 20 ? 5 : activeTowerFloor >= 10 ? 4 : 3;
-      droppedEquipments.push(rollEquipmentFromTierRange(minT, maxT, 'eq_tower_boss'));
+    const towerReward = calculateTowerFloorRewards({
+      towerType: towerMeta.id,
+      floor,
+      isFirstClear: isTowerFirstClear
+    });
 
-      const cardTemplate = SKILL_CARDS_DB[Math.floor(Math.random() * SKILL_CARDS_DB.length)];
-      droppedSkillCard = createSkillCardInstance(cardTemplate);
-      msgs.push(`🗼 討伐【鎮魔塔第 ${activeTowerFloor} 層鎮守首領】大捷！額外獲贈 +${bossStones} 顆精鍊石與首領神兵！`);
+    totalGold = towerReward.gold;
+    droppedStones = towerReward.refineStones;
+    droppedAntiExplode = towerReward.antiExplodeScrolls;
+    playerExpGained = 0;
+
+    if (towerMeta.id === 'hero') {
+      const dropChance = isTowerFirstClear ? (floor % 5 === 0 ? 1.0 : 0.65) : 0.35;
+      if (Math.random() < dropChance) {
+        droppedHero = rollHeroFromStarRange(towerReward.minStar, towerReward.maxStar);
+      }
+    } else if (towerMeta.id === 'skill') {
+      const dropChance = isTowerFirstClear ? (floor % 5 === 0 ? 1.0 : 0.70) : 0.35;
+      if (Math.random() < dropChance) {
+        droppedSkillCard = rollSkillCardFromStarRange(towerReward.minStar, towerReward.maxStar);
+      }
+    } else if (towerMeta.id === 'equip') {
+      const dropChance = isTowerFirstClear ? (floor % 5 === 0 ? 1.0 : 0.70) : 0.35;
+      if (Math.random() < dropChance) {
+        droppedEquipments.push(
+          rollEquipmentFromTierRange(towerReward.minStar, towerReward.maxStar, `eq_tower_${floor}`)
+        );
+      }
+    }
+
+    if (isTowerFirstClear) {
+      updatedTowerProgress = {
+        ...updatedTowerProgress,
+        [towerMeta.id]: floor + 1
+      };
+      msgs.push(
+        `${towerMeta.icon} 首通【${towerMeta.name} 第 ${floor} 層】！解鎖第 ${floor + 1} 層挑戰（鎮魔塔不獲得經驗值）。`
+      );
+      if (droppedAntiExplode > 0) {
+        msgs.push(`🛡️ 獲得稀世珍寶【裝備防爆符】×${droppedAntiExplode}！`);
+      }
     } else {
-      msgs.push(`🗼 成功突破【鎮魔塔第 ${activeTowerFloor} 層】，解鎖第 ${activeTowerFloor + 1} 層挑戰！`);
-      if (Math.random() < 0.35) {
-        const minT = activeTowerFloor >= 16 ? 3 : activeTowerFloor >= 6 ? 2 : 1;
-        const maxT = activeTowerFloor >= 16 ? 5 : activeTowerFloor >= 11 ? 4 : activeTowerFloor >= 6 ? 3 : 2;
-        droppedEquipments.push(rollEquipmentFromTierRange(minT, maxT, 'eq_tower'));
-      }
-      if (Math.random() < 0.40) {
-        const cardTemplate = SKILL_CARDS_DB[Math.floor(Math.random() * SKILL_CARDS_DB.length)];
-        droppedSkillCard = createSkillCardInstance(cardTemplate);
-      }
+      msgs.push(
+        `${towerMeta.icon} 重複通關【${towerMeta.name} 第 ${floor} 層】（已通關層數領取 38% 基礎駐守收益，無經驗值）。`
+      );
     }
   } else {
-    if (Math.random() < 0.18) {
-      const zoneTierRanges = [
-        [1, 2],
-        [2, 3],
-        [2, 4],
-        [3, 4]
-      ];
-      const [minT, maxT] = zoneTierRanges[currentZoneIndex] || [1, 3];
-      droppedEquipments.push(rollEquipmentFromTierRange(minT, maxT, 'eq_wild'));
+    // =========================================================================
+    // 分支 B：普通野外搜敵（套用等級差經驗衰減 + 僅掉落 1-3 星裝備/技能卡/英雄）
+    // =========================================================================
+    const rates = getWildDropRates(monsterAvgLevel);
+
+    if (Math.random() < rates.stoneRate) {
+      droppedStones += 1;
     }
 
-    if (Math.random() < 0.25) {
-      const cardTemplate = SKILL_CARDS_DB[Math.floor(Math.random() * SKILL_CARDS_DB.length)];
-      droppedSkillCard = createSkillCardInstance(cardTemplate);
+    if (Math.random() < rates.equipRate) {
+      const star = rollWildDropStar(monsterAvgLevel);
+      droppedEquipments.push(rollEquipmentFromTierRange(star, star, 'eq_wild'));
     }
+
+    if (Math.random() < rates.skillRate) {
+      const star = rollWildDropStar(monsterAvgLevel);
+      droppedSkillCard = rollSkillCardFromStarRange(star, star);
+    }
+
+    if (Math.random() < rates.heroRate) {
+      const star = rollWildDropStar(monsterAvgLevel);
+      droppedHero = rollHeroFromStarRange(star, star);
+    }
+
+    const playerScale = getLevelDiffExpMultiplier(player.level || 1, monsterAvgLevel);
+    playerExpGained = Math.max(1, Math.round(baseMonsterExp * playerScale.multiplier));
+    playerExpRateLabel = `怪群均等 Lv.${monsterAvgLevel}・${playerScale.label}`;
   }
 
+  // 合併新招降英雄，並為「存活的出戰英雄」獨立計算等級差經驗（鎮魔塔時 exp = 0）
   const mergedRoster = droppedHero ? [...currentRoster, droppedHero] : [...currentRoster];
+  const heroExpDetails = [];
 
   const finalRoster = mergedRoster.map(hero => {
     if (!activeHeroInstanceIds.includes(hero.instanceId)) return hero;
-    const { updatedHero, upgradedMsgs } = processHeroExpGain(hero, totalExp, isFengShui, getHeroRowIdx);
+    if (resolvedTower || hero.hp <= 0) return hero;
+
+    const hScale = getLevelDiffExpMultiplier(hero.level || 1, monsterAvgLevel);
+    const hExp = Math.max(1, Math.round(baseMonsterExp * hScale.multiplier));
+    heroExpDetails.push({
+      instanceId: hero.instanceId,
+      name: hero.name,
+      expGained: hExp,
+      label: hScale.label
+    });
+
+    const { updatedHero, upgradedMsgs } = processHeroExpGain(hero, hExp, isFengShui, getHeroRowIdx);
     if (upgradedMsgs.length > 0) msgs.push(...upgradedMsgs);
     return updatedHero;
   });
 
+  // 結算少俠屬性與升級
   const newPlayer = {
     ...player,
     gold: player.gold + totalGold,
-    refineStones: player.refineStones + droppedStones,
-    exp: pObjExpAfterGain(player, totalExp),
+    refineStones: (player.refineStones || 0) + droppedStones,
+    antiExplodeScrolls: (player.antiExplodeScrolls || 0) + droppedAntiExplode,
+    towerProgress: updatedTowerProgress,
+    exp: pObjExpAfterGain(player, playerExpGained),
     maxExp: getMaxExpForLevel(player.level)
   };
 
@@ -210,14 +327,24 @@ export function resolveBattleVictory({
     finalRoster,
     droppedEquipments,
     droppedSkillCard,
-    clearedTowerFloor: activeTowerFloor || null,
+    clearedTower: resolvedTower,
+    clearedTowerFloor: resolvedTower?.floor || null,
     victorySummary: {
       gold: totalGold,
-      exp: totalExp,
+      exp: playerExpGained,
+      baseExp: baseMonsterExp,
+      monsterAvgLevel,
+      expRateLabel: playerExpRateLabel,
+      heroExpDetails,
       stones: droppedStones,
+      antiExplodeScrolls: droppedAntiExplode,
       droppedEquipments,
       droppedHero,
       droppedSkillCard,
+      isTowerBattle: Boolean(resolvedTower),
+      towerType: resolvedTower?.type || null,
+      towerFloor: resolvedTower?.floor || null,
+      isTowerFirstClear,
       msgs
     }
   };
