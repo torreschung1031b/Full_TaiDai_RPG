@@ -15,8 +15,9 @@ export function createInitialBattleStats(player, activeHeroes = []) {
       element: player.element || '火',
       isPlayer: true,
       damageDealt: 0,
-      damageTaken: 0,
       healingDone: 0,
+      shieldDone: 0,
+      damageTaken: 0,
       kills: 0,
       skillTotals: {}
     };
@@ -31,8 +32,9 @@ export function createInitialBattleStats(player, activeHeroes = []) {
       element: h.element || '金',
       isPlayer: false,
       damageDealt: 0,
-      damageTaken: 0,
       healingDone: 0,
+      shieldDone: 0,
+      damageTaken: 0,
       kills: 0,
       skillTotals: {}
     };
@@ -42,7 +44,7 @@ export function createInitialBattleStats(player, activeHeroes = []) {
 }
 
 /**
- * 自動從單回合戰報 logs 中解析每位成員的輸出、治療、承傷與招牌技能卡
+ * 自動從單回合戰報 logs 中解析每位成員的輸出、治療、加盾、承傷與招牌技能
  */
 export function accumulateStatsFromRoundLogs(stats, logs = [], monstersBefore = [], monstersAfter = []) {
   if (!stats?.members || !Array.isArray(logs) || logs.length === 0) return;
@@ -62,16 +64,32 @@ export function accumulateStatsFromRoundLogs(stats, logs = [], monstersBefore = 
     const text = typeof log === 'string' ? log : (log?.text || '');
     if (!text) return;
 
-    // 辨識本條戰報的主動出手者
+    // 1. 優先依據 log.type 與名稱辨識本條戰報的主動出手者
     let actor = null;
-    if (text.includes('少俠') && (text.includes('施展') || text.includes('攻擊') || text.includes('爆發') || text.includes('追擊') || text.includes('反震'))) {
+    const isPlayerMentioned =
+      text.includes('少俠') ||
+      (playerEntry?.name && text.includes(playerEntry.name));
+
+    if (log?.type === 'player') {
       actor = playerEntry;
-    } else {
+    } else if (isPlayerMentioned && !text.includes('重擊少俠') && !text.includes(`重擊【${playerEntry?.name}】`)) {
+      // 排除純粹「怪物攻擊少俠」的受擊句
+      const monsterHitPlayer = log?.type === 'monster' && !text.includes('反震') && !text.includes('反彈');
+      if (!monsterHitPlayer) {
+        actor = playerEntry;
+      }
+    }
+
+    if (!actor) {
       for (const h of heroEntries) {
         if (text.includes(h.name)) {
-          // 排除「重擊...英雄【XXX】」這種挨打句型
-          const isBeingHit = text.includes(`重擊`) && text.indexOf('重擊') < text.indexOf(h.name);
-          const isProtected = text.includes(`替【${h.name}】`) || text.includes(`護盾為【${h.name}】`);
+          const isBeingHit =
+            log?.type === 'monster' ||
+            (text.includes('重擊') && text.indexOf('重擊') < text.indexOf(h.name));
+          const isProtected =
+            text.includes(`替【${h.name}】`) ||
+            text.includes(`護盾為【${h.name}】`) ||
+            text.includes(`治療【${h.name}】`);
           if (!isBeingHit && !isProtected) {
             actor = h;
             break;
@@ -80,23 +98,33 @@ export function accumulateStatsFromRoundLogs(stats, logs = [], monstersBefore = 
       }
     }
 
-    if (actor && (log?.type === 'hero' || log?.type === 'player')) {
+    if (actor && (log?.type === 'hero' || log?.type === 'player' || log?.type === 'sys')) {
       lastActor = actor;
     }
 
-    // 1. 解析技能卡或絕學名稱
-    const skillMatch = text.match(/(技能卡【[^】]+】|絕學【[^】]+】|施展【[^】]+】)/);
+    // 2. 解析技能卡或絕學名稱
+    const skillMatch = text.match(/(技能卡【[^】]+】|絕學【[^】]+】|施展【[^】]+】|發動【[^】]+】)/);
     const extractedSkill = skillMatch
-      ? skillMatch[1].replace(/^施展/, '')
+      ? skillMatch[1].replace(/^(?:施展|發動)/, '')
       : text.includes('追擊')
         ? '疾速追擊'
-        : '普通攻擊';
+        : text.includes('反震') || text.includes('反彈')
+          ? '反震護罡'
+          : '普通攻擊';
 
-    // 2. 解析造成傷害（hero 或 player 類型戰報）
-    if (log?.type === 'hero' || log?.type === 'player') {
-      const dmgMatch = text.match(/造成\s*(\d+)\s*(?:總)?傷害|反彈給[^0-9]*(\d+)\s*點傷害/);
-      const dmgVal = dmgMatch ? Number(dmgMatch[1] || dmgMatch[2] || 0) : 0;
-      const targetActor = actor || lastActor;
+    // 3. 解析我方造成傷害（涵蓋 player、hero 及主角反震/連攜）
+    const isFriendlyAttackLog =
+      log?.type === 'player' ||
+      log?.type === 'hero' ||
+      (actor && (text.includes('造成') || text.includes('反彈給') || text.includes('反震')));
+
+    if (isFriendlyAttackLog && log?.type !== 'monster') {
+      const dmgMatch = text.match(
+        /造成\s*(\d+)\s*(?:點)?(?:總|真實|暴擊|五行)?傷害|傷害\s*[:：]?\s*(\d+)|反彈給[^0-9]*(\d+)\s*(?:點)?傷害/
+      );
+      const dmgVal = dmgMatch ? Number(dmgMatch[1] || dmgMatch[2] || dmgMatch[3] || 0) : 0;
+      const targetActor = actor || (log?.type === 'player' ? playerEntry : lastActor);
+
       if (dmgVal > 0 && targetActor) {
         targetActor.damageDealt += dmgVal;
         targetActor.skillTotals[extractedSkill] = (targetActor.skillTotals[extractedSkill] || 0) + dmgVal;
@@ -107,32 +135,71 @@ export function accumulateStatsFromRoundLogs(stats, logs = [], monstersBefore = 
       }
     }
 
-    // 3. 解析治療回血（heal 角色或恢復 +XX HP）
-    if (log?.dmgRole === 'heal' || text.includes('恢復 +')) {
-      const healMatch = text.match(/恢復\s*\+(\d+)\s*HP|回血\s*\+(\d+)/);
-      const healVal = healMatch ? Number(healMatch[1] || healMatch[2] || 0) : 0;
-      // 若為全隊恢復，粗估乘以存活人數（或採單體回血值）
-      const isTeamHeal = text.includes('全隊恢復');
+    // 4. 解析加盾紀錄（護盾 +XX / 獲得 XX 點護盾 / 提供 +XX 點護盾）
+    if (
+      log?.dmgRole === 'shield' ||
+      text.includes('護盾') ||
+      text.includes('護體') ||
+      text.includes('真氣罩') ||
+      text.includes('金鐘')
+    ) {
+      const shieldMatch = text.match(
+        /(?:護盾|護體|真氣罩|金鐘)[^0-9+]*\+?\s*(\d+)|(?:獲得|提供|形成|增加|附加)\s*\+?(\d+)\s*(?:點)?(?:護盾|護體)/
+      );
+      const shieldVal = shieldMatch ? Number(shieldMatch[1] || shieldMatch[2] || 0) : 0;
+      // 排除「護盾抵消了 XX 點傷害」這類扣盾戰報
+      const isShieldConsumed = text.includes('抵消') || text.includes('吸收') || text.includes('擊碎');
+      const shieldProvider = actor || lastActor || playerEntry;
+
+      if (shieldVal > 0 && !isShieldConsumed && shieldProvider) {
+        const shieldSkillName = extractedSkill !== '普通攻擊' ? extractedSkill : '護體真氣';
+        shieldProvider.shieldDone += shieldVal;
+        shieldProvider.skillTotals[shieldSkillName] = (shieldProvider.skillTotals[shieldSkillName] || 0) + shieldVal;
+      }
+    }
+
+    // 5. 解析治療回血（heal 角色或恢復/治療/回血 +XX）
+    if (
+      log?.dmgRole === 'heal' ||
+      text.includes('恢復 +') ||
+      text.includes('回血') ||
+      text.includes('治療') ||
+      text.includes('回復')
+    ) {
+      const healMatch = text.match(
+        /(?:恢復|回血|治療|回復)[^0-9+]*\+?\s*(\d+)\s*(?:點)?(?:HP|氣血|生命)?/
+      );
+      const healVal = healMatch ? Number(healMatch[1] || 0) : 0;
+      const isTeamHeal = text.includes('全隊');
       const multiplier = isTeamHeal ? Math.max(1, memberList.length) : 1;
-      const healer = actor || heroEntries.find(h => h.role.includes('藥師')) || playerEntry;
+      const healer =
+        actor ||
+        (log?.type === 'player' ? playerEntry : null) ||
+        heroEntries.find(h => h.role.includes('藥師')) ||
+        playerEntry;
+
       if (healVal > 0 && healer) {
         const totalHeal = healVal * multiplier;
-        const healSkillName = text.includes('醫道餘韻') ? '醫道餘韻' : extractedSkill;
+        const healSkillName = text.includes('醫道餘韻')
+          ? '醫道餘韻'
+          : extractedSkill !== '普通攻擊'
+            ? extractedSkill
+            : '回春妙手';
         healer.healingDone += totalHeal;
         healer.skillTotals[healSkillName] = (healer.skillTotals[healSkillName] || 0) + totalHeal;
       }
     }
 
-    // 4. 解析我方承受傷害（monster 類型戰報）
+    // 6. 解析我方承受傷害（monster 類型戰報）
     if (log?.type === 'monster') {
-      const takenMatch = text.match(/造成\s*(\d+)\s*點傷害/);
+      const takenMatch = text.match(/造成\s*(\d+)\s*(?:點)?傷害/);
       const takenVal = takenMatch ? Number(takenMatch[1] || 0) : 0;
       if (takenVal > 0) {
-        if (text.includes('少俠') && playerEntry) {
+        if (isPlayerMentioned && playerEntry) {
           playerEntry.damageTaken += takenVal;
         } else {
           for (const h of heroEntries) {
-            if (text.includes(`【${h.name}】`)) {
+            if (text.includes(`【${h.name}】`) || text.includes(h.name)) {
               h.damageTaken += takenVal;
               break;
             }
@@ -144,19 +211,26 @@ export function accumulateStatsFromRoundLogs(stats, logs = [], monstersBefore = 
 }
 
 /**
- * 嵌入式 MVP 戰鬥數據統計面板（供 BattleResultModals 勝利／戰敗共用）
+ * 嵌入式 MVP 戰鬥數據統計面板（支援 總輸出 / 總治療 / 加盾量 / 承傷 切換檢視）
  */
 export default function BattleMvpPanel({ battleStats }) {
   const [sortMetric, setSortMetric] = useState('damageDealt');
 
   const summary = useMemo(() => {
     const rawList = Object.values(battleStats?.members || {});
-    const totalDmg = rawList.reduce((s, m) => s + m.damageDealt, 0);
-    const totalHeal = rawList.reduce((s, m) => s + m.healingDone, 0);
-    const totalTaken = rawList.reduce((s, m) => s + m.damageTaken, 0);
+    const totalDmg = rawList.reduce((s, m) => s + (m.damageDealt || 0), 0);
+    const totalHeal = rawList.reduce((s, m) => s + (m.healingDone || 0), 0);
+    const totalShield = rawList.reduce((s, m) => s + (m.shieldDone || 0), 0);
+    const totalTaken = rawList.reduce((s, m) => s + (m.damageTaken || 0), 0);
 
     const enriched = rawList.map(m => {
-      const mvpScore = m.damageDealt * 1.0 + m.healingDone * 1.15 + m.damageTaken * 0.65 + m.kills * 80;
+      const dmg = m.damageDealt || 0;
+      const heal = m.healingDone || 0;
+      const shield = m.shieldDone || 0;
+      const taken = m.damageTaken || 0;
+      const kills = m.kills || 0;
+
+      const mvpScore = dmg * 1.0 + heal * 1.15 + shield * 1.1 + taken * 0.65 + kills * 80;
       const skillEntries = Object.entries(m.skillTotals || {}).sort((a, b) => b[1] - a[1]);
       const topSkill = skillEntries.length > 0
         ? { name: skillEntries[0][0], value: skillEntries[0][1] }
@@ -164,22 +238,28 @@ export default function BattleMvpPanel({ battleStats }) {
 
       return {
         ...m,
+        damageDealt: dmg,
+        healingDone: heal,
+        shieldDone: shield,
+        damageTaken: taken,
         mvpScore,
-        dmgPct: totalDmg > 0 ? Math.round((m.damageDealt / totalDmg) * 100) : 0,
-        healPct: totalHeal > 0 ? Math.round((m.healingDone / totalHeal) * 100) : 0,
-        takenPct: totalTaken > 0 ? Math.round((m.damageTaken / totalTaken) * 100) : 0,
+        dmgPct: totalDmg > 0 ? Math.round((dmg / totalDmg) * 100) : 0,
+        healPct: totalHeal > 0 ? Math.round((heal / totalHeal) * 100) : 0,
+        shieldPct: totalShield > 0 ? Math.round((shield / totalShield) * 100) : 0,
+        takenPct: totalTaken > 0 ? Math.round((taken / totalTaken) * 100) : 0,
         topSkill
       };
     });
 
     const mvpMember = [...enriched].sort((a, b) => b.mvpScore - a.mvpScore)[0] || null;
-    const sortedList = [...enriched].sort((a, b) => b[sortMetric] - a[sortMetric]);
+    const sortedList = [...enriched].sort((a, b) => (b[sortMetric] || 0) - (a[sortMetric] || 0));
 
     return {
       list: sortedList,
       mvpId: mvpMember && mvpMember.mvpScore > 0 ? mvpMember.id : null,
       totalDmg,
       totalHeal,
+      totalShield,
       totalTaken
     };
   }, [battleStats, sortMetric]);
@@ -188,7 +268,8 @@ export default function BattleMvpPanel({ battleStats }) {
 
   const metricTabs = [
     { key: 'damageDealt', label: '⚔️ 總輸出', barColor: 'bg-amber-500', textColor: 'text-amber-300', pctKey: 'dmgPct' },
-    { key: 'healingDone', label: '💚 總治療', barColor: 'bg-emerald-500', textColor: 'text-emerald-300', pctKey: 'healPct' },
+    { key: 'healingDone', label: '💚 補血', barColor: 'bg-emerald-500', textColor: 'text-emerald-300', pctKey: 'healPct' },
+    { key: 'shieldDone', label: '🔰 加盾', barColor: 'bg-purple-500', textColor: 'text-purple-300', pctKey: 'shieldPct' },
     { key: 'damageTaken', label: '🛡️ 承傷', barColor: 'bg-sky-500', textColor: 'text-sky-300', pctKey: 'takenPct' }
   ];
 
@@ -210,7 +291,7 @@ export default function BattleMvpPanel({ battleStats }) {
               key={tab.key}
               type="button"
               onClick={() => setSortMetric(tab.key)}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all ${
+              className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all ${
                 sortMetric === tab.key
                   ? 'bg-slate-800 text-white shadow border border-slate-600'
                   : 'text-slate-400 hover:text-slate-200'
@@ -267,9 +348,10 @@ export default function BattleMvpPanel({ battleStats }) {
               </div>
 
               <div className="flex flex-wrap items-center justify-between gap-1.5 mt-1.5 text-[10px] text-slate-400 font-mono">
-                <div className="flex items-center gap-2.5">
+                <div className="flex items-center gap-2.5 flex-wrap">
                   <span>⚔️ 輸出 <strong className="text-slate-200">{member.damageDealt}</strong></span>
-                  <span>💚 治療 <strong className="text-emerald-300">{member.healingDone}</strong></span>
+                  <span>💚 補血 <strong className="text-emerald-300">{member.healingDone}</strong></span>
+                  <span>🔰 加盾 <strong className="text-purple-300">{member.shieldDone}</strong></span>
                   <span>🛡️ 承傷 <strong className="text-sky-300">{member.damageTaken}</strong></span>
                   {member.kills > 0 && (
                     <span>💀 擊殺 <strong className="text-rose-300">{member.kills}</strong></span>
