@@ -148,7 +148,7 @@ export function HeroCard({
         )}
 
         {/* 等級與突破 */}
-        <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
+        <div className="flex items-center justify-between text-[11px] font-mono tabular-nums text-slate-400">
           <span>
             Lv.<strong className="text-slate-100">{hero.level}</strong> / {MAX_LEVEL}
             {fusionLvl > 0 && <span className="text-amber-300 ml-2">(突破全屬性 +{fusionLvl * 15}%)</span>}
@@ -157,17 +157,17 @@ export function HeroCard({
         </div>
 
         {/* 有效面板數值 */}
-        <div className="grid grid-cols-5 gap-1.5 text-center font-mono text-[11px] bg-slate-900/90 p-2 rounded-xl border border-slate-800/90">
+        <div className="grid grid-cols-5 gap-1.5 text-center font-mono tabular-nums text-[11px] bg-slate-900/90 p-2 rounded-xl border border-slate-800/90">
           {statBoxes.map(b => (
-            <div key={b.label}>
-              <div className="text-[10px] text-slate-500">{b.label}</div>
-              <div className={`font-bold ${b.color}`}>{b.val}</div>
+            <div key={b.label} className="min-w-0">
+              <div className="text-[10px] text-slate-500 truncate">{b.label}</div>
+              <div className={`font-bold truncate ${b.color}`}>{b.val}</div>
             </div>
           ))}
         </div>
 
         {/* 四維根骨 */}
-        <div className="text-[11px] font-mono text-slate-400 flex justify-between px-1">
+        <div className="text-[11px] font-mono tabular-nums text-slate-400 flex justify-between px-1">
           <span>力 STR: <strong className="text-slate-200">{hero.stats?.str}</strong></span>
           <span>體 CON: <strong className="text-slate-200">{hero.stats?.con}</strong></span>
           <span>智 INT: <strong className="text-slate-200">{hero.stats?.int}</strong></span>
@@ -200,7 +200,7 @@ export function HeroCard({
           )}
         </div>
 
-       {/* 技能卡插槽區 */}
+        {/* 技能卡插槽區 */}
         <div className="space-y-1.5 pt-1 border-t border-slate-800/80">
           <div className="h-6 flex items-center justify-between gap-2 text-[11px] whitespace-nowrap">
             <span className="font-bold text-amber-300 tabular-nums shrink-0">
@@ -243,7 +243,8 @@ export function HeroCard({
             onOpenConfig={() => onOpenConfig(hero.instanceId)}
           />
         </div>
-        
+      </div>
+
       {/* 底部操作按鈕列 */}
       <div className="pt-2 border-t border-slate-800/80 flex flex-wrap gap-2">
         <button
@@ -259,7 +260,7 @@ export function HeroCard({
           type="button"
           disabled={isInCombat}
           onClick={() => onOpenConfig(hero.instanceId)}
-          className="py-2 px-3 rounded-xl font-bold text-xs bg-cyan-950/80 hover:bg-cyan-800 text-cyan-200 border border-cyan-600/70 disabled:opacity-40 transition-colors"
+          className="py-2 px-3 rounded-xl font-bold text-xs tabular-nums bg-cyan-950/80 hover:bg-cyan-800 text-cyan-200 border border-cyan-600/70 disabled:opacity-40 transition-colors"
         >
           🃏 配卡 ({(hero.activeSkillSlots?.length || 0) + (hero.passiveSkillSlots?.length || 0)}/4)
         </button>
